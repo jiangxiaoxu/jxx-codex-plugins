@@ -30574,9 +30574,9 @@ ${lanes.join("\n")}
       function isJsonEqual(a, b) {
         return a === b || typeof a === "object" && a !== null && typeof b === "object" && b !== null && equalOwnProperties(a, b, isJsonEqual);
       }
-      function parsePseudoBigInt(stringValue) {
+      function parsePseudoBigInt(stringValue2) {
         let log2Base;
-        switch (stringValue.charCodeAt(1)) {
+        switch (stringValue2.charCodeAt(1)) {
           // "x" in "0x123"
           case 98:
           case 66:
@@ -30591,19 +30591,19 @@ ${lanes.join("\n")}
             log2Base = 4;
             break;
           default:
-            const nIndex = stringValue.length - 1;
+            const nIndex = stringValue2.length - 1;
             let nonZeroStart = 0;
-            while (stringValue.charCodeAt(nonZeroStart) === 48) {
+            while (stringValue2.charCodeAt(nonZeroStart) === 48) {
               nonZeroStart++;
             }
-            return stringValue.slice(nonZeroStart, nIndex) || "0";
+            return stringValue2.slice(nonZeroStart, nIndex) || "0";
         }
-        const startIndex = 2, endIndex = stringValue.length - 1;
+        const startIndex = 2, endIndex = stringValue2.length - 1;
         const bitsNeeded = (endIndex - startIndex) * log2Base;
         const segments = new Uint16Array((bitsNeeded >>> 4) + (bitsNeeded & 15 ? 1 : 0));
         for (let i = endIndex - 1, bitOffset = 0; i >= startIndex; i--, bitOffset += log2Base) {
           const segment = bitOffset >>> 4;
-          const digitChar = stringValue.charCodeAt(i);
+          const digitChar = stringValue2.charCodeAt(i);
           const digit = digitChar <= 57 ? digitChar - 48 : 10 + digitChar - (digitChar <= 70 ? 65 : 97);
           const shiftedDigit = digit << (bitOffset & 15);
           segments[segment] |= shiftedDigit;
@@ -218718,20 +218718,33 @@ function asGetLibrariesArgs(value) {
 function asLookupArgs(value) {
   const args = parse(value);
   enumeration(args, "kind", ["docs", "api"]);
+  enumeration(args, "mode", ["search", "read"]);
   enumeration(args, "scope", DOC_SCOPES);
   enumeration(args, "surface", SURFACES);
   enumeration(args, "taskFamily", TASK_FAMILIES);
-  strings(args, ["title", "query", "symbol", "apiId"]);
+  strings(args, ["title", "query", "symbol", "selector"]);
   clampableInteger(args, "maxResults");
   clampableInteger(args, "maxSnippetLines");
-  allowed(args, ["title", "kind", "scope", "surface", "taskFamily", "query", "symbol", "apiId", "maxResults", "maxSnippetLines"]);
-  if (args.apiId !== void 0) {
-    if (args.kind !== "api" || args.query !== void 0 || args.symbol !== void 0 || args.scope !== void 0 || args.surface !== void 0 || args.taskFamily !== void 0 || args.maxResults !== void 0 || args.maxSnippetLines !== void 0) {
-      throw new FigmaWorkspaceToolArgumentError('Tool argument "apiId" is exclusive to an exact API read.');
+  allowed(args, ["title", "kind", "mode", "scope", "surface", "taskFamily", "query", "symbol", "selector", "maxResults", "maxSnippetLines"]);
+  if (args.kind === "api") {
+    if (args.mode === void 0) {
+      throw new FigmaWorkspaceToolArgumentError('API lookup requires "mode" to be search or read.');
+    }
+    if (!args.selector?.trim()) {
+      throw new FigmaWorkspaceToolArgumentError('API lookup requires a non-empty "selector".');
+    }
+    if (args.query !== void 0 || args.symbol !== void 0 || args.scope !== void 0 || args.surface !== void 0 || args.taskFamily !== void 0) {
+      throw new FigmaWorkspaceToolArgumentError('API lookup accepts only "mode", "selector", and search display limits.');
+    }
+    if (args.mode === "read" && (args.maxResults !== void 0 || args.maxSnippetLines !== void 0)) {
+      throw new FigmaWorkspaceToolArgumentError("API read does not accept search display limits.");
     }
     return args;
   }
-  if (args.kind === "docs") args.scope ??= "auto";
+  if (args.mode !== void 0 || args.selector !== void 0) {
+    throw new FigmaWorkspaceToolArgumentError('Docs lookup does not accept API "mode" or "selector".');
+  }
+  args.scope ??= "auto";
   return args;
 }
 function asDocsArgs(value) {
@@ -229321,7 +229334,7 @@ var DEFAULT_CALLBACK_PORT = 18765;
 var DEFAULT_CALLBACK_PATH = "/oauth/callback";
 var DEFAULT_AUTH_TIMEOUT_MS = 18e4;
 var DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-var DEFAULT_CLIENT_VERSION = "0.6.4";
+var DEFAULT_CLIENT_VERSION = "0.6.5";
 var BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
 var distDir = dirname(fileURLToPath(import.meta.url));
 var PLUGIN_ROOT = resolve(distDir, "..");
@@ -231362,6 +231375,16 @@ var STATIC_DOCS_SEARCH_FILES = [
   ...FIGMA_WORKSPACE_PROJECT_DOC_FILES,
   ...BRIDGE_DOCS_SEARCH_FILES
 ];
+var FigmaWorkspacePluginApiSelectorError = class extends Error {
+  code;
+  candidates;
+  constructor(options) {
+    super(options.message);
+    this.name = "FigmaWorkspacePluginApiSelectorError";
+    this.code = options.code;
+    this.candidates = options.candidates === void 0 ? void 0 : [...options.candidates];
+  }
+};
 var FigmaWorkspaceLookupCorpusUnavailableError = class extends Error {
   failure;
   constructor(failure) {
@@ -231469,15 +231492,12 @@ function readFigmaWorkspaceCanonicalDoc(id) {
     content: record3.text
   };
 }
-function readFigmaWorkspacePluginApiDeclaration(apiId) {
-  const prefix = "api:";
+function readFigmaWorkspacePluginApiDeclarations(selector) {
   const index = loadPluginApiIndex();
-  const record3 = apiId.startsWith(prefix) && apiId.length <= 512 ? index.records.get(apiId.slice(prefix.length)) : void 0;
-  if (!record3) {
-    throw new Error(
-      `Unknown Figma Plugin API id "${apiId}". Use figma:api:search to discover an exact api: id.`
-    );
-  }
+  const resolution = resolvePluginApiSelector(selector, index);
+  return resolution.records.map((record3) => readPluginApiDeclaration(record3, index));
+}
+function readPluginApiDeclaration(record3, index) {
   const sourceEntry = index.manifest.source.files.find((entry) => entry.file === record3.sourceFile);
   if (!sourceEntry) {
     throw new Error(`Generated Figma Plugin API record references an unknown source file: ${record3.sourceFile}.`);
@@ -231495,20 +231515,12 @@ function readFigmaWorkspacePluginApiDeclaration(apiId) {
   const content = sourceLines.slice(record3.declarationLineStart - 1, record3.declarationLineEnd).join("\n");
   return {
     kind: "api",
-    apiId,
-    symbol: record3.symbol,
-    ownerSymbol: record3.ownerSymbol,
+    selector: pluginApiSelectorForRecord(record3),
     declarationKind: record3.declarationKind,
-    qualifiedAliases: [...record3.qualifiedAliases],
     source: {
       package: index.manifest.source.package,
-      version: index.manifest.source.version,
-      file: record3.sourceFile,
-      declarationLine: record3.declarationLine,
-      lineStart: record3.declarationLineStart,
-      lineEnd: record3.declarationLineEnd
+      version: index.manifest.source.version
     },
-    contentSha256: sha256(content),
     content
   };
 }
@@ -231559,8 +231571,11 @@ async function searchReferenceFiles(options) {
   const queryTokens = tokenizeQuery(rankingQuery);
   const chunks = [];
   if (apiIndex) {
+    if (apiQuery !== void 0 && ![...apiIndex.records.values()].some((record3) => pluginApiRecordMatchesQuery(record3, apiQuery))) {
+      throw unknownPluginApiSelector(apiQuery.normalizedInput);
+    }
     for (const record3 of apiIndex.records.values()) {
-      if (apiQuery !== void 0 && apiQuery.directMatchRecordIds.size > 0 && !apiQuery.directMatchRecordIds.has(record3.id)) {
+      if (apiQuery !== void 0 && !pluginApiRecordMatchesQuery(record3, apiQuery)) {
         continue;
       }
       chunks.push(buildPluginApiReferenceChunk(record3));
@@ -231608,9 +231623,8 @@ async function searchReferenceFiles(options) {
   return {
     maxResults: options.maxResults,
     maxSnippetLines: options.maxSnippetLines,
-    normalizedSymbol: apiQuery?.normalizedSymbol,
-    ownerHint: apiQuery?.ownerHint,
-    results: budgeted.results,
+    ...apiQuery ? { selector: apiQuery.normalizedInput } : {},
+    results: budgeted.results.map(publicReferenceSearchResult),
     ...budgeted.snippetBudget ? { snippetBudget: budgeted.snippetBudget } : {}
   };
 }
@@ -231704,8 +231718,8 @@ function staticReferenceMetadata(id, text) {
 function pluginApiReferenceMetadata(record3) {
   return {
     classification: "api",
-    publicId: `api:${record3.id}`,
-    title: record3.ownerSymbol ? `${record3.ownerSymbol}.${record3.symbol}` : record3.symbol,
+    publicId: pluginApiSelectorForRecord(record3),
+    title: pluginApiSelectorForRecord(record3),
     indexedSymbol: record3.symbol,
     ownerSymbol: record3.ownerSymbol ?? void 0,
     declarationKind: record3.declarationKind,
@@ -231892,17 +231906,49 @@ function extractDtsChunkTitle(line) {
   const match = /^(?:export\s+)?(?:declare\s+)?(?:(interface|type|class|enum|namespace)\s+([$A-Z_a-z][$\w]*)|(?:readonly\s+)?([$A-Z_a-z][$\w]*)\??\s*(?:\(|:))/u.exec(normalized);
   return match ? match[2] ?? match[3] : void 0;
 }
-function parsePluginApiLookupQuery(query, index) {
-  const normalizedInput = query.trim().replace(/;\s*$/u, "").replace(/\(\s*\)\s*$/u, "").trim();
-  const segments = normalizedInput.split(".");
-  if (segments.length === 0 || segments.some((segment) => !/^[$A-Z_a-z][$\w]*$/u.test(segment))) {
-    return {
-      normalizedInput,
-      normalizedSymbol: normalizedInput,
-      ownerKnown: false,
-      directMatchRecordIds: /* @__PURE__ */ new Set()
-    };
+function pluginApiSelectorForRecord(record3) {
+  return record3.ownerSymbol ? `${record3.ownerSymbol}.${record3.symbol}` : record3.symbol;
+}
+function resolvePluginApiSelector(selector, index) {
+  const query = parsePluginApiLookupQuery(selector, index);
+  const matchingRecords = [...index.records.values()].filter((record3) => pluginApiRecordMatchesQuery(record3, query));
+  const candidates = sortedUnique(matchingRecords.map(pluginApiSelectorForRecord));
+  if (candidates.length === 0) {
+    throw unknownPluginApiSelector(query.normalizedInput);
   }
+  if (candidates.length > 1) {
+    throw new FigmaWorkspacePluginApiSelectorError({
+      code: "FIGMA_WORKSPACE_API_SELECTOR_AMBIGUOUS",
+      message: `Figma Plugin API selector "${query.normalizedInput}" is ambiguous. Use a qualified selector: ${candidates.join(", ")}.`,
+      candidates
+    });
+  }
+  return {
+    records: matchingRecords.filter((record3) => pluginApiSelectorForRecord(record3) === candidates[0]).sort((left, right) => left.declarationLine - right.declarationLine || compareAscii(left.id, right.id))
+  };
+}
+function pluginApiRecordMatchesQuery(record3, query) {
+  return record3.symbol === query.normalizedSymbol && (query.ownerHint === void 0 || query.directMatchRecordIds.has(record3.id));
+}
+function unknownPluginApiSelector(selector) {
+  return new FigmaWorkspacePluginApiSelectorError({
+    code: "FIGMA_WORKSPACE_API_SELECTOR_NOT_FOUND",
+    message: `Unknown Figma Plugin API selector "${selector}". Use figma:api:search with a bare or qualified selector.`
+  });
+}
+function normalizePluginApiSelector(value) {
+  const normalized = value.trim().replace(/;\s*$/u, "").replace(/\(\s*\)\s*$/u, "").trim();
+  if (!normalized || !normalized.split(".").every((segment) => /^[$A-Z_a-z][$\w]*$/u.test(segment))) {
+    throw new FigmaWorkspacePluginApiSelectorError({
+      code: "FIGMA_WORKSPACE_API_SELECTOR_INVALID",
+      message: `Invalid Figma Plugin API selector "${value}". Use a bare symbol such as createFrame or a qualified selector such as PluginAPI.createFrame.`
+    });
+  }
+  return normalized;
+}
+function parsePluginApiLookupQuery(query, index) {
+  const normalizedInput = normalizePluginApiSelector(query);
+  const segments = normalizedInput.split(".");
   const normalizedSymbol = segments.at(-1) ?? normalizedInput;
   const ownerHint = segments.length > 1 ? segments.slice(0, -1).join(".") : void 0;
   const knownOwners = /* @__PURE__ */ new Set();
@@ -232024,7 +232070,8 @@ function scoredChunkToResult(entry, options) {
     classification: metadata.classification,
     title: metadata.title,
     ...metadata.classification === "api" ? {
-      apiId: metadata.publicId,
+      selector: metadata.publicId,
+      declarationKind: metadata.declarationKind,
       ownerMatch: entry.ownerMatch
     } : {
       docId: metadata.publicId,
@@ -232187,10 +232234,13 @@ function deduplicateResultsByPublicRecord(results) {
   });
 }
 function referenceResultId(result) {
-  return result.docId ?? result.apiId ?? "";
+  return result.docId ?? result.selector ?? "";
 }
 function compareAscii(left, right) {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+function sortedUnique(values) {
+  return [...new Set(values)].sort(compareAscii);
 }
 function truncateUtf8(value, maximumBytes) {
   if (Buffer.byteLength(value, "utf8") <= maximumBytes) return value;
@@ -232244,6 +232294,42 @@ function applySearchSnippetBudget(results, limitBytes) {
       truncated: true
     }
   };
+}
+function publicReferenceSearchResult(result) {
+  if (result.classification === "api") {
+    if (!result.selector || !result.declarationKind) {
+      throw new Error("Generated Figma Plugin API search record is missing its public selector.");
+    }
+    return result.snippetTruncated === void 0 ? {
+      selector: result.selector,
+      declarationKind: result.declarationKind,
+      matchType: result.matchType,
+      confidence: result.confidence,
+      snippet: result.snippet
+    } : {
+      selector: result.selector,
+      declarationKind: result.declarationKind,
+      matchType: result.matchType,
+      confidence: result.confidence,
+      snippet: result.snippet,
+      snippetTruncated: true
+    };
+  }
+  const publicResult = {
+    lineStart: result.lineStart,
+    lineEnd: result.lineEnd,
+    matchType: result.matchType,
+    confidence: result.confidence,
+    snippet: result.snippet,
+    classification: result.classification,
+    docId: result.docId,
+    title: result.title,
+    taskFamily: result.taskFamily,
+    surfaces: result.surfaces,
+    nonExecutable: result.nonExecutable
+  };
+  if (result.snippetTruncated) publicResult.snippetTruncated = true;
+  return publicResult;
 }
 function normalizeCatalogLimit(value) {
   if (value === void 0) return DOCS_CATALOG_LIMIT_MAX;
@@ -238176,11 +238262,13 @@ function requiresCodeConnectSidecar(parsed) {
 }
 async function handleLookup(args) {
   try {
-    if (args.kind === "api" && args.apiId !== void 0) {
+    if (args.kind === "api" && args.mode === "read") {
+      const declarations = readFigmaWorkspacePluginApiDeclarations(args.selector);
       return makeJsonToolResult({
         ok: true,
         mode: "read",
-        declaration: readFigmaWorkspacePluginApiDeclaration(args.apiId),
+        selector: declarations[0].selector,
+        declarations,
         guidance: "Use the exact bundled declaration for Plugin API typing decisions, then execute changes through figma:run."
       });
     }
@@ -238225,44 +238313,35 @@ async function handleLookup(args) {
     if (args.kind !== "api") {
       throw new Error('Tool argument "kind" must be one of: docs, api.');
     }
-    const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
+    const selector = normalizeLookupQuery(args.selector, "selector");
     const normalized = normalizeLookupParameters(args, {
       maxResults: 5,
       maxSnippetLines: 5
     });
     const matches = await searchReferenceFiles({
-      query: symbol,
+      query: selector,
       maxResults: normalized.maxResults,
       maxSnippetLines: normalized.maxSnippetLines,
       exactSymbol: true,
       corpus: "api"
     });
-    const apiId = matches.results.find((result) => result.apiId !== void 0)?.apiId;
     const payload = {
       ok: true,
       mode: "search",
-      normalizedSymbol: matches.normalizedSymbol,
-      ownerHint: matches.ownerHint,
+      selector: matches.selector,
       results: matches.results,
       ...matches.snippetBudget ? { snippetBudget: matches.snippetBudget } : {},
       ...normalized.parameterAdjustments.length > 0 ? { parameterAdjustments: normalized.parameterAdjustments } : {},
-      ...apiId ? {
-        nextActions: [{
-          commandId: "figma:api:read",
-          args: { id: apiId },
-          reason: "Read the exact declaration record in full.",
-          priority: 1
-        }]
-      } : {},
-      guidance: "Results are compact declarations from the generated bundled typings index. Use figma:api:read with a returned apiId for the complete declaration record."
+      guidance: "Results are compact declarations from the generated bundled typings index. Use figma:api:read with one listed selector for the complete declaration record."
     };
     return makeJsonToolResult(payload);
   } catch (error2) {
     if (error2 instanceof FigmaWorkspaceLookupCorpusUnavailableError) {
-      const mode = args.kind === "api" && args.apiId !== void 0 ? "read" : "search";
+      const mode = args.kind === "api" && args.mode === "read" ? "read" : "search";
       return makeJsonToolResult({
         ok: false,
         mode,
+        ...args.kind === "api" ? { selector: args.selector } : {},
         ...mode === "search" ? { results: [] } : {},
         diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error2)]),
         guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the cli-runtime dist after confirming those bundled assets exist, then start a new CLI command.",
@@ -238500,7 +238579,7 @@ function upstreamToolDirectoryEntry(tool) {
   });
 }
 function upstreamToolCoverage(toolName) {
-  const publicCommands = sortedUnique(
+  const publicCommands = sortedUnique2(
     FIGMA_WORKSPACE_WRAPPER_CONTRACTS.flatMap(
       (contract) => "upstreamToolName" in contract && contract.upstreamToolName === toolName ? [PUBLIC_HISTORY_COMMAND_IDS[contract.toolName]] : []
     ).filter((command) => command !== void 0)
@@ -240583,7 +240662,7 @@ function addFailureSourceToUpstreamResult(result, source) {
   }
   return result === void 0 ? { source } : { source, value: result };
 }
-function sortedUnique(values) {
+function sortedUnique2(values) {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
 }
 function resolveWrapperNodeTarget(options) {
@@ -240916,6 +240995,7 @@ function parseFigmaWorkspaceCliArguments(argv) {
   if (argv.slice(1).some((value) => value === "--help" || value === "-h")) return { kind: "help", command };
   let inputFile;
   let inlineResultLimit;
+  let format;
   for (let index = 1; index < argv.length; index += 1) {
     const option = argv[index];
     if (option === "-") {
@@ -240923,7 +241003,7 @@ function parseFigmaWorkspaceCliArguments(argv) {
       inputFile = "-";
       continue;
     }
-    if (option !== "--input" && option !== "--inline-result-limit") {
+    if (option !== "--input" && option !== "--inline-result-limit" && option !== "--format") {
       throw new FigmaWorkspaceCliUsageError(`Unknown option: ${option}`);
     }
     const value = argv[++index];
@@ -240931,15 +241011,25 @@ function parseFigmaWorkspaceCliArguments(argv) {
     if (option === "--input") {
       if (inputFile !== void 0) throw new FigmaWorkspaceCliUsageError("Command input may be specified only once.");
       inputFile = value;
-    } else {
+    } else if (option === "--inline-result-limit") {
       if (inlineResultLimit !== void 0) throw new FigmaWorkspaceCliUsageError("Option --inline-result-limit may be specified only once.");
       inlineResultLimit = parseInlineLimit(value);
+    } else {
+      if (format !== void 0) throw new FigmaWorkspaceCliUsageError("Option --format may be specified only once.");
+      if (value !== "json") throw new FigmaWorkspaceCliUsageError("Option --format supports only json.");
+      format = value;
     }
   }
   if (inlineResultLimit !== void 0 && !supportsInlineResultSidecar(command)) {
     throw new FigmaWorkspaceCliUsageError("Option --inline-result-limit is not available for this command.");
   }
-  return { kind: "command", command, inputFile, inlineResultLimit };
+  return {
+    kind: "command",
+    command,
+    inputFile,
+    inlineResultLimit,
+    ...format === void 0 ? {} : { format }
+  };
 }
 async function runFigmaWorkspaceCli(argv, dependencies = {}) {
   const io = dependencies.io ?? createProcessIo();
@@ -240959,8 +241049,13 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
   const invocationId = randomUUID3();
   let client;
   let releaseLock;
+  let apiMode;
   try {
     const input = await readCommandInput(parsed.inputFile, io);
+    apiMode = apiLookupMode(parsed.command, input);
+    if (parsed.format !== void 0 && !supportsApiJsonOutput(parsed.command, input)) {
+      throw new FigmaWorkspaceCliUsageError("Option --format json is available only for API lookup input.");
+    }
     const inlineResultSidecar = supportsInlineResultSidecar(parsed.command);
     if (!inlineResultSidecar && input.inlineResultLimit !== void 0) {
       throw new FigmaWorkspaceCliUsageError("Option inlineResultLimit is not available for this command.");
@@ -240979,7 +241074,7 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
       invocationId
     });
     const result = await invokeFigmaWorkspaceCommand(client, parsed.command, input);
-    const normalized = normalizeInvocationResult(result, invocationId, fileKey, input.surface, outputRoot);
+    const normalized = apiMode === void 0 ? normalizeInvocationResult(result, invocationId, fileKey, input.surface, outputRoot) : result;
     const originalPresentation = classifyFigmaWorkspaceCliResult(parsed.command, normalized);
     let rendered = normalized;
     let presentation = originalPresentation;
@@ -240991,11 +241086,14 @@ ${FIGMA_WORKSPACE_CLI_HELP}`);
         presentation = classifyFigmaWorkspaceCliResult(parsed.command, rendered);
       }
     }
-    io.writeStdout(`${formatFigmaWorkspaceCommandMarkdown(parsed.command, rendered, input, presentation)}
+    const output = parsed.format === "json" ? formatFigmaWorkspaceApiJson(rendered) : formatFigmaWorkspaceCommandMarkdown(parsed.command, rendered, input, presentation);
+    io.writeStdout(`${output}
 `);
     return presentation.exitCode;
   } catch (error2) {
-    io.writeStderr(`${formatError2(error2)}
+    if (parsed.format === "json") io.writeStdout(`${formatFigmaWorkspaceApiJsonError(error2, apiMode)}
+`);
+    else io.writeStderr(`${formatError2(error2)}
 `);
     if (isInterrupt(error2)) return FIGMA_WORKSPACE_CLI_EXIT_INTERRUPT;
     return error2 instanceof FigmaWorkspaceCliUsageError || error2 instanceof FigmaWorkspaceToolArgumentError ? FIGMA_WORKSPACE_CLI_EXIT_USAGE_ERROR : FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR;
@@ -241078,7 +241176,10 @@ function classifyFigmaWorkspaceCliResult(command, result) {
   if (!ok) return { status: "failed", exitCode: 1, ...failure };
   return { status: warnings.length ? "observed-unhealthy" : "succeeded", exitCode: 0, warnings };
 }
-function formatFigmaWorkspaceCommandMarkdown(command, result, _input, presentation = classifyFigmaWorkspaceCliResult(command, result)) {
+function formatFigmaWorkspaceCommandMarkdown(command, result, input, presentation = classifyFigmaWorkspaceCliResult(command, result)) {
+  if (isApiLookupInput(command, input)) {
+    return formatFigmaWorkspaceApiHumanResult(result, input, presentation);
+  }
   return [
     `# ${publicCommandName(command)}`,
     "",
@@ -241089,6 +241190,130 @@ function formatFigmaWorkspaceCommandMarkdown(command, result, _input, presentati
     JSON.stringify(result, null, 2),
     "```"
   ].join("\n");
+}
+function formatFigmaWorkspaceApiJson(result) {
+  const payload = isRecord7(result) ? (() => {
+    const { invocation: _invocation, outputRoot: _outputRoot, ...rest } = result;
+    return rest;
+  })() : result ?? null;
+  return JSON.stringify(payload, null, 2);
+}
+function formatFigmaWorkspaceApiJsonError(error2, mode) {
+  const value = isRecord7(error2) ? error2 : {};
+  const code = typeof value.code === "string" || typeof value.code === "number" ? value.code : "FIGMA_WORKSPACE_API_LOOKUP_FAILED";
+  const candidates = Array.isArray(value.candidates) && value.candidates.every((candidate) => typeof candidate === "string") ? value.candidates : void 0;
+  return JSON.stringify({
+    ok: false,
+    ...mode === void 0 ? {} : { mode },
+    error: {
+      code,
+      message: formatError2(error2),
+      ...candidates === void 0 ? {} : { candidates }
+    }
+  }, null, 2);
+}
+function formatFigmaWorkspaceApiHumanResult(result, input, presentation) {
+  const fallbackMode = input.mode === "read" ? "read" : "search";
+  if (!isRecord7(result)) {
+    return `# Figma Plugin API ${fallbackMode}
+
+No Plugin API result was returned.`;
+  }
+  const mode = result.mode === "read" ? "read" : "search";
+  const selector = stringValue(result.selector) ?? stringValue(result.normalizedSelector) ?? stringValue(input.selector) ?? "Plugin API";
+  if (result.ok === false) return formatFigmaWorkspaceApiHumanFailure(mode, selector, result, presentation);
+  if (mode === "read") return formatFigmaWorkspaceApiRead(selector, result);
+  return formatFigmaWorkspaceApiSearch(selector, result);
+}
+function formatFigmaWorkspaceApiSearch(selector, result) {
+  const results = Array.isArray(result.results) ? result.results.filter(isRecord7) : [];
+  const lines = [
+    `# Figma Plugin API search: ${selector}`,
+    "",
+    results.length === 0 ? "No matching declarations found." : `${results.length} matching declaration${results.length === 1 ? "" : "s"}:`
+  ];
+  for (const entry of results) {
+    const entrySelector = stringValue(entry.selector) ?? selector;
+    const declarationKind = stringValue(entry.declarationKind);
+    const snippet = stringValue(entry.snippet);
+    lines.push("", `## ${entrySelector}${declarationKind === void 0 ? "" : ` (${declarationKind})`}`);
+    if (snippet !== void 0) lines.push("", "```ts", snippet.trim(), "```");
+    lines.push("", `Read: figma:api:read ${entrySelector}`);
+  }
+  lines.push(...formatApiLookupNotes(result));
+  return lines.join("\n");
+}
+function formatFigmaWorkspaceApiRead(selector, result) {
+  const declarations = Array.isArray(result.declarations) ? result.declarations.filter(isRecord7) : [];
+  const lines = [`# Figma Plugin API: ${selector}`];
+  if (declarations.length === 0) {
+    lines.push("", "No declarations were returned.");
+    return lines.join("\n");
+  }
+  for (const [index, declaration] of declarations.entries()) {
+    const declarationSelector = stringValue(declaration.selector) ?? selector;
+    const declarationKind = stringValue(declaration.declarationKind);
+    const source = formatApiDeclarationSource(declaration.source);
+    const content = stringValue(declaration.content);
+    lines.push(
+      "",
+      ...declarations.length > 1 ? [`## ${declarationSelector}${declarationKind === void 0 ? "" : ` (${declarationKind})`}`] : [],
+      ...declarations.length === 1 && declarationKind !== void 0 ? [`${declarationKind}`] : [],
+      ...source === void 0 ? [] : [`Source: ${source}`]
+    );
+    if (content !== void 0) lines.push("", "```ts", content.trim(), "```");
+    else lines.push("", `Declaration ${index + 1} has no printable TypeScript content.`);
+  }
+  lines.push(...formatApiLookupNotes(result));
+  return lines.join("\n");
+}
+function formatFigmaWorkspaceApiHumanFailure(mode, selector, result, presentation) {
+  const failure = presentation.error ?? firstApiDiagnostic(result);
+  const lines = [
+    `# Figma Plugin API ${mode}: ${selector}`,
+    "",
+    `Error: ${formatApiError(failure)}`
+  ];
+  lines.push(...formatApiLookupNotes(result));
+  return lines.join("\n");
+}
+function formatApiDeclarationSource(value) {
+  if (!isRecord7(value)) return void 0;
+  const packageName = stringValue(value.package);
+  const version2 = stringValue(value.version);
+  if (packageName === void 0) return void 0;
+  return version2 === void 0 ? packageName : `${packageName} ${version2}`;
+}
+function formatApiLookupNotes(result) {
+  const notes = [];
+  const adjustments = Array.isArray(result.parameterAdjustments) ? result.parameterAdjustments.filter(isRecord7) : [];
+  for (const adjustment of adjustments) {
+    const parameter = stringValue(adjustment.option) ?? "Search parameter";
+    const applied = adjustment.applied ?? adjustment.value;
+    notes.push("", `Note: ${parameter} was adjusted${applied === void 0 ? "." : ` to ${String(applied)}.`}`);
+  }
+  if (isRecord7(result.snippetBudget) && result.snippetBudget.truncated === true) {
+    notes.push("", "Note: Search snippets were shortened to stay within the output budget.");
+  }
+  return notes;
+}
+function firstApiDiagnostic(result) {
+  const diagnostics = Array.isArray(result.diagnostics) ? result.diagnostics : [];
+  for (const diagnostic of diagnostics) {
+    if (!isRecord7(diagnostic) || typeof diagnostic.message !== "string") continue;
+    return {
+      message: diagnostic.message,
+      ...typeof diagnostic.code === "string" || typeof diagnostic.code === "number" ? { code: diagnostic.code } : {}
+    };
+  }
+  return void 0;
+}
+function formatApiError(error2) {
+  if (!error2) return "Plugin API lookup failed.";
+  return error2.code === void 0 ? error2.message : `${error2.code}: ${error2.message}`;
+}
+function stringValue(value) {
+  return typeof value === "string" && value.trim() ? value : void 0;
 }
 function formatExecutionFailureSummary(result, presentation) {
   if (!isRecord7(result) || !presentation.error) {
@@ -241129,6 +241354,16 @@ Usage: figma-workspace ${command} [--input <json-file|->]${inlineLimit}
 }
 function supportsInlineResultSidecar(command) {
   return command !== "docs" && command !== "lookup" && command !== "doctor" && command !== "upstream-tools";
+}
+function supportsApiJsonOutput(command, input) {
+  return isApiLookupInput(command, input);
+}
+function isApiLookupInput(command, input) {
+  return command === "lookup" && input.kind === "api" && (input.mode === "search" || input.mode === "read");
+}
+function apiLookupMode(command, input) {
+  if (!isApiLookupInput(command, input)) return void 0;
+  return input.mode === "read" ? "read" : "search";
 }
 async function acquireFigmaWorkspaceFileLock(fileKey, options = {}) {
   const lockRoot = resolve10(tmpdir3(), "figma-workspace", "locks");
@@ -241599,8 +241834,13 @@ ${formatRootHelp()}`);
     const parsed = await parsePublicArguments(commandName, argv, dependencies);
     normalizeExplicitPaths(commandName, parsed.input, dependencies.cwd?.() ?? process.cwd());
     assertStrictFigmaReferences(commandName, parsed.input);
-    return await invoke(parsed.internalCommand, parsed.input, dependencies, parsed.inlineResultLimit);
+    return await invoke(parsed.internalCommand, parsed.input, dependencies, parsed.inlineResultLimit, parsed.outputFormat);
   } catch (error2) {
+    if (isApiJsonFormatRequested(commandName, argv)) {
+      stdout(`${formatApiJsonError(error2, apiModeForCommand(commandName))}
+`);
+      return EXIT_USAGE;
+    }
     stderr(`${formatError3(error2)}
 
 ${formatCommandHelp(commandName)}`);
@@ -241621,15 +241861,27 @@ async function parsePublicArguments(command, argv, dependencies) {
     return { internalCommand: "docs", input: { mode: "read", id: positionals[0] } };
   }
   if (command === "api:read") {
-    const { positionals } = parseTokens(argv, optionSet());
-    requirePositionals(positionals, 1, "api-id");
-    return { internalCommand: "lookup", input: { kind: "api", apiId: positionals[0] } };
+    const { positionals, options } = parseTokens(argv, optionSet("format"));
+    requirePositionals(positionals, 1, "selector");
+    return {
+      internalCommand: "lookup",
+      input: { kind: "api", mode: "read", selector: positionals[0] },
+      outputFormat: parseApiOutputFormat(options.format)
+    };
   }
-  if (command === "docs:search" || command === "api:search") {
-    const names = command === "docs:search" ? optionSet("scope", "surface", "task-family", "limit", "snippet-lines") : optionSet("limit", "snippet-lines");
-    const { positionals, options } = parseTokens(argv, names);
-    requirePositionals(positionals, 1, command === "docs:search" ? "query" : "symbol");
-    return { internalCommand: "lookup", input: clean({ kind: command === "docs:search" ? "docs" : "api", [command === "docs:search" ? "query" : "symbol"]: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: clampableInteger2(options.limit, "--limit"), maxSnippetLines: clampableInteger2(options["snippet-lines"], "--snippet-lines") }) };
+  if (command === "docs:search") {
+    const { positionals, options } = parseTokens(argv, optionSet("scope", "surface", "task-family", "limit", "snippet-lines"));
+    requirePositionals(positionals, 1, "query");
+    return { internalCommand: "lookup", input: clean({ kind: "docs", query: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: clampableInteger2(options.limit, "--limit"), maxSnippetLines: clampableInteger2(options["snippet-lines"], "--snippet-lines") }) };
+  }
+  if (command === "api:search") {
+    const { positionals, options } = parseTokens(argv, optionSet("limit", "snippet-lines", "format"));
+    requirePositionals(positionals, 1, "selector");
+    return {
+      internalCommand: "lookup",
+      input: clean({ kind: "api", mode: "search", selector: positionals[0], maxResults: clampableInteger2(options.limit, "--limit"), maxSnippetLines: clampableInteger2(options["snippet-lines"], "--snippet-lines") }),
+      outputFormat: parseApiOutputFormat(options.format)
+    };
   }
   if (command === "run") return parseRun(argv, dependencies);
   if (command === "capture") return parseCapture(argv);
@@ -241795,9 +242047,15 @@ function parseReadLeaf(command, argv) {
   const internal = { metadata: "get-metadata", inspect: "inspect", "design-context": "get-design-context", "motion-context": "get-motion-context", variables: "get-variable-defs" };
   return direct(internal[command], input, options);
 }
-async function invoke(internalCommand, input, dependencies, inlineResultLimit) {
+async function invoke(internalCommand, input, dependencies, inlineResultLimit, outputFormat) {
   const runCli = dependencies.runCli ?? runFigmaWorkspaceCli;
-  return runCli([internalCommand, "--input", "-", ...inlineResultLimit === void 0 ? [] : ["--inline-result-limit", String(inlineResultLimit)]], {
+  return runCli([
+    internalCommand,
+    "--input",
+    "-",
+    ...inlineResultLimit === void 0 ? [] : ["--inline-result-limit", String(inlineResultLimit)],
+    ...outputFormat === void 0 ? [] : ["--format", outputFormat]
+  ], {
     io: mappedIo(input, dependencies)
   });
 }
@@ -241868,6 +242126,11 @@ function integer3(value, label) {
 function clampableInteger2(value, label) {
   if (value === void 0) return void 0;
   return parseSafeIntegerToken(value, label, "must be a safe integer; out-of-range integers are clamped.");
+}
+function parseApiOutputFormat(value) {
+  if (value === void 0) return void 0;
+  if (value === "json") return value;
+  throw new Error("--format supports only json.");
 }
 function parseSafeIntegerToken(value, label, errorSuffix = "must be a safe integer.") {
   if (!/^-?\d+$/u.test(value)) throw new Error(`${label} ${errorSuffix}`);
@@ -242001,6 +242264,19 @@ function formatRootHelp() {
   return ["# Figma Workspace stateless CLI", "", "Each invocation is independent. Commands, or live upstream schemas, that require a Figma file or node must receive that target explicitly; no command inherits a selection, history, or local state.", "", "## Documentation", "", "  figma:docs:help  figma:docs:list  figma:docs:catalog  figma:docs:read  figma:docs:search  figma:api:help  figma:api:read  figma:api:search  figma:doctor", "", "## Read and execute", "", "  figma:metadata  figma:inspect  figma:design-context  figma:motion-context  figma:variables  figma:design-system  figma:libraries  figma:run", "", "## Code Connect", "", "  figma:code-connect:help  figma:code-connect:inspect  figma:code-connect:plan  figma:code-connect:apply  figma:code-connect:verify", "", "## Assets and fallback", "", "  figma:capture  figma:assets:apply  figma:assets:download  figma:upstream:help  figma:upstream:list  figma:upstream:read  figma:upstream:call", ""].join("\n");
 }
 function formatFamilyHelp(family) {
+  if (family === "api") {
+    return [
+      "# figma:api:help",
+      "",
+      "Search and read bundled Figma Plugin API declarations with readable selectors.",
+      "",
+      `  figma:api:search <selector> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
+      "  figma:api:read <selector>",
+      "",
+      "A bare selector must be unique for read; otherwise use a qualified selector printed by search. Default output is readable TypeScript.",
+      ""
+    ].join("\n");
+  }
   return [`# figma:${family}:help`, "", ...FAMILY_COMMANDS[family].map((name) => `  figma:${name}`), ""].join("\n");
 }
 function formatCommandHelp(command) {
@@ -242008,7 +242284,7 @@ function formatCommandHelp(command) {
 
 Unknown public leaf. Use figma:help for the complete stateless command inventory.
 `;
-  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded." : command === "upstream:call" ? "\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. Calls within the response budget write a sanitized .upstream.json sidecar. An over-budget response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry." : command === "code-connect:apply" ? "\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write." : command === "code-connect:plan" ? "\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback." : command === "code-connect:verify" ? "\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : command === "docs:catalog" ? "\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments." : command === "docs:search" || command === "api:search" ? "\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "design-system" ? "\nInput JSON must contain an ordered non-empty queries array. Each query item has an entity (component, variable, or style) and one search intent; one upstream batch call is made for the complete array." : command === "assets:apply" ? "\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow." : command === "assets:download" ? "\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg." : "";
+  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded." : command === "upstream:call" ? "\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. Calls within the response budget write a sanitized .upstream.json sidecar. An over-budget response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry." : command === "code-connect:apply" ? "\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write." : command === "code-connect:plan" ? "\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback." : command === "code-connect:verify" ? "\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : command === "docs:catalog" ? "\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments." : command === "api:read" ? "\nPass a bare or qualified Plugin API selector, such as fontName, BaseNonResizableTextMixin.fontName, or figma.createFrame(). A bare selector succeeds only when it identifies one owner; otherwise the result lists qualified selectors to copy. Default output is readable TypeScript." : command === "api:search" ? "\nPass a bare, qualified, or call-shaped Plugin API selector. Results show copyable qualified selectors for figma:api:read. Out-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "docs:search" ? "\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "design-system" ? "\nInput JSON must contain an ordered non-empty queries array. Each query item has an entity (component, variable, or style) and one search intent; one upstream batch call is made for the complete array." : command === "assets:apply" ? "\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow." : command === "assets:download" ? "\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg." : "";
   return `# figma:${command}
 
 Usage: ${PUBLIC_COMMAND_USAGE[command]}${details}
@@ -242019,8 +242295,8 @@ var PUBLIC_COMMAND_USAGE = {
   "docs:catalog": `figma:docs:catalog [--task-family <family>] [--surface design|figjam|slides] [--classification active|conditional|router|examples] [--limit <${DOCS_CATALOG_LIMIT_MIN}..${DOCS_CATALOG_LIMIT_MAX}>]`,
   "docs:read": "figma:docs:read <doc-id>",
   "docs:search": `figma:docs:search <query> [--scope auto|active|conditional|router|examples|all] [--surface design|figjam|slides] [--task-family <family>] [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
-  "api:read": "figma:api:read <api-id>",
-  "api:search": `figma:api:search <symbol> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
+  "api:read": "figma:api:read <selector>",
+  "api:search": `figma:api:search <selector> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
   doctor: "figma:doctor",
   metadata: `figma:metadata (--target <Design-node-url> | --file <Design-url|key> [--node <node-id>]) [--surface design] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   inspect: `figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <${INSPECT_DEPTH_MIN}..${INSPECT_DEPTH_MAX}>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
@@ -242052,6 +242328,27 @@ function isHelp(value) {
 }
 function write(override, stderr) {
   return override ?? (stderr ? process.stderr.write.bind(process.stderr) : process.stdout.write.bind(process.stdout));
+}
+function isApiJsonFormatRequested(command, argv) {
+  if (command !== "api:read" && command !== "api:search") return false;
+  return argv.some((value, index) => value === "--format" && argv[index + 1] === "json");
+}
+function apiModeForCommand(command) {
+  return command === "api:read" ? "read" : "search";
+}
+function formatApiJsonError(error2, mode) {
+  const value = isRecord8(error2) ? error2 : {};
+  const code = typeof value.code === "string" || typeof value.code === "number" ? value.code : "FIGMA_WORKSPACE_API_USAGE_ERROR";
+  const candidates = Array.isArray(value.candidates) && value.candidates.every((candidate) => typeof candidate === "string") ? value.candidates : void 0;
+  return JSON.stringify({
+    ok: false,
+    mode,
+    error: {
+      code,
+      message: formatError3(error2),
+      ...candidates === void 0 ? {} : { candidates }
+    }
+  }, null, 2);
 }
 function formatError3(error2) {
   return error2 instanceof Error ? error2.message : String(error2);

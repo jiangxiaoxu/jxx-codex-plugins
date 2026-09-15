@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-09T09:49:48.501Z",
+  "generatedAt": "2026-09-15T03:29:42.573Z",
   "corpus": {
-    "file": "corpus-afc7b46ea84bddd89b87d2ae04317cfb8aa9df716e26a26bb8010585881108aa.jsonl",
+    "file": "corpus-4933cc6c96d75b1bb9b4af229e41420de8233e74fd5fc02daad6011e696e246f.jsonl",
     "recordCount": 87,
-    "sha256": "afc7b46ea84bddd89b87d2ae04317cfb8aa9df716e26a26bb8010585881108aa"
+    "sha256": "4933cc6c96d75b1bb9b4af229e41420de8233e74fd5fc02daad6011e696e246f"
   },
   "routeCatalog": {
     "file": "routes.json",
@@ -110,20 +110,20 @@
       "figma-use-slides/references/slide-grid.md": "97ff9486b7a648b58c958c6e6e4ab839735e6abf623cb51f9b11f044451c5374",
       "figma-use-slides/references/slide-lifecycle.md": "6518e877065762a154df90b8088936c0eec69e08950a4c38b09ce883c1588111",
       "figma-use-slides/references/slide-properties.md": "68fc190a2b5283489a925dd75cef46a7f4b437751775ef7cf28784cb7dc1f769",
-      "figma-use/SKILL.md": "48a4ad6e8a3d89d8876311dadfd2b6303ebee2f13cac7bfc37c0d0f32a71080e",
+      "figma-use/SKILL.md": "b8e47ded6a250c6d0eac328c3b7365acffe7c09e0c8ad32bf820d867a4d07ba0",
       "figma-use/references/api-reference.md": "a8ffd982332020229bce30dd66c578b19b1b8c21d48de1d6df54c46752c33a87",
       "figma-use/references/common-patterns.md": "d64a62e38c5e443faf2fa30add8c17e889d54e0c9e3b37e4d8ac57ef2bb1c063",
       "figma-use/references/component-patterns.md": "6f45b41829970de09324ad90fa0ef75d101ea949a99dc6a0735b9b9743d985a7",
       "figma-use/references/effect-style-patterns.md": "624aad513d0d2373d990fa55d14e8dd98949c0651a02e0f077fd69e253a3fbbc",
       "figma-use/references/gotchas.md": "f91b9fecec1d672e3a460accce597bd68ff81cbb9fb9371728219c6f151ca4c7",
       "figma-use/references/plugin-api-patterns.md": "6d4f341f4390de44ed0c316943636d4bccc399fc6077d6a22ccd79a57b15d937",
-      "figma-use/references/plugin-api-standalone.index.md": "69aa60f8bd1324fdfb5574f22654c6f113a7217ec81df9c483b5732f34082d2c",
+      "figma-use/references/plugin-api-standalone.index.md": "59e50b3cb1ac82c0a974a3adc345bd0874f6aaa37685062575dfe74cae46f46f",
       "figma-use/references/text-style-patterns.md": "3af98382a5b2af976d593f59d8d26578914c6fbfff67e1c01364bfabe86af454",
       "figma-use/references/validation-and-recovery.md": "e44d87e9d9e7b221a96c08d885811ec7530d2543cc93ed9ef0a05585f73f0c01",
       "figma-use/references/variable-patterns.md": "c8cef34af2b91dfca4bccaac3578b17bd100d94406936e3883fd0e7a1c57debd",
       "figma-use/references/working-with-design-systems/wwds-components--creating.md": "fe077420c10ee150c9bdeb81e35f98bb90709a0bfc9aaa1027c7870a1249b385",
       "figma-use/references/working-with-design-systems/wwds-components--using.md": "2d101f683b062d744f97a2b0c456b622f37b4b983fcc9b660431a59857cd5c7a",
-      "figma-use/references/working-with-design-systems/wwds-components.md": "99b755b0e0d91028564d87d43aab1b6a00725af0a5cd4ef655fec710fdf3ce77",
+      "figma-use/references/working-with-design-systems/wwds-components.md": "2217671b5aa457bdd7b1164ce273b5bde12a4f0cad19a65cb2e81f1636181185",
       "figma-use/references/working-with-design-systems/wwds-effect-styles.md": "cdeec890d06c650d7fd6ca420ea23effce74599cae006434ecafd58870978e48",
       "figma-use/references/working-with-design-systems/wwds-text-styles.md": "948565a9483f7bb4cfb9bba59e7e8cfdb7046e4aaa75d01419ab715f902ef1e4",
       "figma-use/references/working-with-design-systems/wwds-variables--creating.md": "59c259fe057c779dcb960356608394f604909ab8d033bf2697c5299a942d4bb9",

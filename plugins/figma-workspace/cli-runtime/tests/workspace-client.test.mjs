@@ -857,7 +857,8 @@ test("lookup clamps integer bounds and reports effective parameters without warn
   try {
     const result = await current.lookup({
       kind: "api",
-      symbol: "figma.createFrame",
+      mode: "search",
+      selector: "figma.createFrame",
       maxResults: 0,
       maxSnippetLines: 99,
     });
@@ -881,7 +882,8 @@ test("lookup clamps integer bounds and reports effective parameters without warn
     assert.equal("warnings" in result, false);
     const inRange = await current.lookup({
       kind: "api",
-      symbol: "figma.createFrame",
+      mode: "search",
+      selector: "figma.createFrame",
       maxResults: 5,
       maxSnippetLines: 5,
     });
@@ -901,7 +903,7 @@ test("lookup clamps integer bounds and reports effective parameters without warn
     );
     assert.ok(docsResult.results.every((entry) => entry.snippet.split("\n").length <= 1));
     await assert.rejects(
-      current.lookup({ kind: "api", symbol: "createFrame", maxSnippetLines: 3.5 }),
+      current.lookup({ kind: "api", mode: "search", selector: "createFrame", maxSnippetLines: 3.5 }),
       /safe integer/iu,
     );
   } finally {
@@ -941,28 +943,45 @@ test("docs catalog clamps its display limit and reports the supported range", as
   }
 });
 
-test("API lookup closes the exact search and read loop through apiId", async () => {
+test("API lookup uses readable selectors and reports ambiguity without index details", async () => {
   const current = createFigmaWorkspaceClient({ client: fakeUpstream([]) });
   try {
-    const search = await current.lookup({ kind: "api", symbol: "figma.createFrame" });
-    const apiId = search.results.find((result) => result.apiId)?.apiId;
-    assert.ok(apiId);
-    assert.equal(search.nextActions[0].commandId, "figma:api:read");
-    assert.equal(search.nextActions[0].args.id, apiId);
+    const search = await current.lookup({ kind: "api", mode: "search", selector: "figma.createFrame()" });
+    assert.deepEqual(search.results.map((result) => result.selector), ["PluginAPI.createFrame"]);
+    assert.equal("nextActions" in search, false);
+    assert.equal("apiId" in search.results[0], false);
+    assert.equal("lineStart" in search.results[0], false);
+    assert.equal("lineEnd" in search.results[0], false);
 
-    const read = await current.lookup({ kind: "api", apiId });
+    const read = await current.lookup({ kind: "api", mode: "read", selector: "figma.createFrame" });
     assert.equal(read.ok, true);
     assert.equal(read.mode, "read");
-    assert.equal(read.declaration.apiId, apiId);
-    assert.equal(read.declaration.kind, "api");
-    assert.match(read.declaration.content, /createFrame/u);
-    assert.doesNotMatch(read.declaration.content, /createComponent/u);
-    assert.equal(read.declaration.source.package, "@figma/plugin-typings");
+    assert.equal(read.declarations.length, 1);
+    assert.equal(read.declarations[0].selector, "PluginAPI.createFrame");
+    assert.equal(read.declarations[0].kind, "api");
+    assert.match(read.declarations[0].content, /createFrame/u);
+    assert.doesNotMatch(read.declarations[0].content, /createComponent/u);
+    assert.equal(read.declarations[0].source.package, "@figma/plugin-typings");
+    assert.equal("apiId" in read.declarations[0], false);
+    assert.equal("ownerSymbol" in read.declarations[0], false);
+    assert.equal("qualifiedAliases" in read.declarations[0], false);
+    assert.equal("contentSha256" in read.declarations[0], false);
+    assert.equal("file" in read.declarations[0].source, false);
+    assert.equal("declarationLine" in read.declarations[0].source, false);
     assert.equal("results" in read, false);
 
     await assert.rejects(
-      current.lookup({ kind: "api", apiId: "api:missing" }),
-      /Unknown Figma Plugin API id/iu,
+      current.lookup({ kind: "api", mode: "read", selector: "fontName" }),
+      (error) => error?.code === "FIGMA_WORKSPACE_API_SELECTOR_AMBIGUOUS"
+        && error.candidates?.includes("BaseNonResizableTextMixin.fontName"),
+    );
+    const overloads = await current.lookup({ kind: "api", mode: "read", selector: "PluginAPI.on()" });
+    assert.ok(overloads.declarations.length > 1);
+    assert.ok(overloads.declarations.every((declaration) => declaration.selector === "PluginAPI.on"));
+
+    await assert.rejects(
+      current.lookup({ kind: "api", mode: "read", selector: "api:missing" }),
+      (error) => error?.code === "FIGMA_WORKSPACE_API_SELECTOR_INVALID",
     );
   } finally {
     await current.close();

@@ -4,7 +4,7 @@ This is reference material for local `.figma.ts` workflows. It is not a routable
 
 Create a reviewed local `.figma.ts` file in the shell, then execute it with `figma:run -- --file <URL|fileKey> --surface <design|figjam|slides> --script <path/to/script.figma.ts>`. Use `--source -` only when the shell deliberately provides TypeScript on stdin. Every Plugin API transaction, including a small bounded one, uses `figma:run`. Use first-class commands for context and artifacts: `figma:metadata`, `figma:design-context`, `figma:motion-context`, `figma:variables`, `figma:design-system`, `figma:libraries`, `figma:assets:apply`, `figma:assets:download`, and `figma:capture`.
 
-Use `figma:api:search` for exact Plugin API symbols and signatures. The curated `references/plugin-api-standalone.index.md` record is supplementary orientation, not a declaration-file entrypoint. Start design-system work with `references/working-with-design-systems/wwds.md`.
+Use `figma:api:search <selector>` for exact Plugin API symbols and signatures. The lookup output is human-readable; if a bare selector is ambiguous, pass a qualified selector from search (for example, `BaseNonResizableTextMixin.fontName`) to `figma:api:read <selector>`. The curated `references/plugin-api-standalone.index.md` record is supplementary orientation, not a declaration-file entrypoint. Start design-system work with `references/working-with-design-systems/wwds.md`.
 
 ## 1. Critical Rules
 

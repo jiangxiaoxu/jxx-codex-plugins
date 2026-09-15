@@ -103,7 +103,7 @@ test("canonical v2 catalog closes the exact id read loop", () => {
   }
 });
 
-test("Plugin API index closes the exact apiId read loop without path fallback", async () => {
+test("Plugin API index reads qualified selectors without exposing index implementation details", async () => {
   const matches = await docs.searchReferenceFiles({
     query: "ShapeWithTextNode.shapeType",
     corpus: "api",
@@ -111,26 +111,36 @@ test("Plugin API index closes the exact apiId read loop without path fallback", 
     maxResults: 5,
     maxSnippetLines: 5,
   });
-  const apiId = matches.results.find((result) => result.apiId)?.apiId;
-  assert.ok(apiId);
-  const declaration = docs.readFigmaWorkspacePluginApiDeclaration(apiId);
-  assert.equal(declaration.apiId, apiId);
+  assert.deepEqual(matches.results.map((result) => result.selector), ["ShapeWithTextNode.shapeType"]);
+  const [declaration] = docs.readFigmaWorkspacePluginApiDeclarations("ShapeWithTextNode.shapeType");
+  assert.equal(declaration.selector, "ShapeWithTextNode.shapeType");
   assert.equal(declaration.kind, "api");
   assert.match(declaration.content, /shapeType:/u);
   assert.match(declaration.content, /'INTERNAL_STORAGE'/u);
   assert.doesNotMatch(declaration.content, /readonly text: TextSublayerNode/u);
-  assert.ok(declaration.source.lineEnd > declaration.source.declarationLine);
   assert.equal(declaration.source.package, "@figma/plugin-typings");
+  assert.equal(typeof declaration.source.version, "string");
+  for (const value of [...matches.results, declaration, declaration.source]) {
+    assert.equal(Object.hasOwn(value, "apiId"), false);
+    assert.equal(Object.hasOwn(value, "ownerHint"), false);
+    assert.equal(Object.hasOwn(value, "ownerMatch"), false);
+    assert.equal(Object.hasOwn(value, "ownerSymbol"), false);
+    assert.equal(Object.hasOwn(value, "qualifiedAliases"), false);
+    assert.equal(Object.hasOwn(value, "contentSha256"), false);
+    assert.equal(Object.hasOwn(value, "file"), false);
+    assert.equal(Object.hasOwn(value, "declarationLine"), false);
+    assert.equal(Object.hasOwn(value, "lineStart"), false);
+    assert.equal(Object.hasOwn(value, "lineEnd"), false);
+  }
 
-  for (const invalidId of [
-    "@figma/plugin-typings/plugin-api.d.ts:1:createFrame",
-    "api:../plugin-api.d.ts",
-    "api:C:/plugin-api.d.ts",
-    "api:missing",
+  for (const invalidSelector of [
+    "api:@figma/plugin-typings/plugin-api.d.ts:1:createFrame",
+    "../plugin-api.d.ts",
+    "figma.createFrame(value)",
   ]) {
     assert.throws(
-      () => docs.readFigmaWorkspacePluginApiDeclaration(invalidId),
-      /figma:api:search/u,
+      () => docs.readFigmaWorkspacePluginApiDeclarations(invalidSelector),
+      (error) => error?.code === "FIGMA_WORKSPACE_API_SELECTOR_INVALID",
     );
   }
 });
@@ -291,28 +301,8 @@ test("Markdown search ranks labels and prose without indexing link destinations"
   assert.deepEqual(logicalPathOnly.results, []);
 });
 
-test("Plugin API lookup supports qualified aliases without blind unknown-owner exact matches", async () => {
-  for (const [query, normalizedSymbol] of [
-    ["createFrame", "createFrame"],
-    ["figma.createFrame()", "createFrame"],
-    ["PluginAPI.createFrame", "createFrame"],
-    ["ComponentNode.createInstance", "createInstance"],
-    ["figma.variables.createVariableCollection", "createVariableCollection"],
-  ]) {
-    const matches = await docs.searchReferenceFiles({
-      query,
-      corpus: "api",
-      exactSymbol: true,
-      maxResults: 5,
-      maxSnippetLines: 8,
-    });
-    assert.equal(matches.normalizedSymbol, normalizedSymbol);
-    const exact = matches.results.find((result) => result.matchType === "exact-symbol");
-    assert.ok(exact, query);
-    if (query.includes(".")) assert.equal(exact.ownerMatch, true, query);
-  }
-
-  for (const [query, expectedTitle] of [
+test("Plugin API lookup exposes readable selectors and resolves aliases, ambiguity, and overloads", async () => {
+  for (const [query, expectedSelector] of [
     ["figma.createFrame()", "PluginAPI.createFrame"],
     ["PluginAPI.createFrame", "PluginAPI.createFrame"],
     ["ComponentNode.createInstance", "ComponentNode.createInstance"],
@@ -325,63 +315,61 @@ test("Plugin API lookup supports qualified aliases without blind unknown-owner e
       maxResults: 5,
       maxSnippetLines: 5,
     });
-    assert.deepEqual(matches.results.map((result) => result.title), [expectedTitle], query);
+    assert.deepEqual(matches.results.map((result) => result.selector), [expectedSelector], query);
     assert.equal(matches.results[0].matchType, "exact-symbol", query);
-    assert.equal(matches.results[0].ownerMatch, true, query);
   }
 
-  const unknownOwner = await docs.searchReferenceFiles({
-    query: "UnknownOwner.createFrame",
+  const ambiguous = await docs.searchReferenceFiles({
+    query: "fontName",
     corpus: "api",
     exactSymbol: true,
-    maxResults: 5,
+    maxResults: 10,
     maxSnippetLines: 5,
   });
-  assert.equal(unknownOwner.normalizedSymbol, "createFrame");
-  assert.equal(unknownOwner.results.some((result) => result.matchType === "exact-symbol"), false);
+  assert.deepEqual(
+    [...new Set(ambiguous.results.map((result) => result.selector))].sort(),
+    [
+      "BaseNonResizableTextMixin.fontName",
+      "Font.fontName",
+      "StyledTextSegment.fontName",
+      "TextStyle.fontName",
+    ].sort(),
+  );
+  assert.equal(new Set(ambiguous.results.map((result) => result.selector)).size, ambiguous.results.length);
+  for (const result of ambiguous.results) {
+    assert.equal(typeof result.selector, "string");
+    assert.match(result.selector, /\.fontName$/u);
+    assert.equal(typeof result.declarationKind, "string");
+    assert.equal(Object.hasOwn(result, "lineStart"), false);
+    assert.equal(Object.hasOwn(result, "lineEnd"), false);
+    assert.equal(Object.hasOwn(result, "title"), false);
+    assert.equal(Object.hasOwn(result, "classification"), false);
+  }
 
-  const knownOwnerFallback = await docs.searchReferenceFiles({
-    query: "SceneNode.clone",
-    corpus: "api",
-    exactSymbol: true,
-    maxResults: 5,
-    maxSnippetLines: 5,
-  });
-  const fallbackExact = knownOwnerFallback.results.find((result) => result.matchType === "exact-symbol");
-  assert.ok(fallbackExact);
-  assert.equal(fallbackExact.ownerMatch, false);
-  assert.equal(fallbackExact.confidence, "medium");
-  assert.ok(knownOwnerFallback.results
-    .filter((result) => result.matchType === "exact-symbol")
-    .every((result) => result.ownerMatch === false && result.confidence !== "high"));
+  const overloads = docs.readFigmaWorkspacePluginApiDeclarations("PluginAPI.on()");
+  assert.ok(overloads.length > 1);
+  assert.ok(overloads.every((declaration) => declaration.selector === "PluginAPI.on"));
 
-  const caseMismatch = await docs.searchReferenceFiles({
-    query: "CreateFrame",
-    corpus: "api",
-    exactSymbol: true,
-    maxResults: 5,
-    maxSnippetLines: 5,
-  });
-  assert.equal(caseMismatch.results.some((result) => result.matchType === "exact-symbol"), false);
-
-  const memberAsOwner = await docs.searchReferenceFiles({
-    query: "createFrame.createRectangle",
-    corpus: "api",
-    exactSymbol: true,
-    maxResults: 5,
-    maxSnippetLines: 5,
-  });
-  assert.equal(memberAsOwner.results.some((result) => result.matchType === "exact-symbol"), false);
-
-  const missingDeclaration = await docs.searchReferenceFiles({
-    query: "SceneNode.screenshot",
-    corpus: "api",
-    exactSymbol: true,
-    maxResults: 5,
-    maxSnippetLines: 5,
-  });
-  assert.equal(missingDeclaration.normalizedSymbol, "screenshot");
-  assert.equal(missingDeclaration.results.some((result) => result.matchType === "exact-symbol"), false);
+  assert.throws(
+    () => docs.readFigmaWorkspacePluginApiDeclarations("fontName"),
+    (error) => error?.code === "FIGMA_WORKSPACE_API_SELECTOR_AMBIGUOUS"
+      && error.candidates?.includes("BaseNonResizableTextMixin.fontName")
+      && error.candidates?.every((candidate) => !candidate.includes(":")),
+  );
+  assert.throws(
+    () => docs.readFigmaWorkspacePluginApiDeclarations("UnknownOwner.createFrame"),
+    (error) => error?.code === "FIGMA_WORKSPACE_API_SELECTOR_NOT_FOUND",
+  );
+  await assert.rejects(
+    docs.searchReferenceFiles({
+      query: "UnknownOwner.createFrame",
+      corpus: "api",
+      exactSymbol: true,
+      maxResults: 5,
+      maxSnippetLines: 5,
+    }),
+    (error) => error?.code === "FIGMA_WORKSPACE_API_SELECTOR_NOT_FOUND",
+  );
 });
 
 test("search applies one 12 KB UTF-8 snippet budget without a per-result byte cap", async () => {
@@ -424,18 +412,35 @@ test("search applies one 12 KB UTF-8 snippet budget without a per-result byte ca
   }
 });
 
-test("every guidance Plugin API lookup query resolves to a declaration", async () => {
+test("guidance Plugin API lookup queries keep search and read selector resolution consistent", async () => {
   const queries = new Set(guidance.FIGMA_WORKSPACE_API_CARDS.flatMap((card) =>
     card.apiReferences.map((reference) => reference.lookupQuery)));
   assert.ok(queries.size > 0);
   for (const query of queries) {
-    const matches = await docs.searchReferenceFiles({
+    const options = {
       query,
       corpus: "api",
       exactSymbol: true,
       maxResults: 5,
       maxSnippetLines: 3,
-    });
-    assert.ok(matches.results.some((result) => result.matchType === "exact-symbol"), query);
+    };
+    let matches;
+    try {
+      matches = await docs.searchReferenceFiles(options);
+    } catch (error) {
+      assert.equal(error?.code, "FIGMA_WORKSPACE_API_SELECTOR_NOT_FOUND", query);
+      assert.throws(
+        () => docs.readFigmaWorkspacePluginApiDeclarations(query),
+        (readError) => readError?.code === "FIGMA_WORKSPACE_API_SELECTOR_NOT_FOUND",
+        query,
+      );
+      continue;
+    }
+    const declarations = docs.readFigmaWorkspacePluginApiDeclarations(query);
+    assert.ok(declarations.length > 0, query);
+    assert.ok(
+      matches.results.some((result) => result.selector === declarations[0].selector),
+      query,
+    );
   }
 });

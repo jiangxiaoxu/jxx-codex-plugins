@@ -142,12 +142,13 @@ export interface FigmaWorkspaceLookupArguments {
   [key: string]: unknown;
   title?: string;
   kind: "docs" | "api";
+  mode?: "search" | "read";
   scope?: FigmaWorkspaceDocsLookupScope;
   surface?: FigmaWorkspaceSurface;
   taskFamily?: FigmaWorkspaceTaskFamily;
   query?: string;
   symbol?: string;
-  apiId?: string;
+  selector?: string;
   maxResults?: number;
   maxSnippetLines?: number;
 }
@@ -346,29 +347,39 @@ export function asGetLibrariesArgs(value: unknown): FigmaWorkspaceGetLibrariesAr
 export function asLookupArgs(value: unknown): FigmaWorkspaceLookupArguments {
   const args = parse<FigmaWorkspaceLookupArguments>(value);
   enumeration(args, "kind", ["docs", "api"]);
+  enumeration(args, "mode", ["search", "read"]);
   enumeration(args, "scope", DOC_SCOPES);
   enumeration(args, "surface", SURFACES);
   enumeration(args, "taskFamily", TASK_FAMILIES);
-  strings(args, ["title", "query", "symbol", "apiId"]);
+  strings(args, ["title", "query", "symbol", "selector"]);
   clampableInteger(args, "maxResults");
   clampableInteger(args, "maxSnippetLines");
-  allowed(args, ["title", "kind", "scope", "surface", "taskFamily", "query", "symbol", "apiId", "maxResults", "maxSnippetLines"]);
-  if (args.apiId !== undefined) {
+  allowed(args, ["title", "kind", "mode", "scope", "surface", "taskFamily", "query", "symbol", "selector", "maxResults", "maxSnippetLines"]);
+  if (args.kind === "api") {
+    if (args.mode === undefined) {
+      throw new FigmaWorkspaceToolArgumentError('API lookup requires "mode" to be search or read.');
+    }
+    if (!args.selector?.trim()) {
+      throw new FigmaWorkspaceToolArgumentError('API lookup requires a non-empty "selector".');
+    }
     if (
-      args.kind !== "api"
-      || args.query !== undefined
+      args.query !== undefined
       || args.symbol !== undefined
       || args.scope !== undefined
       || args.surface !== undefined
       || args.taskFamily !== undefined
-      || args.maxResults !== undefined
-      || args.maxSnippetLines !== undefined
     ) {
-      throw new FigmaWorkspaceToolArgumentError('Tool argument "apiId" is exclusive to an exact API read.');
+      throw new FigmaWorkspaceToolArgumentError('API lookup accepts only "mode", "selector", and search display limits.');
+    }
+    if (args.mode === "read" && (args.maxResults !== undefined || args.maxSnippetLines !== undefined)) {
+      throw new FigmaWorkspaceToolArgumentError('API read does not accept search display limits.');
     }
     return args;
   }
-  if (args.kind === "docs") args.scope ??= "auto";
+  if (args.mode !== undefined || args.selector !== undefined) {
+    throw new FigmaWorkspaceToolArgumentError('Docs lookup does not accept API "mode" or "selector".');
+  }
+  args.scope ??= "auto";
   return args;
 }
 

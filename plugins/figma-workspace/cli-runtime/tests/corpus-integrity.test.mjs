@@ -104,10 +104,10 @@ test("runtime docs and API lookup succeed without any upstream raw snapshot", as
     assert.match(docs.stdout, /^Status: succeeded$/mu);
     assert.match(docs.stdout, /loadFontAsync/u);
 
-    const api = runLookup(fixture.root, { kind: "api", symbol: "createFrame", maxResults: 3 });
+    const api = runLookup(fixture.root, { kind: "api", mode: "search", selector: "createFrame", maxResults: 3 });
     assert.equal(api.status, 0, api.stderr);
-    assert.match(api.stdout, /^Status: succeeded$/mu);
-    assert.match(api.stdout, /@figma\/plugin-typings|createFrame/u);
+    assert.match(api.stdout, /^# Figma Plugin API search: createFrame$/mu);
+    assert.match(api.stdout, /Read: figma:api:read PluginAPI\.createFrame/u);
 
     const doctor = runDoctor(fixture.root);
     assert.equal(doctor.status, 0, doctor.stderr);
@@ -186,15 +186,17 @@ test("doctor reports generated API index integrity failures", async () => {
     assert.match(result.stdout, /^Status: observed unhealthy$/mu);
     assert.match(result.stdout, /API index record SHA-256 mismatch/u);
 
-    const searchFailure = runLookup(fixture.root, { kind: "api", symbol: "createFrame" });
+    const searchFailure = runLookup(fixture.root, { kind: "api", mode: "search", selector: "createFrame" });
     assert.equal(searchFailure.status, 1, searchFailure.stderr);
-    assert.match(searchFailure.stdout, /"mode": "search"/u);
-    assert.match(searchFailure.stdout, /"results": \[\]/u);
+    assert.match(searchFailure.stdout, /^# Figma Plugin API search: createFrame$/mu);
+    assert.match(searchFailure.stdout, /Error: FIGMA_WORKSPACE_LOOKUP_CORPUS_UNAVAILABLE:/u);
+    assert.doesNotMatch(searchFailure.stdout, /"mode"|"results"/u);
 
-    const readFailure = runLookup(fixture.root, { kind: "api", apiId: `api:${records[0].id}` });
+    const readFailure = runLookup(fixture.root, { kind: "api", mode: "read", selector: "PluginAPI.createFrame" });
     assert.equal(readFailure.status, 1, readFailure.stderr);
-    assert.match(readFailure.stdout, /"mode": "read"/u);
-    assert.doesNotMatch(readFailure.stdout, /"results"/u);
+    assert.match(readFailure.stdout, /^# Figma Plugin API read: PluginAPI\.createFrame$/mu);
+    assert.match(readFailure.stdout, /Error: FIGMA_WORKSPACE_LOOKUP_CORPUS_UNAVAILABLE:/u);
+    assert.doesNotMatch(readFailure.stdout, /"mode"|"results"/u);
   });
 });
 

@@ -1,6 +1,6 @@
 # Figma Workspace Route And Lookup Reference
 
-Use this static reference to route task documentation and Plugin API questions. Public help and returned IDs define the exact CLI contract.
+Use this static reference to route task documentation and Plugin API questions. Public help defines the exact CLI contract.
 
 ## Route Intent
 
@@ -36,6 +36,7 @@ Use this static reference to route task documentation and Plugin API questions. 
 
 ## Look Up Plugin API
 
-- Run `figma:api:search -- <symbol>` for generated Plugin API declarations. It accepts bare, qualified, and call-shaped queries such as `createFrame`, `figma.createFrame()`, and `ComponentNode.createInstance`.
-- Search results return stable `apiId` values. Search has no per-snippet byte cap; one 12000-byte UTF-8 budget applies across returned snippets, with any truncation reported in `snippetBudget`. Run `figma:api:read -- <api-id>` when the full declaration record is needed.
+- Run `figma:api:search -- <selector>` for generated Plugin API declarations. It accepts one bare, qualified, or call-shaped selector such as `createFrame`, `figma.createFrame()`, or `ComponentNode.createInstance`.
+- The default search and read output is human-readable. If a bare selector is ambiguous, search prints qualified selectors such as `BaseNonResizableTextMixin.fontName`; pass one to `figma:api:read -- <selector>`. Members with overloads are read together for the selected owner.
+- API lookup does not require or expose declaration-file paths, source line numbers, or opaque IDs.
 - Do not substitute a guessed typings file path or full internal index for the public search/read loop.

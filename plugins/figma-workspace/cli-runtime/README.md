@@ -2,16 +2,18 @@
 
 This private Node package builds the checked-in CLI/runtime artifacts used by the Figma Workspace plugin. It keeps the official Figma remote MCP behind the CLI transport, does not register a local MCP server, and exposes no supported typed import facade.
 
-The public 0.6.4 agent contract is a stateless set of fixed `figma:*` leaf commands. Commands that require a Figma file or node target receive it explicitly; targetless `figma:upstream:list` and `figma:upstream:read` do not inherit one, and `figma:upstream:call` follows its live schema. `list` and `read` can report local first-class `coverage`, but never reject a covered direct call. Shell orchestration owns local `.figma.ts` script creation for native Plugin API work; Code Connect mappings use the dedicated workflow below. The [plugin README](../README.md) and generated command help own the public contract. From the plugin root, use:
+The public 0.6.5 agent contract is a stateless set of fixed `figma:*` leaf commands. Commands that require a Figma file or node target receive it explicitly; targetless `figma:upstream:list` and `figma:upstream:read` do not inherit one, and `figma:upstream:call` follows its live schema. `list` and `read` can report local first-class `coverage`, but never reject a covered direct call. Shell orchestration owns local `.figma.ts` script creation for native Plugin API work; Code Connect mappings use the dedicated workflow below. The [plugin README](../README.md) and generated command help own the public contract. From the plugin root, use:
 
 ```text
 npm --silent run figma:help
 npm --silent run figma:api:search -- "figma.createFrame"
-npm --silent run figma:api:read -- "<api-id-from-search>"
+npm --silent run figma:api:read -- "BaseNonResizableTextMixin.fontName"
 npm --silent run figma:run -- --help
 ```
 
-Catalog accepts `--limit <1..100>`. Search accepts `--limit <1..10>` and `--snippet-lines <1..16>`. These display-oriented limits clamp safe out-of-range integers with a `parameterAdjustments` notice. Traversal depth, pagination offset, capture dimensions, and remote inline-result bytes remain strict and publish their accepted ranges in leaf help. Search applies one 12000-byte UTF-8 budget across returned snippets and does not cap individual snippets before that aggregate budget.
+`figma:api:search <selector>` and `figma:api:read <selector>` each take one readable selector. A unique bare symbol can be read directly; when a bare symbol is ambiguous, search prints qualified selectors (for example, `BaseNonResizableTextMixin.fontName`) to use with `read`. Overloads belonging to the selected owner are returned together. Output is human-readable. API lookup does not require or expose declaration-file paths, source line numbers, or opaque IDs. Read each command's `--help` for display options and limits.
+
+Catalog accepts `--limit <1..100>`. Search display limits clamp safe out-of-range integers with a `parameterAdjustments` notice. Traversal depth, pagination offset, capture dimensions, and remote inline-result bytes remain strict and publish their accepted ranges in leaf help.
 
 Code Connect is a Design-only, manifest-driven workflow: `figma:code-connect:inspect`, `figma:code-connect:plan --input <manifest.json|->`, `figma:code-connect:apply --plan <path> --confirm-plan <planDigest>`, then `figma:code-connect:verify --plan <path>`. It supports simple mappings only, rejects template fields, and uses immutable digest-bound plans with stale-snapshot checks. `apply` is the only write; after `outcome_unknown`, verify before retrying.
 
