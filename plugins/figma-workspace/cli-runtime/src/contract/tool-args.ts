@@ -13,8 +13,24 @@ export const DOCS_CATALOG_LIMIT_MIN = 1;
 export const DOCS_CATALOG_LIMIT_MAX = 100;
 export const CAPTURE_MAX_DIMENSION_MIN = 1;
 export const CAPTURE_MAX_DIMENSION_MAX = 65_536;
-export const INSPECT_DEPTH_MIN = 1;
+export const INSPECT_DEPTH_MIN = 0;
 export const INSPECT_DEPTH_MAX = Number.MAX_SAFE_INTEGER;
+export const FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS = [
+  "name",
+  "visible",
+  "x",
+  "y",
+  "width",
+  "height",
+  "locked",
+  "layoutMode",
+  "layoutPositioning",
+  "characters",
+] as const;
+export type FigmaWorkspaceInspectField = (typeof FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS)[number];
+export const DEFAULT_FIGMA_WORKSPACE_INSPECT_FIELDS: readonly FigmaWorkspaceInspectField[] = [
+  ...FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS,
+];
 export const LIBRARIES_OFFSET_MIN = 0;
 export const LIBRARIES_OFFSET_MAX = Number.MAX_SAFE_INTEGER;
 export const INLINE_RESULT_LIMIT_MIN = 0;
@@ -163,6 +179,8 @@ export interface FigmaWorkspaceInspectArguments extends InvocationArguments {
   target?: FigmaWorkspaceNodeTarget;
   nodeId?: string;
   depth?: number;
+  cursor?: string;
+  fields?: FigmaWorkspaceInspectField[];
 }
 
 export interface FigmaWorkspaceUpstreamToolsArguments {
@@ -259,16 +277,46 @@ export function asCaptureNodeArgs(value: unknown): FigmaWorkspaceCaptureNodeArgu
 
 export function asInspectArgs(value: unknown): FigmaWorkspaceInspectArguments {
   const args = parse<FigmaWorkspaceInspectArguments>(value);
-  strings(args, ["title", "file", "outputDir", "nodeId"]);
+  strings(args, ["title", "file", "outputDir", "nodeId", "cursor"]);
   invocation(args);
   target(args.target, "target");
   target(args.nodeId, "nodeId");
   enumeration(args, "mode", ["inspect", "style"]);
   integer(args, "depth", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX);
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "mode", "target", "nodeId", "depth"]);
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "mode", "target", "nodeId", "depth", "cursor", "fields"]);
+  if (args.cursor !== undefined && !args.cursor.trim()) {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "cursor" must be a non-empty string.');
+  }
+  if (args.fields !== undefined) {
+    args.fields = normalizeFigmaWorkspaceInspectFields(args.fields);
+  }
+  if (args.mode === "style") {
+    if (args.depth === 0) {
+      throw new FigmaWorkspaceToolArgumentError('figma:inspect mode "style" requires depth from 1 to 9007199254740991.');
+    }
+    if (args.cursor !== undefined || args.fields !== undefined) {
+      throw new FigmaWorkspaceToolArgumentError('figma:inspect mode "style" does not accept "cursor" or "fields".');
+    }
+  }
   normalizeNodeAlias(args);
   requireStableNodeTarget(args, "figma:inspect");
   return args;
+}
+
+export function normalizeFigmaWorkspaceInspectFields(value: unknown): FigmaWorkspaceInspectField[] {
+  if (!Array.isArray(value) || value.length === 0 || value.some((field) => typeof field !== "string")) {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "fields" must be a non-empty array of inspect field names.');
+  }
+  const fields = value as string[];
+  const unknown = fields.filter((field) => !(FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS as readonly string[]).includes(field));
+  if (unknown.length > 0) {
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "fields" supports only: ${FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.join(", ")}.`);
+  }
+  if (new Set(fields).size !== fields.length) {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "fields" must not repeat a field.');
+  }
+  const selected = new Set(fields);
+  return FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.filter((field) => selected.has(field));
 }
 
 export function asCallUpstreamToolArgs(value: unknown): FigmaWorkspaceCallUpstreamToolArguments {

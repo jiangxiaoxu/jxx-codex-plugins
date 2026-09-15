@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-15T03:29:42.573Z",
+  "generatedAt": "2026-09-15T03:45:45.590Z",
   "corpus": {
-    "file": "corpus-4933cc6c96d75b1bb9b4af229e41420de8233e74fd5fc02daad6011e696e246f.jsonl",
+    "file": "corpus-596c14dd669d91a641e54b3db3393305fb8565e3413f496978a61cb5ce866ce0.jsonl",
     "recordCount": 87,
-    "sha256": "4933cc6c96d75b1bb9b4af229e41420de8233e74fd5fc02daad6011e696e246f"
+    "sha256": "596c14dd669d91a641e54b3db3393305fb8565e3413f496978a61cb5ce866ce0"
   },
   "routeCatalog": {
     "file": "routes.json",
@@ -86,7 +86,7 @@
       "figma-swiftui/SKILL.md": "c0797cb8da398960e0fb0430c2bcbfa548ff2504e71dbddac9c96951509bd227",
       "figma-swiftui/references/code-to-design.md": "f819f8382de48d488fdbbcef3ed0a95b4637abd889d3ec5caa453ccdf10eb31c",
       "figma-swiftui/references/design-to-code.md": "e289dd04c23df5a2e225cbcb4d3a4056ffcb4efbcfbe9b680e73bc2ec0a3358c",
-      "figma-use-figjam/SKILL.md": "29c45e4bbe6365ff337a9628389bf20f3226639008490766a932f8c93b54907b",
+      "figma-use-figjam/SKILL.md": "b9160b2a596613665ce8d26f8bd1d19fb6743edaf9c166ba05a7a5c2a2e23fdc",
       "figma-use-figjam/references/batch-modify.md": "951723047762033a6432c7c0edb6254b0fd068e1dd2a0a5117e96eab570a140e",
       "figma-use-figjam/references/create-code-block.md": "bbb78b255caf719d7f387edd2a072a200654e76bd8bc9544be9382de9617aed6",
       "figma-use-figjam/references/create-connector.md": "8e9544d972f8bb0818d88cb46fe07964019760c91389228281a684197da70c10",
@@ -110,7 +110,7 @@
       "figma-use-slides/references/slide-grid.md": "97ff9486b7a648b58c958c6e6e4ab839735e6abf623cb51f9b11f044451c5374",
       "figma-use-slides/references/slide-lifecycle.md": "6518e877065762a154df90b8088936c0eec69e08950a4c38b09ce883c1588111",
       "figma-use-slides/references/slide-properties.md": "68fc190a2b5283489a925dd75cef46a7f4b437751775ef7cf28784cb7dc1f769",
-      "figma-use/SKILL.md": "b8e47ded6a250c6d0eac328c3b7365acffe7c09e0c8ad32bf820d867a4d07ba0",
+      "figma-use/SKILL.md": "1e63b1fa4f1cf23101549c2f37c4b29be4259e9a43e3e9e1447f6fa07b5ae581",
       "figma-use/references/api-reference.md": "a8ffd982332020229bce30dd66c578b19b1b8c21d48de1d6df54c46752c33a87",
       "figma-use/references/common-patterns.md": "d64a62e38c5e443faf2fa30add8c17e889d54e0c9e3b37e4d8ac57ef2bb1c063",
       "figma-use/references/component-patterns.md": "6f45b41829970de09324ad90fa0ef75d101ea949a99dc6a0735b9b9743d985a7",
@@ -119,11 +119,11 @@
       "figma-use/references/plugin-api-patterns.md": "6d4f341f4390de44ed0c316943636d4bccc399fc6077d6a22ccd79a57b15d937",
       "figma-use/references/plugin-api-standalone.index.md": "59e50b3cb1ac82c0a974a3adc345bd0874f6aaa37685062575dfe74cae46f46f",
       "figma-use/references/text-style-patterns.md": "3af98382a5b2af976d593f59d8d26578914c6fbfff67e1c01364bfabe86af454",
-      "figma-use/references/validation-and-recovery.md": "e44d87e9d9e7b221a96c08d885811ec7530d2543cc93ed9ef0a05585f73f0c01",
+      "figma-use/references/validation-and-recovery.md": "fa58b27bf376710609ccfaca40ee4fa3469e5d17265627d1115babd5269f7467",
       "figma-use/references/variable-patterns.md": "c8cef34af2b91dfca4bccaac3578b17bd100d94406936e3883fd0e7a1c57debd",
       "figma-use/references/working-with-design-systems/wwds-components--creating.md": "fe077420c10ee150c9bdeb81e35f98bb90709a0bfc9aaa1027c7870a1249b385",
       "figma-use/references/working-with-design-systems/wwds-components--using.md": "2d101f683b062d744f97a2b0c456b622f37b4b983fcc9b660431a59857cd5c7a",
-      "figma-use/references/working-with-design-systems/wwds-components.md": "2217671b5aa457bdd7b1164ce273b5bde12a4f0cad19a65cb2e81f1636181185",
+      "figma-use/references/working-with-design-systems/wwds-components.md": "911bfd1087dc4adfd301edf56bf1aa92ea17f6b417132634f329e8034fed9d99",
       "figma-use/references/working-with-design-systems/wwds-effect-styles.md": "cdeec890d06c650d7fd6ca420ea23effce74599cae006434ecafd58870978e48",
       "figma-use/references/working-with-design-systems/wwds-text-styles.md": "948565a9483f7bb4cfb9bba59e7e8cfdb7046e4aaa75d01419ab715f902ef1e4",
       "figma-use/references/working-with-design-systems/wwds-variables--creating.md": "59c259fe057c779dcb960356608394f604909ab8d033bf2697c5299a942d4bb9",

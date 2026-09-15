@@ -6,7 +6,7 @@ Use this reference with the Figma Workspace CLI. Put a native Plugin API async s
 
 ## Inspecting FigJam Files
 
-Use a read-only `figma:run` script for broad board structure, then `figma:inspect` for targeted nodes. `figma:metadata` is Design-only.
+Use a read-only `figma:run` script for broad board structure, then `figma:inspect` for targeted nodes. For a large target, request explicit pages with `--cursor` and continue with `nextCursor`; pages are live reads rather than a snapshot. `figma:metadata` is Design-only.
 
 - Inspect existing board structure before writing a script that targets current nodes.
 - Return raw node IDs and validation notes from each script; `console.log` is not an agent result channel.

@@ -18,5 +18,5 @@ Use this reference to choose a public command family. Generated help and typed r
 - File-scoped commands take `--file <Figma-file-URL|fileKey>`. Node-scoped commands take a full node URL through `--target`, or `--file` plus `--node <nodeId>`; bare node IDs are rejected.
 - A URL determines the surface. A raw fileKey needs `--surface` whenever the command requires one.
 - Run `--help` for the chosen public leaf command instead of inferring fields, options, limits, or transport behavior.
-- Read typed stdout as Restricted Markdown and follow any `outputFiles.cliResultFile` sidecar pointer.
+- Read typed stdout as Restricted Markdown and follow any `outputFiles.resultFile` pointer. Use the pointer's advertised `jq` filters for machine-readable receipt, status, or data extraction.
 - Read [guidance and lookup](figma-workspace-guidance-and-lookup.md) for static route selection, [workflow](figma-workspace-workflow.md) for execution, and [safety](figma-workspace-safety.md) for non-bypassable boundaries.

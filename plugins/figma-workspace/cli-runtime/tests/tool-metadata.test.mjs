@@ -52,7 +52,7 @@ test("numeric tool schemas match clamp and strict runtime boundaries", () => {
 
   for (const [toolName, propertyName, minimum, maximum] of [
     ["figma_workspace_capture_node", "maxDimension", 1, 65_536],
-    ["figma_workspace_inspect", "depth", 1, Number.MAX_SAFE_INTEGER],
+    ["figma_workspace_inspect", "depth", 0, Number.MAX_SAFE_INTEGER],
     ["figma_workspace_get_libraries", "offset", 0, Number.MAX_SAFE_INTEGER],
     ["figma_workspace_run", "inlineResultLimit", 0, 10_000],
   ]) {
@@ -61,6 +61,33 @@ test("numeric tool schemas match clamp and strict runtime boundaries", () => {
     assert.equal(schema.minimum, minimum);
     assert.equal(schema.maximum, maximum);
   }
+});
+
+test("inspect metadata publishes bounded live pagination and selected detail fields", () => {
+  const descriptions = metadata.createReplToolDescriptions({});
+  const byName = new Map(descriptions.map((description) => [description.name, description]));
+  const schema = byName.get("figma_workspace_inspect");
+  const fields = schema.inputSchema.properties.fields;
+  assert.equal(schema.inputSchema.properties.cursor.type, "string");
+  assert.equal(fields.type, "array");
+  assert.equal(fields.minItems, 1);
+  assert.equal(fields.uniqueItems, true);
+  assert.deepEqual(fields.items.enum, [
+    "name",
+    "visible",
+    "x",
+    "y",
+    "width",
+    "height",
+    "locked",
+    "layoutMode",
+    "layoutPositioning",
+    "characters",
+  ]);
+  assert.match(schema.description, /live read, not a file snapshot/iu);
+  assert.match(schema.outputSchema.properties.nodes.description, /depth-first page/u);
+  assert.deepEqual(schema.outputSchema.properties.readConsistency.enum, ["live"]);
+  assert.match(schema.outputSchema.properties.readConsistency.description, /repeated or omitted nodes/u);
 });
 
 test("metadata schema excludes retired client hints", () => {

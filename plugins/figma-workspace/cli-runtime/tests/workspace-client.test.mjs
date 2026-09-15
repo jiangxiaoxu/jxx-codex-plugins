@@ -190,7 +190,12 @@ test("run keeps oversized host-error diagnostics in the sidecar", async () => {
       result.inlineResultLimit.omitted.map(({ field }) => field).sort(),
       ["upstream.result", "upstreamError.details"],
     );
-    assert.match(await readFile(result.outputFiles.debugFile.path, "utf8"), /diagnosticPayload/u);
+    const receipt = JSON.parse(await readFile(result.outputFiles.resultFile.path, "utf8"));
+    assert.equal(receipt.schemaVersion, 1);
+    assert.equal(receipt.tool, "figma:run");
+    assert.equal(receipt.upstream, undefined);
+    assert.equal(receipt.result.upstream.result.error.details.diagnosticPayload.length, 2_048);
+    assert.equal(result.outputFiles.resultFile.jq.data, ".result.upstream.result");
   } finally {
     await client.close();
     await rm(directory, { recursive: true, force: true });
@@ -352,7 +357,10 @@ test("metadata defaults to a 2048-byte field limit and honors an explicit overri
     assert.equal(limited.metadata.json, undefined);
     assert.equal(limited.inlineResultLimit.limitBytes, 2_048);
     assert.deepEqual(limited.inlineResultLimit.omitted.map(({ field }) => field), ["metadata.json"]);
-    assert.match(await readFile(limited.outputFiles.metadataFile.path, "utf8"), /"name": "x{100}/u);
+    const receipt = JSON.parse(await readFile(limited.outputFiles.resultFile.path, "utf8"));
+    assert.equal(receipt.schemaVersion, 1);
+    assert.equal(receipt.result.metadata.json.root.name.length, 3_000);
+    assert.equal(limited.outputFiles.resultFile.jq.data, ".result.metadata.json");
 
     const expanded = await client.getMetadata({ file: FILE_KEY, surface: "design", outputDir: directory, inlineResultLimit: 10_000 });
     assert.equal(expanded.metadata.json.root.name.length, 3_000);
@@ -554,7 +562,11 @@ test("direct calls preserve recovery facts and write sanitized visible MCP resul
     assert.equal(atomic.upstream.content[0].type, "image");
     assert.equal("data" in atomic.upstream.content[0], false);
     assert.deepEqual(atomic.upstream.content[0].annotations, { priority: 1 });
-    const sidecar = JSON.parse(await readFile(atomic.outputFiles.upstreamFile.path, "utf8"));
+    const receipt = JSON.parse(await readFile(atomic.outputFiles.resultFile.path, "utf8"));
+    const sidecar = receipt.upstream;
+    assert.equal(receipt.schemaVersion, 1);
+    assert.equal(receipt.result.upstream.result, undefined);
+    assert.equal(atomic.outputFiles.resultFile.jq.data, ".upstream");
     assert.equal(sidecar.isError, true);
     assert.equal(sidecar.content[1].data, "aGVsbG8=");
     assert.equal(sidecar.content[2].resource.text, "result");
@@ -601,14 +613,91 @@ test("direct over-budget responses return a bounded diagnostic without an upstre
     assert.deepEqual(result.upstream, { kind: "text", ok: true });
     assert.equal(result.upstreamError.code, "FIGMA_WORKSPACE_RESOURCE_LIMIT_EXCEEDED");
     assert.equal(result.postProcessing.upstreamResponseBudget.status, "failed");
-    assert.ok(result.outputFiles.debugFile?.path);
-    assert.equal("upstreamFile" in result.outputFiles, false);
+    assert.ok(result.outputFiles.resultFile?.path);
     assert.doesNotMatch(JSON.stringify(result), new RegExp(sentinel, "u"));
-    assert.doesNotMatch(await readFile(result.outputFiles.debugFile.path, "utf8"), new RegExp(sentinel, "u"));
-    assert.deepEqual(await readdir(directory), [result.outputFiles.debugFile.path.split(/[\\/]/u).at(-1)]);
+    const receipt = await readFile(result.outputFiles.resultFile.path, "utf8");
+    assert.doesNotMatch(receipt, new RegExp(sentinel, "u"));
+    assert.deepEqual(await readdir(directory), [result.outputFiles.resultFile.path.split(/[\\/]/u).at(-1)]);
   } finally {
     await client.close();
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("inspect returns one finalized page and rejects a malformed cursor before dispatch", async () => {
+  const root = {
+    id: "1:1",
+    type: "FRAME",
+    name: "Root",
+    children: [{ id: "1:2", type: "TEXT", name: "Child", characters: "complete text" }],
+  };
+  const calls = [];
+  const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(calls, async (name, args) => {
+      assert.equal(name, "use_figma");
+      const result = await new AsyncFunction("figma", args.code)({
+        async getNodeByIdAsync(id) { return id === root.id ? root : undefined; },
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }),
+  });
+  try {
+    const page = await client.inspect({ file: FILE_URL, target: root.id, depth: 1, fields: ["name", "characters"] });
+    assert.equal(page.ok, true);
+    assert.equal(page.mode, "inspect");
+    assert.equal(page.readConsistency, "live");
+    assert.deepEqual(page.nodes.map(({ id }) => id), ["1:1", "1:2"]);
+    assert.equal(page.nodes[1].characters, "complete text");
+    assert.equal(page.hasMore, false);
+    assert.equal(calls.filter((entry) => entry.kind === "call" && entry.name === "use_figma").length, 1);
+
+    const invalid = await client.inspect({ file: FILE_URL, target: root.id, cursor: "not-a-cursor" });
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.error.code, "FIGMA_WORKSPACE_INSPECT_CURSOR_INVALID");
+    assert.equal(invalid.diagnostics[0].code, "FIGMA_WORKSPACE_INSPECT_CURSOR_INVALID");
+    assert.equal(calls.filter((entry) => entry.kind === "call" && entry.name === "use_figma").length, 1);
+  } finally {
+    await client.close();
+  }
+});
+
+test("inspect reports an oversized selected node without turning it into a successful empty page", async () => {
+  const root = { id: "2:1", type: "TEXT", characters: "x".repeat(25_000), children: [] };
+  const calls = [];
+  const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(calls, async (_name, args) => {
+      const result = await new AsyncFunction("figma", args.code)({
+        async getNodeByIdAsync(id) { return id === root.id ? root : undefined; },
+      });
+      return { content: [{ type: "text", text: JSON.stringify(result) }] };
+    }),
+  });
+  try {
+    const result = await client.inspect({ file: FILE_URL, target: root.id, depth: 0, fields: ["characters"] });
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, "FIGMA_WORKSPACE_INSPECT_NODE_TOO_LARGE");
+    assert.equal(result.diagnostics[0].code, "FIGMA_WORKSPACE_INSPECT_NODE_TOO_LARGE");
+    assert.equal("nodes" in result, false);
+    assert.equal(calls.filter((entry) => entry.kind === "call" && entry.name === "use_figma").length, 1);
+  } finally {
+    await client.close();
+  }
+});
+
+test("inspect preserves an upstream truncation as an upstream error without retrying", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({
+    client: fakeUpstream(calls, () => ({ content: [{ type: "text", text: "truncated to 20KB" }] })),
+  });
+  try {
+    const result = await client.inspect({ file: FILE_URL, target: "3:1" });
+    assert.equal(result.ok, false);
+    assert.equal(result.upstreamError.code, "FIGMA_UPSTREAM_TRUNCATED");
+    assert.equal(calls.filter((entry) => entry.kind === "call" && entry.name === "use_figma").length, 1);
+  } finally {
+    await client.close();
   }
 });
 
@@ -691,13 +780,13 @@ test("direct use_figma preserves structured script errors as atomic failures", a
   }
 });
 
-test("direct call preserves confirmed success when its sidecar cannot be persisted", async () => {
+test("direct call preserves confirmed success when its result receipt cannot be persisted", async () => {
   const directory = await mkdtemp(resolve(tmpdir(), "figma-upstream-sidecar-failure-"));
   const RealDate = globalThis.Date;
   const timestamp = "2026-08-13T09:37:00.000Z";
   const fixedDate = new RealDate(timestamp);
   const formattedTimestamp = fixedDate.toISOString().replace(/[^\dTZ]/gu, "");
-  const sidecarPath = resolve(directory, `upstream-get_metadata-${formattedTimestamp}.upstream.json`);
+  const resultFilePath = resolve(directory, `upstream-get_metadata-${formattedTimestamp}.result.json`);
   const FixedDate = class extends RealDate {
     constructor(...args) {
       super(...(args.length === 0 ? [timestamp] : args));
@@ -707,7 +796,7 @@ test("direct call preserves confirmed success when its sidecar cannot be persist
       return fixedDate.valueOf();
     }
   };
-  await mkdir(sidecarPath);
+  await mkdir(resultFilePath);
   globalThis.Date = FixedDate;
   const client = createFigmaWorkspaceClient({
     client: fakeUpstream([], () => ({
@@ -719,6 +808,7 @@ test("direct call preserves confirmed success when its sidecar cannot be persist
       toolName: "get_metadata",
       arguments: { fileKey: FILE_KEY },
       outputDir: directory,
+      inlineResultLimit: 0,
     });
     assert.equal(result.ok, false);
     assert.equal(result.executionOutcome, "succeeded");
@@ -750,8 +840,10 @@ test("typed upstream wrappers create a sanitized sidecar for unconsumed non-text
     const result = await client.searchDesignSystem({ file: FILE_URL, queries: [{ entity: "component", query: "button" }], outputDir: directory });
     assert.equal(result.ok, true);
     assert.equal(result.upstream.kind, "content");
-    assert.equal(result.outputFiles.upstreamFile !== undefined, true);
-    const sidecar = JSON.parse(await readFile(result.outputFiles.upstreamFile.path, "utf8"));
+    assert.equal(result.outputFiles.resultFile !== undefined, true);
+    const receipt = JSON.parse(await readFile(result.outputFiles.resultFile.path, "utf8"));
+    const sidecar = receipt.upstream;
+    assert.equal(result.outputFiles.resultFile.jq.data, ".upstream");
     assert.equal(sidecar.content[0].uri, "https://example.test/metadata.json");
     assert.equal("_meta" in sidecar.content[0], false);
   } finally {
@@ -783,6 +875,7 @@ test("direct calls distinguish pre-dispatch failure from confirmed success", asy
     assert.equal(result.ok, true);
     assert.equal(result.phase, "execute");
     assert.equal(result.executionOutcome, "succeeded");
+    assert.equal(result.outputFiles, undefined);
   } finally {
     await availableClient.close();
   }

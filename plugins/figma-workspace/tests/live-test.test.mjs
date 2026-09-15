@@ -41,17 +41,18 @@ function sidecarMarkdown(path, inlineResult) {
     "Input: none",
     "Status: succeeded",
     "",
-    "## Output Files",
+    "## Full result",
     "",
-    "### Cli Result File",
+    "JSON receipt: `figma-cli-result` schema version `1`.",
     "",
-    `Path: ${path}`,
-    "",
+    "```powershell",
+    "# full receipt",
+    `jq '.' -- '${path.replaceAll("'", "''")}'`,
+    "```",
     ...(inlineResult === undefined ? [] : [
       "```json",
       JSON.stringify(inlineResult, null, 2),
       "```",
-      "",
     ]),
   ].join("\n");
 }
@@ -90,6 +91,13 @@ function createLiveScenario(tempDir, config, options = {}) {
     ok: true,
     executionOutcome: "succeeded",
     upstream: { ok: true, result: payload },
+  });
+  const resultReceipt = (tool, result) => ({
+    kind: "figma-cli-result",
+    schemaVersion: 1,
+    tool,
+    invocation: { invocationId: `live-${runId}` },
+    result,
   });
   const reconcile = (entries) => runSuccess({
     tagNamespace: LIVE_SMOKE_PLUGIN_DATA_NAMESPACE,
@@ -178,13 +186,11 @@ function createLiveScenario(tempDir, config, options = {}) {
         options.symbolicLinkResult === true && /\.json$/iu.test(String(path))
       ) || (
         options.symbolicLinkCaptureResult === true && /capture\.result\.json$/iu.test(String(path))
-      ) || (
-        options.symbolicLinkUpstream === true && /\.upstream\.json$/iu.test(String(path))
       ),
       size: 0,
     }),
-    realpath: async (path) => options.canonicalOutsideUpstream === true && /\.upstream\.json$/iu.test(String(path))
-      ? "G:\\Project\\jxx-codex-plugins\\plugins\\figma-workspace\\.figma-workspace\\live-workspace\\link\\artifact.upstream.json"
+    realpath: async (path) => options.canonicalOutsideResult === true && /\.result\.json$/iu.test(String(path))
+      ? "G:\\Project\\jxx-codex-plugins\\plugins\\figma-workspace\\.figma-workspace\\live-workspace\\link\\artifact.result.json"
       : path,
     readFile: async (path, encoding) => {
       const source = sources.get(resolve(path));
@@ -213,74 +219,31 @@ function createLiveScenario(tempDir, config, options = {}) {
           spawnError: undefined,
         };
       }
-      if (command.script === "figma:metadata") {
-        const metadataPath = resolve(outputRoot, "metadata.json");
-        sources.set(metadataPath, JSON.stringify({ ok: true }));
-        return {
-          exitCode: next.exitCode,
-          stdout: inlineResultMarkdown({
-            ...next.result,
-            outputFiles: { metadataFile: { path: metadataPath, bytes: 11 } },
-          }, "get-metadata"),
-          stderr: "",
-          timedOut: false,
-          spawnError: undefined,
-        };
-      }
       const sidecarRoot = command.args.includes("--output-dir") ? outputRoot : temporaryOutputRoot;
       const sidecarIndexValue = sidecarIndex += 1;
       const sidecarPath = resolve(
         sidecarRoot,
         "results",
-        command.script === "figma:capture" ? "capture.result.json" : `${sidecarIndexValue}.json`,
+        command.script === "figma:capture" ? "capture.result.json" : `${sidecarIndexValue}.result.json`,
       );
-      let sidecarResult = next.result;
-      let markerPath = sidecarPath;
-      let inlineResult;
-      if (
-        command.script === "figma:run"
-        && isRecord(next.result)
-        && isRecord(next.result.upstream)
-        && Object.hasOwn(next.result.upstream, "result")
-      ) {
-        const upstreamPath = options.staleUpstreamPath
-          ?? resolve(sidecarRoot, "results", `${sidecarIndexValue}.upstream.json`);
-        const upstreamSidecar = JSON.stringify({
-          kind: "json",
-          ok: next.result.upstream.ok,
-          result: next.result.upstream.result,
-        });
-        sources.set(upstreamPath, upstreamSidecar);
-        sidecarResult = {
-          ...next.result,
-          upstream: { kind: "json", ok: next.result.upstream.ok },
-          outputFiles: {
-            ...(isRecord(next.result.outputFiles) ? next.result.outputFiles : {}),
-            upstreamFile: { path: upstreamPath, bytes: Buffer.byteLength(upstreamSidecar, "utf8") },
-          },
-        };
-        const { upstream: _omittedUpstream, ...compactResult } = sidecarResult;
-        inlineResult = {
-          ...compactResult,
-          outputFiles: {
-            ...sidecarResult.outputFiles,
-            cliResultFile: { path: sidecarPath, bytes: 0 },
-          },
-        };
-      }
-      if (command.script === "figma:capture") {
-        const { imageFile: _omittedImageFile, ...compactResult } = next.result;
-        inlineResult = {
-          ...compactResult,
-          outputFiles: { cliResultFile: { path: sidecarPath, bytes: 0 } },
-        };
-      }
+      const sidecarResult = resultReceipt(
+        command.script === "figma:capture" ? "figma:capture" : command.script === "figma:metadata" ? "figma:metadata" : "figma:run",
+        next.result,
+      );
+      const markerPath = options.staleResultPath ?? sidecarPath;
+      const inlineResult = {
+        ...next.result,
+        ...(isRecord(next.result?.upstream)
+          ? { upstream: { kind: next.result.upstream.kind, ok: next.result.upstream.ok } }
+          : {}),
+        outputFiles: {
+          resultFile: { path: markerPath, bytes: 0, lineCount: 0, jq: { full: ".", data: ".result" } },
+        },
+      };
       sources.set(sidecarPath, JSON.stringify(sidecarResult));
       return {
         exitCode: next.exitCode,
-        stdout: inlineResult === undefined
-          ? sidecarMarkdown(markerPath)
-          : inlineResultMarkdown(inlineResult, command.script === "figma:capture" ? "capture-node" : "run"),
+        stdout: sidecarMarkdown(markerPath, inlineResult),
         stderr: "",
         timedOut: false,
         spawnError: undefined,
@@ -543,20 +506,20 @@ for (const scenarioCase of [
   });
 }
 
-test("live smoke rejects a stale legacy upstream artifact outside the invocation root", async () => {
+test("live smoke rejects a stale result artifact outside the invocation root", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-stale-artifact-"));
   try {
     const runId = "live-smoke-run-stale";
     const config = configFor(tempDir);
     const scenario = createLiveScenario(tempDir, config, {
       runId,
-      staleUpstreamPath: "G:\\Project\\jxx-codex-plugins\\plugins\\figma-workspace\\.figma-workspace\\live-workspace\\legacy.upstream.json",
+      staleResultPath: "G:\\Project\\jxx-codex-plugins\\plugins\\figma-workspace\\.figma-workspace\\live-workspace\\legacy.result.json",
     });
     await assert.rejects(
       () => runLiveSmokeTest(smokeOptions(tempDir, config, scenario, runId)),
       (error) => {
-        assert.match(error.message, /could not safely hydrate/u);
-        assert.match(error.cause?.cause?.message ?? "", /must remain inside/u);
+        assert.match(error.message, /did not produce a readable complete result sidecar/u);
+        assert.match([error.message, error.cause?.message, error.cause?.cause?.message, error.cause?.cause?.cause?.message].join("\n"), /must remain inside/u);
         return true;
       },
     );
@@ -565,17 +528,17 @@ test("live smoke rejects a stale legacy upstream artifact outside the invocation
   }
 });
 
-test("live smoke rejects an upstream sidecar symlink before reading its payload", async () => {
+test("live smoke rejects a result sidecar symlink before reading its payload", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-sidecar-link-"));
   try {
     const runId = "live-smoke-run-link";
     const config = configFor(tempDir);
-    const scenario = createLiveScenario(tempDir, config, { runId, symbolicLinkUpstream: true });
+    const scenario = createLiveScenario(tempDir, config, { runId, symbolicLinkResult: true });
     await assert.rejects(
       () => runLiveSmokeTest(smokeOptions(tempDir, config, scenario, runId)),
       (error) => {
-        assert.match(error.message, /could not safely hydrate/u);
-        assert.match(error.cause?.cause?.message ?? "", /regular JSON file/u);
+        assert.match(error.message, /did not produce a readable complete result sidecar/u);
+        assert.match([error.message, error.cause?.message, error.cause?.cause?.message, error.cause?.cause?.cause?.message].join("\n"), /regular JSON file/u);
         return true;
       },
     );
@@ -584,16 +547,16 @@ test("live smoke rejects an upstream sidecar symlink before reading its payload"
   }
 });
 
-test("live smoke rejects an upstream sidecar whose intermediate path resolves outside the output root", async () => {
+test("live smoke rejects a result sidecar whose intermediate path resolves outside the output root", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-canonical-link-"));
   try {
     const runId = "live-smoke-run-canonical-link";
     const config = configFor(tempDir);
-    const scenario = createLiveScenario(tempDir, config, { runId, canonicalOutsideUpstream: true });
+    const scenario = createLiveScenario(tempDir, config, { runId, canonicalOutsideResult: true });
     await assert.rejects(
       () => runLiveSmokeTest(smokeOptions(tempDir, config, scenario, runId)),
       (error) => {
-        assert.match(error.message, /could not safely hydrate/u);
+        assert.match(error.message, /did not produce a readable complete result sidecar/u);
         assert.match([error.message, error.cause?.message, error.cause?.cause?.message].join("\n"), /canonical output root/u);
         return true;
       },
@@ -622,7 +585,7 @@ test("live smoke rejects a marker sidecar symlink before reading its envelope", 
   }
 });
 
-test("live smoke rejects a cliResultFile symlink before reading capture output", async () => {
+test("live smoke rejects a resultFile symlink before reading capture output", async () => {
   const tempDir = await mkdtemp(join(tmpdir(), "figma-workspace-live-cli-result-link-"));
   try {
     const runId = "live-smoke-run-cli-link";

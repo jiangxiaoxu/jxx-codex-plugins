@@ -591,8 +591,8 @@ test("Code Connect verify returns matched, missing, mismatch, and sanitized remo
     const errored = createFigmaWorkspaceClient({ client: fakeUpstream(calls, { contextError: true }), invocationId: "code-connect-sidecar" });
     const result = await errored.codeConnectPlan({ file: FILE_URL, outputDir, outputPlanPath: resolve(outputDir, "sidecar.json"), manifest: manifest() });
     assert.equal(result.ok, false);
-    assert.ok(result.outputFiles?.upstreamFile?.path);
-    const sidecar = await readFile(result.outputFiles.upstreamFile.path, "utf8");
+    assert.ok(result.outputFiles?.resultFile?.path);
+    const sidecar = await readFile(result.outputFiles.resultFile.path, "utf8");
     assert.doesNotMatch(sidecar, /must-not-leak|_meta/u);
     assert.doesNotMatch(JSON.stringify(result), /must-not-leak|_meta/u);
     await errored.close();
@@ -604,8 +604,8 @@ test("Code Connect verify returns matched, missing, mismatch, and sanitized remo
     const mapError = await mapErrorClient.codeConnectVerify({ file: FILE_URL, outputDir, planPath: plan.planFile.path });
     assert.equal(mapError.ok, false);
     assert.equal(mapError.mappings[0].status, "unavailable");
-    assert.ok(mapError.outputFiles?.upstreamFile?.path);
-    const mapSidecar = await readFile(mapError.outputFiles.upstreamFile.path, "utf8");
+    assert.ok(mapError.outputFiles?.resultFile?.path);
+    const mapSidecar = await readFile(mapError.outputFiles.resultFile.path, "utf8");
     assert.doesNotMatch(mapSidecar, /map-must-not-leak|_meta/u);
     assert.doesNotMatch(JSON.stringify(mapError), /map-must-not-leak|_meta/u);
     await mapErrorClient.close();

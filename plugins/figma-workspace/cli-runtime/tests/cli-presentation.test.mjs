@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -218,4 +218,114 @@ test("API JSON errors retain machine-readable code and ambiguity candidates", as
       candidates: ["Font.fontName", "BaseNonResizableTextMixin.fontName"],
     },
   });
+});
+
+test("an oversized CLI result reuses the runtime receipt instead of writing a second receipt", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-existing-result-file-"));
+  const receiptPath = resolve(directory, "runtime result's.json");
+  await writeFile(receiptPath, JSON.stringify({ kind: "figma-cli-result", schemaVersion: 1 }), "utf8");
+  const stdout = [];
+  const stderr = [];
+  try {
+    const exitCode = await cli.runFigmaWorkspaceCli(["run", "--input", "-", "--inline-result-limit", "0"], {
+      io: {
+        cwd: () => process.cwd(),
+        env: () => undefined,
+        readFile: async () => "",
+        readStdin: async () => JSON.stringify({
+          file: "https://www.figma.com/design/ExampleKey/UI",
+          source: "return {};",
+          outputDir: directory,
+        }),
+        writeStdout: (value) => stdout.push(value),
+        writeStderr: (value) => stderr.push(value),
+      },
+      createClient: () => ({
+        close: async () => {},
+        run: async () => ({
+          ok: true,
+          phase: "execute",
+          executionOutcome: "succeeded",
+          upstream: { kind: "json", ok: true, result: { message: "x".repeat(2_048) } },
+          outputFiles: {
+            resultFile: {
+              path: receiptPath,
+              bytes: 53,
+              lineCount: 1,
+              jq: {
+                full: ".",
+                data: ".result.upstream.result",
+                status: ".result | {ok,phase,executionOutcome,upstreamError,error,operationError,diagnostics,retryGuidance,postProcessing}",
+              },
+            },
+          },
+        }),
+      }),
+    });
+    const rendered = stdout.join("");
+    assert.equal(exitCode, 0);
+    assert.equal(stderr.join(""), "");
+    assert.match(rendered, /^Status: succeeded$/mu);
+    assert.match(rendered, /jq '\.result\.upstream\.result' -- /u);
+    const quote = process.platform === "win32"
+      ? (value) => `'${value.replaceAll("'", "''")}'`
+      : (value) => `'${value.replaceAll("'", "'\"'\"'")}'`;
+    assert.ok(rendered.includes(`\`\`\`${process.platform === "win32" ? "powershell" : "sh"}`), rendered);
+    assert.ok(rendered.includes(`-- ${quote(receiptPath)}`), rendered);
+    assert.match(rendered, /"resultFile"/u);
+    assert.doesNotMatch(rendered, /cliResultFile|"message": "x{128}/u);
+    assert.deepEqual(await readdir(directory), ["runtime result's.json"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("an oversized CLI fallback writes one complete versioned result receipt", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-fallback-result-file-"));
+  const stdout = [];
+  const stderr = [];
+  const payload = "x".repeat(2_048);
+  try {
+    const exitCode = await cli.runFigmaWorkspaceCli(["run", "--input", "-", "--inline-result-limit", "0"], {
+      io: {
+        cwd: () => process.cwd(),
+        env: () => undefined,
+        readFile: async () => "",
+        readStdin: async () => JSON.stringify({
+          file: "https://www.figma.com/design/ExampleKey/UI",
+          source: "return {};",
+          outputDir: directory,
+        }),
+        writeStdout: (value) => stdout.push(value),
+        writeStderr: (value) => stderr.push(value),
+      },
+      createClient: () => ({
+        close: async () => {},
+        run: async () => ({
+          ok: true,
+          phase: "execute",
+          executionOutcome: "succeeded",
+          upstream: { kind: "json", ok: true, result: { payload, falseValue: false, nullValue: null } },
+        }),
+      }),
+    });
+    const rendered = stdout.join("");
+    const resultPath = /"resultFile":\s*\{\s*"path": "([^"]+)"/u.exec(rendered)?.[1];
+    assert.equal(exitCode, 0);
+    assert.equal(stderr.join(""), "");
+    assert.ok(resultPath, rendered);
+    assert.match(rendered, /jq '\.result\.upstream\.result' -- /u);
+    assert.doesNotMatch(rendered, /cliResultFile|"payload": "x{128}/u);
+    const receipt = JSON.parse(await readFile(resultPath.replaceAll("\\\\", "\\"), "utf8"));
+    assert.equal(receipt.kind, "figma-cli-result");
+    assert.equal(receipt.schemaVersion, 1);
+    assert.equal(receipt.tool, "figma:run");
+    assert.equal(receipt.result.upstream.result.payload, payload);
+    assert.equal(receipt.result.upstream.result.falseValue, false);
+    assert.equal(receipt.result.upstream.result.nullValue, null);
+    assert.equal("resultFile" in (receipt.result.outputFiles ?? {}), false);
+    assert.deepEqual(await readdir(directory), ["run.result.json"]);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });

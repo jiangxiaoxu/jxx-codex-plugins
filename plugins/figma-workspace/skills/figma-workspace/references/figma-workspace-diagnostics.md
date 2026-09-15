@@ -8,12 +8,12 @@ Use this reference only to choose the narrowest repair. Command results and diag
 - For TypeScript or Plugin API diagnostics, repair the reported source location, use `figma:api:search -- <selector>` to locate the declaration, and use `figma:api:read -- <selector>` when its complete record is required. If a bare selector is ambiguous, use the qualified selector printed by search. API lookup does not require source paths or line numbers.
 - For a missing or conflicting Figma target, pass a supported full node URL or an explicit file-plus-node pair. For a surface mismatch, choose the correct Design, FigJam, or Slides surface and compatible API.
 - For artifact, capture, or result-path failures, use a real non-linked permitted directory. See [local artifacts](figma-workspace-artifacts.md) and [safety](figma-workspace-safety.md).
-- For a complete oversized result, read `outputFiles.cliResultFile` instead of parsing Restricted Markdown stdout.
+- For a complete oversized result, read `outputFiles.resultFile` with its `jq.full`, `jq.status`, or `jq.data` filter instead of parsing Restricted Markdown stdout. For inspect pagination errors, repair the cursor binding or range; do not reuse a cursor with another file, node, depth, or field list.
 
 ## Preserve Mutation Evidence
 
 - Repair and rerun `not_started` only after the failure occurred before dispatch.
-- For `failed_atomic`, use stdout's compact remote error summary, repair the script, then retry safely; the returned `use_figma` host error confirms no file changes. Read the sidecar for complete diagnostics when needed.
+- For `failed_atomic`, use stdout's compact remote error summary, repair the script, then retry safely; the returned `use_figma` host error confirms no file changes. Read the result receipt for complete diagnostics when needed.
 - The same `failed_atomic` handling applies to direct `figma:upstream:call` of `use_figma`. For another direct official tool, a post-dispatch protocol error remains `outcome_unknown`; inspect, read back, or tag-reconcile the intended Figma effect before any retry because side effects may exist.
 - For `outcome_unknown`, inspect, read back, or tag-reconcile the intended Figma effect before any retry; partial side effects may exist.
 - For `succeeded` with capture processing failure, capture the affected node separately. `Status: failed after execution` is only a local stage failure after confirmed execution; repair it and do not rerun the confirmed mutation.

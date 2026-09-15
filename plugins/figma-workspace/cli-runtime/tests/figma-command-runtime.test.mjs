@@ -239,6 +239,47 @@ test("capture supports file+node or one full node URL", async () => {
   assert.equal(await runFigmaCommand("capture", ["--target", url, "--file", OTHER_FILE_KEY, "--node", "1:2"], conflict.dependencies), 2);
 });
 
+test("inspect forwards explicit pagination arguments and rejects fields that cannot apply to style mode", async () => {
+  const page = harness();
+  assert.equal(await runFigmaCommand("inspect", [
+    "--file", FILE_KEY,
+    "--node", "1:2",
+    "--surface", "design",
+    "--depth", "0",
+    "--fields", "characters,name",
+    "--cursor", "opaque-next-page",
+  ], page.dependencies), 0);
+  assert.deepEqual(page.calls[0], {
+    argv: ["inspect", "--input", "-"],
+    input: {
+      file: FILE_KEY,
+      target: "1:2",
+      surface: "design",
+      depth: 0,
+      fields: ["name", "characters"],
+      cursor: "opaque-next-page",
+    },
+  });
+
+  const help = formatCommandHelp("inspect");
+  assert.match(help, /--fields <field\[,field\.\.\.\]>/u);
+  assert.match(help, /--cursor <opaque>/u);
+  assert.match(help, /live, depth-first page.*repeat or omit/isu);
+  assert.match(help, /name, visible, x, y, width, height, locked, layoutMode, layoutPositioning, characters/u);
+
+  for (const argv of [
+    ["--file", FILE_KEY, "--node", "1:2", "--surface", "design", "--fields", "name,name"],
+    ["--file", FILE_KEY, "--node", "1:2", "--surface", "design", "--fields", "name,unknown"],
+    ["--file", FILE_KEY, "--node", "1:2", "--surface", "design", "--mode", "style", "--fields", "name"],
+    ["--file", FILE_KEY, "--node", "1:2", "--surface", "design", "--mode", "style", "--cursor", "opaque-next-page"],
+    ["--file", FILE_KEY, "--node", "1:2", "--surface", "design", "--mode", "style", "--depth", "0"],
+  ]) {
+    const invalid = harness();
+    assert.equal(await runFigmaCommand("inspect", argv, invalid.dependencies), 2, argv.join(" "));
+    assert.equal(invalid.calls.length, 0, argv.join(" "));
+  }
+});
+
 test("doctor is public, local-only, and argument-free", async () => {
   const current = harness();
   assert.equal(await runFigmaCommand("doctor", [], current.dependencies), 0);
@@ -372,7 +413,7 @@ test("every public leaf help publishes its real argv contract", () => {
     ["docs:catalog", /--limit <1\.\.100>/u],
     ["docs:search", /--limit <1\.\.10>.*--snippet-lines <1\.\.16>/u],
     ["api:search", /--limit <1\.\.10>.*--snippet-lines <1\.\.16>/u],
-    ["inspect", /--depth <1\.\.9007199254740991>/u],
+    ["inspect", /--depth <0\.\.9007199254740991>/u],
     ["libraries", /--offset <0\.\.9007199254740991>/u],
     ["capture", /--max-dimension <1\.\.65536>/u],
   ]) {
@@ -394,8 +435,8 @@ test("every public leaf help publishes its real argv contract", () => {
   assert.match(runHelp, /Status: failed after execution/u);
   const upstreamCallHelp = formatCommandHelp("upstream:call");
   assert.match(upstreamCallHelp, /Covered official tools remain callable here/u);
-  assert.match(upstreamCallHelp, /Calls within the response budget write a sanitized \.upstream\.json sidecar/u);
-  assert.match(upstreamCallHelp, /over-budget response returns a resource diagnostic without writing its payload/u);
+  assert.match(upstreamCallHelp, /outputFiles\.resultFile is the single figma-cli-result JSON receipt/u);
+  assert.match(upstreamCallHelp, /exact jq filters for its status and data/u);
 });
 
 test("metadata rejects retired client hints before dispatch", async () => {

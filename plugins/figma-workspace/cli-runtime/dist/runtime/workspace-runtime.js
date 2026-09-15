@@ -59,7 +59,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.6.5";
+    DEFAULT_CLIENT_VERSION = "0.6.6";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -20147,16 +20147,45 @@ function asCaptureNodeArgs(value) {
 }
 function asInspectArgs(value) {
   const args = parse3(value);
-  strings(args, ["title", "file", "outputDir", "nodeId"]);
+  strings(args, ["title", "file", "outputDir", "nodeId", "cursor"]);
   invocation(args);
   target(args.target, "target");
   target(args.nodeId, "nodeId");
   enumeration(args, "mode", ["inspect", "style"]);
   integer2(args, "depth", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX);
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "mode", "target", "nodeId", "depth"]);
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "mode", "target", "nodeId", "depth", "cursor", "fields"]);
+  if (args.cursor !== void 0 && !args.cursor.trim()) {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "cursor" must be a non-empty string.');
+  }
+  if (args.fields !== void 0) {
+    args.fields = normalizeFigmaWorkspaceInspectFields(args.fields);
+  }
+  if (args.mode === "style") {
+    if (args.depth === 0) {
+      throw new FigmaWorkspaceToolArgumentError('figma:inspect mode "style" requires depth from 1 to 9007199254740991.');
+    }
+    if (args.cursor !== void 0 || args.fields !== void 0) {
+      throw new FigmaWorkspaceToolArgumentError('figma:inspect mode "style" does not accept "cursor" or "fields".');
+    }
+  }
   normalizeNodeAlias(args);
   requireStableNodeTarget(args, "figma:inspect");
   return args;
+}
+function normalizeFigmaWorkspaceInspectFields(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.some((field) => typeof field !== "string")) {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "fields" must be a non-empty array of inspect field names.');
+  }
+  const fields = value;
+  const unknown2 = fields.filter((field) => !FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.includes(field));
+  if (unknown2.length > 0) {
+    throw new FigmaWorkspaceToolArgumentError(`Tool argument "fields" supports only: ${FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.join(", ")}.`);
+  }
+  if (new Set(fields).size !== fields.length) {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "fields" must not repeat a field.');
+  }
+  const selected = new Set(fields);
+  return FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.filter((field) => selected.has(field));
 }
 function asCallUpstreamToolArgs(value) {
   const args = parse3(value);
@@ -20576,7 +20605,7 @@ function withDefaultTitle(args, _title) {
   if (args.title !== void 0 && typeof args.title !== "string") throw new FigmaWorkspaceToolArgumentError('Tool argument "title" must be a string.');
   return args;
 }
-var FigmaWorkspaceToolArgumentError, LOOKUP_RESULTS_MIN, LOOKUP_RESULTS_MAX, LOOKUP_SNIPPET_LINES_MIN, LOOKUP_SNIPPET_LINES_MAX, DOCS_CATALOG_LIMIT_MIN, DOCS_CATALOG_LIMIT_MAX, CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX, INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX, LIBRARIES_OFFSET_MIN, LIBRARIES_OFFSET_MAX, INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX, SURFACES, DOC_SCOPES, TASK_FAMILIES2, MAX_MANIFEST_ITEMS;
+var FigmaWorkspaceToolArgumentError, LOOKUP_RESULTS_MIN, LOOKUP_RESULTS_MAX, LOOKUP_SNIPPET_LINES_MIN, LOOKUP_SNIPPET_LINES_MAX, DOCS_CATALOG_LIMIT_MIN, DOCS_CATALOG_LIMIT_MAX, CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX, INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX, FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS, DEFAULT_FIGMA_WORKSPACE_INSPECT_FIELDS, LIBRARIES_OFFSET_MIN, LIBRARIES_OFFSET_MAX, INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX, SURFACES, DOC_SCOPES, TASK_FAMILIES2, MAX_MANIFEST_ITEMS;
 var init_tool_args = __esm({
   "src/contract/tool-args.ts"() {
     "use strict";
@@ -20592,8 +20621,23 @@ var init_tool_args = __esm({
     DOCS_CATALOG_LIMIT_MAX = 100;
     CAPTURE_MAX_DIMENSION_MIN = 1;
     CAPTURE_MAX_DIMENSION_MAX = 65536;
-    INSPECT_DEPTH_MIN = 1;
+    INSPECT_DEPTH_MIN = 0;
     INSPECT_DEPTH_MAX = Number.MAX_SAFE_INTEGER;
+    FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS = [
+      "name",
+      "visible",
+      "x",
+      "y",
+      "width",
+      "height",
+      "locked",
+      "layoutMode",
+      "layoutPositioning",
+      "characters"
+    ];
+    DEFAULT_FIGMA_WORKSPACE_INSPECT_FIELDS = [
+      ...FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS
+    ];
     LIBRARIES_OFFSET_MIN = 0;
     LIBRARIES_OFFSET_MAX = Number.MAX_SAFE_INTEGER;
     INLINE_RESULT_LIMIT_MIN = 0;
@@ -22083,6 +22127,311 @@ var init_guidance_catalog = __esm({
   }
 });
 
+// src/runtime/inspect-pagination.ts
+function resolveInspectPagination(options) {
+  if (!options.fileKey || !options.nodeId) {
+    throw new FigmaWorkspaceInspectPaginationError("An inspect page requires a resolved file key and node id.");
+  }
+  const requestedDepth = options.depth;
+  if (requestedDepth !== void 0 && !isNonNegativeSafeInteger(requestedDepth)) {
+    throw new FigmaWorkspaceInspectPaginationError("The inspect page depth must be a non-negative safe integer.");
+  }
+  const requestedFields = options.fields === void 0 ? void 0 : canonicalInspectFields(options.fields, "Inspect fields must be a non-empty, unique list of supported field names.");
+  if (options.cursor === void 0) {
+    return {
+      fileKey: options.fileKey,
+      nodeId: options.nodeId,
+      depth: requestedDepth ?? DEFAULT_INSPECT_DEPTH,
+      fields: requestedFields ?? [...DEFAULT_FIGMA_WORKSPACE_INSPECT_FIELDS],
+      offset: 0
+    };
+  }
+  const cursor = decodeInspectCursor(options.cursor);
+  if (cursor.fileKey !== options.fileKey || cursor.nodeId !== options.nodeId) {
+    throw new FigmaWorkspaceInspectPaginationError(
+      "The inspect cursor does not match the explicit Figma file and node target.",
+      { expectedFileKey: options.fileKey, expectedNodeId: options.nodeId }
+    );
+  }
+  if (requestedDepth !== void 0 && requestedDepth !== cursor.depth) {
+    throw new FigmaWorkspaceInspectPaginationError(
+      "The inspect cursor does not match the requested depth.",
+      { cursorDepth: cursor.depth, requestedDepth }
+    );
+  }
+  if (requestedFields !== void 0 && !sameFields(requestedFields, cursor.fields)) {
+    throw new FigmaWorkspaceInspectPaginationError(
+      "The inspect cursor does not match the requested fields.",
+      { cursorFields: cursor.fields, requestedFields }
+    );
+  }
+  return {
+    fileKey: options.fileKey,
+    nodeId: options.nodeId,
+    depth: cursor.depth,
+    fields: [...cursor.fields],
+    offset: cursor.offset
+  };
+}
+function buildInspectPaginationCode(options) {
+  return [
+    `const __target = ${literal2(options.nodeId)};`,
+    `const __depth = ${literal2(options.depth)};`,
+    `const __fields = ${literal2(options.fields)};`,
+    `const __offset = ${literal2(options.offset)};`,
+    `const __budget = ${literal2(FIGMA_WORKSPACE_INSPECT_PAGE_RESPONSE_BUDGET_BYTES)};`,
+    "const __value = await __figmaWorkspaceResolveNode(__target, 'figma:inspect target');",
+    "function __utf8Length(__value) {",
+    "  let __bytes = 0;",
+    "  for (let __index = 0; __index < __value.length; __index += 1) {",
+    "    const __unit = __value.charCodeAt(__index);",
+    "    if (__unit < 0x80) { __bytes += 1; continue; }",
+    "    if (__unit < 0x800) { __bytes += 2; continue; }",
+    "    if (__unit >= 0xd800 && __unit <= 0xdbff && __index + 1 < __value.length) {",
+    "      const __next = __value.charCodeAt(__index + 1);",
+    "      if (__next >= 0xdc00 && __next <= 0xdfff) { __bytes += 4; __index += 1; continue; }",
+    "    }",
+    "    __bytes += 3;",
+    "  }",
+    "  return __bytes;",
+    "}",
+    "function __page(__nodes, __hasMore, __nextOffset) {",
+    "  const __result = { target: __target, mode: 'inspect', readConsistency: 'live', depth: __depth, fields: __fields, offset: __offset, nodes: __nodes, hasMore: __hasMore };",
+    "  if (__hasMore) __result.nextOffset = __nextOffset;",
+    "  return __result;",
+    "}",
+    "function __pageEnvelopeBytes(__nodes) {",
+    "  const __result = __page(__nodes, true, Number.MAX_SAFE_INTEGER);",
+    "  const __envelope = { ok: true, __figmaWorkspace: { invocationId: __figmaWorkspace.invocationId, captureRequests: __figmaWorkspace.captureRequests }, result: __result };",
+    "  return __utf8Length(JSON.stringify(__envelope));",
+    "}",
+    "function __failure(__code, __message, __details, __suggestion) {",
+    "  return { target: __target, mode: 'inspect', readConsistency: 'live', depth: __depth, fields: __fields, offset: __offset, error: { code: __code, message: __message, details: __details, suggestion: __suggestion } };",
+    "}",
+    "function __summary(__node, __parentId, __nodeDepth) {",
+    "  const __children = Array.isArray(__node.children) ? __node.children : [];",
+    "  const __result = { id: __node.id, type: __node.type, parentId: __parentId, depth: __nodeDepth, childCount: __children.length };",
+    "  if (__fields.indexOf('name') !== -1) __result.name = __node.name;",
+    "  if (__fields.indexOf('visible') !== -1 && 'visible' in __node) __result.visible = __node.visible;",
+    "  if (__fields.indexOf('x') !== -1 && 'x' in __node) __result.x = __node.x;",
+    "  if (__fields.indexOf('y') !== -1 && 'y' in __node) __result.y = __node.y;",
+    "  if (__fields.indexOf('width') !== -1 && 'width' in __node) __result.width = __node.width;",
+    "  if (__fields.indexOf('height') !== -1 && 'height' in __node) __result.height = __node.height;",
+    "  if (__fields.indexOf('locked') !== -1 && 'locked' in __node) __result.locked = __node.locked;",
+    "  if (__fields.indexOf('layoutMode') !== -1 && 'layoutMode' in __node) __result.layoutMode = __node.layoutMode;",
+    "  if (__fields.indexOf('layoutPositioning') !== -1 && 'layoutPositioning' in __node) __result.layoutPositioning = __node.layoutPositioning;",
+    "  if (__fields.indexOf('characters') !== -1 && typeof __node.characters === 'string') __result.characters = __node.characters;",
+    "  return __result;",
+    "}",
+    "const __stack = [];",
+    "const __roots = Array.isArray(__value) ? __value : [__value];",
+    "for (let __index = __roots.length - 1; __index >= 0; __index -= 1) {",
+    "  __stack.push({ node: __roots[__index], parentId: null, depth: 0 });",
+    "}",
+    "const __nodes = [];",
+    "let __seen = 0;",
+    "let __hasMore = false;",
+    "let __nextOffset;",
+    "while (__stack.length > 0) {",
+    "  const __entry = __stack.pop();",
+    "  const __node = __entry.node;",
+    "  const __index = __seen;",
+    "  __seen += 1;",
+    "  if (__index >= __offset) {",
+    "    const __candidate = __summary(__node, __entry.parentId, __entry.depth);",
+    "    if (__pageEnvelopeBytes(__nodes.concat([__candidate])) > __budget) {",
+    "      if (__nodes.length === 0) {",
+    `        return __failure('${INSPECT_NODE_TOO_LARGE}', 'One selected node exceeds the inspect page response budget.', { nodeId: __candidate.id, fields: __fields, byteBudget: __budget }, 'Remove characters from --fields or select fewer fields for this node.');`,
+    "      }",
+    "      __hasMore = true;",
+    "      __nextOffset = __offset + __nodes.length;",
+    "      break;",
+    "    }",
+    "    __nodes.push(__candidate);",
+    "  }",
+    "  if (__entry.depth < __depth) {",
+    "    const __children = Array.isArray(__node.children) ? __node.children : [];",
+    "    for (let __childIndex = __children.length - 1; __childIndex >= 0; __childIndex -= 1) {",
+    "      __stack.push({ node: __children[__childIndex], parentId: __node.id, depth: __entry.depth + 1 });",
+    "    }",
+    "  }",
+    "}",
+    "if (__nodes.length === 0 && __offset >= __seen) {",
+    `  return __failure('${INSPECT_CURSOR_OUT_OF_RANGE}', 'The inspect cursor offset is outside the current live traversal.', { offset: __offset, currentNodeCount: __seen }, 'Restart inspection from the target because the tree changed between pages.');`,
+    "}",
+    "return __page(__nodes, __hasMore, __nextOffset);"
+  ].join("\n");
+}
+function finalizeInspectPaginationResult(value, page) {
+  const result = asRecord(value);
+  if (!result) return invalidPageResult(page, "The inspect page did not return an object.");
+  const error2 = asRecord(result.error);
+  if (error2) return remotePageFailure(page, error2);
+  if (result.target !== page.nodeId || result.mode !== "inspect" || result.readConsistency !== "live" || result.depth !== page.depth || result.offset !== page.offset || !sameFieldsFromUnknown(result.fields, page.fields) || !Array.isArray(result.nodes) || typeof result.hasMore !== "boolean") {
+    return invalidPageResult(page, "The inspect page returned an unexpected shape.");
+  }
+  const nodes = validatePageNodes(result.nodes);
+  if (!nodes) return invalidPageResult(page, "The inspect page returned malformed node records.");
+  if (nodes.length === 0) return invalidPageResult(page, "The inspect page returned no nodes without an explicit cursor-range error.");
+  if (!result.hasMore) {
+    return pageSuccess(page, nodes, false);
+  }
+  if (!isNonNegativeSafeInteger(result.nextOffset) || result.nextOffset !== page.offset + nodes.length) {
+    return invalidPageResult(page, "The inspect page returned an invalid continuation offset.");
+  }
+  return pageSuccess(page, nodes, true, encodeInspectCursor({
+    v: INSPECT_CURSOR_VERSION,
+    fileKey: page.fileKey,
+    nodeId: page.nodeId,
+    depth: page.depth,
+    fields: page.fields,
+    offset: result.nextOffset
+  }));
+}
+function decodeInspectCursor(value) {
+  if (typeof value !== "string" || !value || value.length > INSPECT_CURSOR_MAX_CHARS || !/^[A-Za-z0-9_-]+$/u.test(value)) {
+    throw new FigmaWorkspaceInspectPaginationError("The inspect cursor is malformed.");
+  }
+  let parsed;
+  try {
+    const decoded = Buffer.from(value, "base64url");
+    if (decoded.toString("base64url") !== value) throw new Error("non-canonical base64url");
+    parsed = JSON.parse(decoded.toString("utf8"));
+  } catch {
+    throw new FigmaWorkspaceInspectPaginationError("The inspect cursor is malformed.");
+  }
+  const cursor = asRecord(parsed);
+  if (!cursor || !sameKeys(cursor, ["v", "fileKey", "nodeId", "depth", "fields", "offset"])) {
+    throw new FigmaWorkspaceInspectPaginationError("The inspect cursor has an unsupported shape.");
+  }
+  if (cursor.v !== INSPECT_CURSOR_VERSION || typeof cursor.fileKey !== "string" || !cursor.fileKey || typeof cursor.nodeId !== "string" || !cursor.nodeId || !isNonNegativeSafeInteger(cursor.depth) || !isNonNegativeSafeInteger(cursor.offset)) {
+    throw new FigmaWorkspaceInspectPaginationError("The inspect cursor has invalid values.");
+  }
+  const fields = canonicalInspectFields(cursor.fields, "The inspect cursor has invalid fields.");
+  if (!sameFieldsFromUnknown(cursor.fields, fields)) {
+    throw new FigmaWorkspaceInspectPaginationError("The inspect cursor fields are not canonical.");
+  }
+  return {
+    v: INSPECT_CURSOR_VERSION,
+    fileKey: cursor.fileKey,
+    nodeId: cursor.nodeId,
+    depth: cursor.depth,
+    fields,
+    offset: cursor.offset
+  };
+}
+function encodeInspectCursor(value) {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
+}
+function canonicalInspectFields(value, message) {
+  if (!Array.isArray(value) || value.length === 0 || value.some((field) => typeof field !== "string")) {
+    throw new FigmaWorkspaceInspectPaginationError(message);
+  }
+  const fields = value;
+  if (new Set(fields).size !== fields.length || fields.some((field) => !FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.includes(field))) {
+    throw new FigmaWorkspaceInspectPaginationError(message);
+  }
+  const selected = new Set(fields);
+  return FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.filter((field) => selected.has(field));
+}
+function pageSuccess(page, nodes, hasMore, nextCursor) {
+  return {
+    ok: true,
+    target: page.nodeId,
+    mode: "inspect",
+    readConsistency: "live",
+    depth: page.depth,
+    fields: [...page.fields],
+    offset: page.offset,
+    nodes,
+    hasMore,
+    ...nextCursor === void 0 ? {} : { nextCursor }
+  };
+}
+function remotePageFailure(page, error2) {
+  const code = typeof error2.code === "string" ? error2.code : INSPECT_PAGE_RESULT_INVALID;
+  const message = typeof error2.message === "string" ? error2.message : "The inspect page returned an invalid error.";
+  const details = asRecord(error2.details);
+  const suggestion = typeof error2.suggestion === "string" ? error2.suggestion : void 0;
+  return pageFailure(page, code, message, details, suggestion);
+}
+function invalidPageResult(page, message) {
+  return pageFailure(page, INSPECT_PAGE_RESULT_INVALID, message);
+}
+function pageFailure(page, code, message, details, suggestion) {
+  return {
+    ok: false,
+    target: page.nodeId,
+    mode: "inspect",
+    readConsistency: "live",
+    depth: page.depth,
+    fields: [...page.fields],
+    offset: page.offset,
+    error: {
+      code,
+      message,
+      ...details === void 0 ? {} : { details }
+    },
+    ...suggestion === void 0 ? {} : { suggestion }
+  };
+}
+function validatePageNodes(value) {
+  const nodes = [];
+  for (const entry of value) {
+    const node = asRecord(entry);
+    if (!node || typeof node.id !== "string" || typeof node.type !== "string" || node.parentId !== null && typeof node.parentId !== "string" || !isNonNegativeSafeInteger(node.depth) || !isNonNegativeSafeInteger(node.childCount)) {
+      return void 0;
+    }
+    nodes.push(node);
+  }
+  return nodes;
+}
+function sameFields(left, right) {
+  return left.length === right.length && left.every((field, index) => field === right[index]);
+}
+function sameFieldsFromUnknown(value, expected) {
+  return Array.isArray(value) && value.length === expected.length && value.every((field, index) => field === expected[index]);
+}
+function sameKeys(value, expected) {
+  const actual = Object.keys(value).sort();
+  const sortedExpected = [...expected].sort();
+  return actual.length === sortedExpected.length && actual.every((key, index) => key === sortedExpected[index]);
+}
+function isNonNegativeSafeInteger(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+function asRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value : void 0;
+}
+function literal2(value) {
+  const serialized = JSON.stringify(value);
+  if (serialized === void 0) throw new Error("Inspect pagination value must be JSON-serializable.");
+  return serialized;
+}
+var FIGMA_WORKSPACE_INSPECT_PAGE_RESPONSE_BUDGET_BYTES, INSPECT_CURSOR_VERSION, DEFAULT_INSPECT_DEPTH, INSPECT_CURSOR_MAX_CHARS, INSPECT_NODE_TOO_LARGE, INSPECT_CURSOR_OUT_OF_RANGE, INSPECT_PAGE_RESULT_INVALID, FigmaWorkspaceInspectPaginationError;
+var init_inspect_pagination = __esm({
+  "src/runtime/inspect-pagination.ts"() {
+    "use strict";
+    init_tool_args();
+    FIGMA_WORKSPACE_INSPECT_PAGE_RESPONSE_BUDGET_BYTES = 18e3;
+    INSPECT_CURSOR_VERSION = 1;
+    DEFAULT_INSPECT_DEPTH = 2;
+    INSPECT_CURSOR_MAX_CHARS = 4096;
+    INSPECT_NODE_TOO_LARGE = "FIGMA_WORKSPACE_INSPECT_NODE_TOO_LARGE";
+    INSPECT_CURSOR_OUT_OF_RANGE = "FIGMA_WORKSPACE_INSPECT_CURSOR_OUT_OF_RANGE";
+    INSPECT_PAGE_RESULT_INVALID = "FIGMA_WORKSPACE_INSPECT_PAGE_RESULT_INVALID";
+    FigmaWorkspaceInspectPaginationError = class extends Error {
+      code = "FIGMA_WORKSPACE_INSPECT_CURSOR_INVALID";
+      details;
+      constructor(message, details) {
+        super(message);
+        this.name = "FigmaWorkspaceInspectPaginationError";
+        this.details = details;
+      }
+    };
+  }
+});
+
 // src/runtime/script-runner.ts
 import {
   compileFigmaWorkspaceTypescriptSource,
@@ -22116,8 +22465,8 @@ function prepareFigmaWorkspaceScriptSource(options) {
 }
 function createTargetPageBootstrap(targetPageId) {
   return `{ const __targetPage = typeof figma.getNodeByIdAsync === "function"
-  ? await figma.getNodeByIdAsync(${literal2(targetPageId)})
-  : figma.getNodeById(${literal2(targetPageId)});
+  ? await figma.getNodeByIdAsync(${literal3(targetPageId)})
+  : figma.getNodeById(${literal3(targetPageId)});
 if (!__targetPage || __targetPage.type !== "PAGE") throw new Error("targetPageId must resolve to a PAGE node.");
 await figma.setCurrentPageAsync(__targetPage); }`;
 }
@@ -22234,7 +22583,7 @@ function removeUndefined(record3) {
     Object.entries(record3).filter(([, value]) => value !== void 0)
   );
 }
-function literal2(value) {
+function literal3(value) {
   return JSON.stringify(value);
 }
 var FIGMA_TYPESCRIPT_EXTENSION, UPSTREAM_EVAL_CODE_LIMIT_BYTES;
@@ -22345,7 +22694,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "none",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-          debugFiles: ["debugFile", "upstreamFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: true
         }
       },
@@ -22365,7 +22714,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "string-only",
         outputPolicy: {
           inlineLimitFields: [],
-          debugFiles: [],
+          resultFiles: [],
           upstreamEnvelope: false
         }
       },
@@ -22385,7 +22734,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: ["metadata.json"],
-          debugFiles: ["metadataFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: true
         },
         guidanceProfile: {
@@ -22409,7 +22758,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-          debugFiles: ["debugFile", "upstreamFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: true
         },
         guidanceProfile: {
@@ -22432,7 +22781,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-          debugFiles: ["debugFile", "upstreamFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: true
         },
         guidanceProfile: {
@@ -22465,7 +22814,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "none",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-          debugFiles: ["debugFile", "upstreamFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: true
         },
         guidanceProfile: {
@@ -22488,7 +22837,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "none",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-          debugFiles: ["debugFile", "upstreamFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: true
         },
         guidanceProfile: {
@@ -22508,7 +22857,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-          debugFiles: ["debugFile", "upstreamFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: true
         },
         guidanceProfile: {
@@ -22531,7 +22880,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "node-scoped-list",
         outputPolicy: {
           inlineLimitFields: [],
-          debugFiles: ["debugFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: false
         }
       },
@@ -22551,7 +22900,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "node-scoped-list",
         outputPolicy: {
           inlineLimitFields: [],
-          debugFiles: ["debugFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: false
         }
       },
@@ -22572,7 +22921,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "node-scoped",
         outputPolicy: {
           inlineLimitFields: [],
-          debugFiles: [],
+          resultFiles: [],
           upstreamEnvelope: false
         }
       },
@@ -22587,7 +22936,7 @@ var init_wrapper_contracts = __esm({
           derivedUpstream: ["fileKey"]
         }),
         targetSupport: "file-scoped",
-        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true }
+        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true }
       },
       {
         toolName: "figma_workspace_code_connect_plan_context",
@@ -22600,7 +22949,7 @@ var init_wrapper_contracts = __esm({
           derivedUpstream: ["fileKey", "nodeId"]
         }),
         targetSupport: "node-scoped",
-        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true }
+        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true }
       },
       {
         toolName: "figma_workspace_code_connect_plan_suggestions",
@@ -22615,7 +22964,7 @@ var init_wrapper_contracts = __esm({
           hiddenUpstreamOptional: ["excludeMappingPrompt"]
         }),
         targetSupport: "node-scoped",
-        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true }
+        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true }
       },
       {
         toolName: "figma_workspace_code_connect_plan_mapping_read",
@@ -22630,7 +22979,7 @@ var init_wrapper_contracts = __esm({
           hiddenUpstreamOptional: ["codeConnectLabel"]
         }),
         targetSupport: "node-scoped",
-        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true }
+        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true }
       },
       {
         toolName: "figma_workspace_code_connect_apply_mapping_read",
@@ -22645,7 +22994,7 @@ var init_wrapper_contracts = __esm({
           hiddenUpstreamOptional: ["codeConnectLabel"]
         }),
         targetSupport: "node-scoped",
-        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true }
+        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true }
       },
       {
         toolName: "figma_workspace_code_connect_apply",
@@ -22660,7 +23009,7 @@ var init_wrapper_contracts = __esm({
           hiddenUpstreamOptional: ["clientLanguages", "clientFrameworks"]
         }),
         targetSupport: "node-scoped",
-        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true }
+        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true }
       },
       {
         toolName: "figma_workspace_code_connect_verify_mapping_read",
@@ -22675,7 +23024,7 @@ var init_wrapper_contracts = __esm({
           hiddenUpstreamOptional: ["codeConnectLabel"]
         }),
         targetSupport: "node-scoped",
-        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true }
+        outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true }
       },
       {
         toolName: "figma_workspace_call_upstream_tool",
@@ -22684,7 +23033,7 @@ var init_wrapper_contracts = __esm({
         targetSupport: "freeform-upstream",
         outputPolicy: {
           inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-          debugFiles: ["debugFile", "upstreamFile"],
+          resultFiles: ["resultFile"],
           upstreamEnvelope: true
         }
       }
@@ -23093,18 +23442,45 @@ function createRunOutputWriter(args, invocation3) {
     },
     async write(payload) {
       const written = {};
-      if (payload.writeResult && files.resultFile) {
-        written.debugFile = await writeJsonFile(files.resultFile, payload.result);
-      }
       if (payload.compiledScript && files.compiledScriptFile) {
         written.compiledScriptFile = await writeTextFile(
           files.compiledScriptFile,
           formatCompiledScriptFailureFile(payload.compiledScript, args)
         );
       }
+      if (payload.writeResult && files.resultFile) {
+        if (!payload.receipt) {
+          throw new Error("Figma Workspace result receipt metadata is required when writing a result file.");
+        }
+        written.resultFile = await writeFigmaWorkspaceResultFile(files.resultFile, {
+          ...payload.receipt,
+          result: resultWithOutputFiles(payload.result, written)
+        });
+      }
       return written;
     }
   };
+}
+function createFigmaWorkspaceResultFileReceipt(options) {
+  return removeUndefined2({
+    kind: "figma-cli-result",
+    schemaVersion: 1,
+    tool: options.tool,
+    invocation: options.invocation,
+    result: resultWithoutOwnResultFile(options.result),
+    upstream: options.upstream
+  });
+}
+function createFigmaWorkspaceResultFilePointer(pointer, receipt, dataPath) {
+  return {
+    ...pointer,
+    jq: resultFileJqQueries(receipt, dataPath)
+  };
+}
+async function writeFigmaWorkspaceResultFile(path, options) {
+  const receipt = createFigmaWorkspaceResultFileReceipt(options);
+  const pointer = await writeJsonFile(path, receipt);
+  return createFigmaWorkspaceResultFilePointer(pointer, receipt, options.dataPath);
 }
 function resolveScriptInputPath(args) {
   const scriptPath = asOptionalString(args.scriptPath);
@@ -23149,7 +23525,7 @@ async function assertInvocationManagedInputFile(path, invocation3) {
   return assertManagedFilePath({ root: workspaceRoot, path: resolvedPath });
 }
 async function writeCaptureOutputFile(outputFile, upstream, parsed) {
-  const rawContent = asRecord(upstream).content;
+  const rawContent = asRecord2(upstream).content;
   const content = Array.isArray(rawContent) ? rawContent.filter(isRecord4) : [];
   const image = content.find((item) => item.type === "image" && typeof item.data === "string");
   if (image && typeof image.data === "string") {
@@ -23253,6 +23629,68 @@ async function writeJsonFile(path, value) {
   await atomicWriteManagedTextFile({ root: dirname6(path), path, overwrite: true }, content);
   return textFileMetadata(path, content);
 }
+function resultWithOutputFiles(result, outputFiles) {
+  if (!isRecord4(result)) {
+    return result;
+  }
+  const existing = asRecord2(result.outputFiles);
+  const combined = removeUndefined2({ ...existing, ...asRecord2(outputFiles) });
+  return {
+    ...result,
+    ...Object.keys(combined).length > 0 ? { outputFiles: combined } : {}
+  };
+}
+function resultWithoutOwnResultFile(result) {
+  if (!isRecord4(result)) {
+    return result;
+  }
+  const outputFiles = asRecord2(result.outputFiles);
+  if (!Object.prototype.hasOwnProperty.call(outputFiles, "resultFile")) {
+    return result;
+  }
+  const { resultFile: _resultFile, ...remainingOutputFiles } = outputFiles;
+  const receiptResult = { ...result };
+  if (Object.keys(remainingOutputFiles).length > 0) {
+    receiptResult.outputFiles = remainingOutputFiles;
+  } else {
+    delete receiptResult.outputFiles;
+  }
+  return receiptResult;
+}
+function resultFileJqQueries(receipt, dataPath) {
+  const result = asRecord2(receipt.result);
+  const queries = {
+    full: ".",
+    data: dataPath ?? inferredResultFileDataPath(receipt, result),
+    status: ".result | {ok,phase,executionOutcome,upstreamError,error,operationError,diagnostics,retryGuidance,postProcessing}"
+  };
+  if (result.mode === "inspect") {
+    queries.nodes = ".result.nodes";
+    queries.nextCursor = ".result.nextCursor";
+    queries.hasMore = ".result.hasMore";
+  }
+  return queries;
+}
+function inferredResultFileDataPath(receipt, result) {
+  if (Object.prototype.hasOwnProperty.call(receipt, "upstream")) {
+    return ".upstream";
+  }
+  if (result.mode === "inspect") {
+    return ".result.nodes";
+  }
+  const metadata = asRecord2(result.metadata);
+  if (Object.prototype.hasOwnProperty.call(metadata, "json")) {
+    return ".result.metadata.json";
+  }
+  const upstream = asRecord2(result.upstream);
+  if (Object.prototype.hasOwnProperty.call(upstream, "result")) {
+    return ".result.upstream.result";
+  }
+  if (Object.prototype.hasOwnProperty.call(upstream, "text")) {
+    return ".result.upstream.text";
+  }
+  return ".result";
+}
 function createInvocationWorkspace(options) {
   if (!isAbsolute2(options.outputDir)) {
     throw new Error('Tool argument "outputDir" must be an absolute path.');
@@ -23278,7 +23716,7 @@ function resolveRunOutputFiles(invocation3) {
     const resultFile = resolveWorkspaceFile(
       invocation3.workspace.outputDir,
       "figma-run.result.json",
-      "debugFile"
+      "resultFile"
     );
     return {
       resultFile,
@@ -23339,7 +23777,7 @@ function countTextLines(content) {
   return content.endsWith("\n") ? newlineCount : newlineCount + 1;
 }
 function extractCaptureImageUrl(upstream, parsed) {
-  const rawContent = asRecord(upstream).content;
+  const rawContent = asRecord2(upstream).content;
   const content = Array.isArray(rawContent) ? rawContent.filter(isRecord4) : [];
   for (const item of content) {
     if (item.type === "image") {
@@ -23459,7 +23897,7 @@ function removeUndefined2(value) {
     Object.entries(value).filter(([, item]) => item !== void 0).map(([key, item]) => [key, removeUndefined2(item)])
   );
 }
-function asRecord(value) {
+function asRecord2(value) {
   if (isRecord4(value)) {
     return value;
   }
@@ -23840,113 +24278,74 @@ async function handleUpstreamTools(args, upstreamToolCache) {
 }
 async function writeCallUpstreamResultFiles(options) {
   const outputFile = resolveCallUpstreamOutputFile(options.toolName, options.session);
-  const outputFiles = {
-    debugFile: responseFilePointer(await writeJsonFile(
-      outputFile,
-      createUpstreamBackedResultFilePayload({
-        tool: options.wrapperToolName,
-        session: options.session,
-        resultPayload: options.resultPayload,
-        upstream: options.upstream,
-        fields: {
-          upstreamToolName: options.toolName
-        }
-      })
-    ))
+  return {
+    resultFile: await writeRuntimeResultFile({
+      path: outputFile,
+      tool: options.wrapperToolName,
+      session: options.session,
+      result: resultPayloadWithoutUpstreamPayload(options.resultPayload),
+      upstream: options.upstreamCallResult
+    })
   };
-  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstreamCallResult));
-  return outputFiles;
 }
-async function writeMetadataFile(options) {
+async function writeMetadataResultFile(options) {
   const metadataFile = metadataResultFilePath(options.session);
-  return responseFilePointer(await writeJsonFile(metadataFile, options.metadata));
+  return writeRuntimeResultFile({
+    path: metadataFile,
+    tool: "figma:metadata",
+    session: options.session,
+    result: options.result
+  });
 }
 function metadataResultFilePath(session) {
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
-  const fileName = `metadata-${timestamp}.metadata.json`;
+  const fileName = `metadata-${timestamp}.result.json`;
   if (session.workspace) {
-    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "metadataFile");
+    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "resultFile");
   }
-  return resolveWorkspaceFile(session.outputRoot, fileName, "metadataFile");
+  return resolveWorkspaceFile(session.outputRoot, fileName, "resultFile");
 }
 function resolveCallUpstreamOutputFile(toolName, session) {
   const timestamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[^\dTZ]/gu, "");
   const fileName = `upstream-${slugifyTaskName(toolName || "tool")}-${timestamp}.result.json`;
   if (session.workspace) {
-    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "debugFile");
+    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "resultFile");
   }
-  return resolveWorkspaceFile(session.outputRoot, fileName, "debugFile");
+  return resolveWorkspaceFile(session.outputRoot, fileName, "resultFile");
 }
-function upstreamFilePathForResultFile(resultFile) {
-  if (resultFile.endsWith(".result.json")) {
-    return `${resultFile.slice(0, -".result.json".length)}.upstream.json`;
-  }
-  if (resultFile.endsWith(".json")) {
-    return `${resultFile.slice(0, -".json".length)}.upstream.json`;
-  }
-  return `${resultFile}.upstream.json`;
-}
-async function addUpstreamSidecar(outputFiles, resultFile, upstream) {
-  if (!resultFile || !upstream) {
-    return { ...outputFiles };
-  }
-  return {
-    ...outputFiles,
-    upstreamFile: responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(resultFile), upstream))
-  };
-}
-function responseFilePointer(pointer) {
-  return {
-    path: pointer.path,
-    bytes: pointer.bytes,
-    lineCount: pointer.lineCount
-  };
-}
-function createResultFileEnvelope(options) {
-  return removeUndefined3({
-    kind: "figma-cli-result",
-    ok: options.ok,
+async function writeRuntimeResultFile(options) {
+  return writeFigmaWorkspaceResultFile(options.path, {
     tool: options.tool,
-    invocationId: options.session.invocationId,
-    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    ...options.fields
-  });
-}
-function createUpstreamBackedResultFilePayload(options) {
-  return createResultFileEnvelope({
-    tool: options.tool,
-    session: options.session,
-    ok: options.resultPayload.ok !== false,
-    fields: {
-      ...options.fields,
-      upstreamKind: asOptionalString2(options.upstream?.kind),
-      upstreamOk: typeof options.upstream?.ok === "boolean" ? options.upstream.ok : void 0,
-      upstreamError: isRecord5(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : void 0
-    }
-  });
-}
-function createRunScriptResultFilePayload(options) {
-  const script = asRecord2(options.resultPayload.script);
-  return createUpstreamBackedResultFilePayload({
-    tool: "figma:run",
-    session: options.session,
-    resultPayload: options.resultPayload,
+    invocation: resultFileInvocation(options.session),
+    result: options.result,
     upstream: options.upstream,
-    fields: {
-      phase: asOptionalString2(options.resultPayload.phase),
-      executionOutcome: asOptionalString2(options.resultPayload.executionOutcome),
-      diagnosticsCount: options.diagnostics.length,
-      fatalDiagnostics: options.diagnostics.filter((item) => item.severity === "fatal").length,
-      warningDiagnostics: options.diagnostics.filter((item) => item.severity === "warning").length,
-      diagnostics: options.diagnostics.length > 0 ? options.diagnostics : void 0,
-      repairPlan: options.resultPayload.repairPlan,
-      script,
-      captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
-      retryGuidance: options.resultPayload.retryGuidance,
-      captures: options.resultPayload.captures,
-      resultSummary: options.parsed ? summarizeParsedResult(options.parsed) : void 0,
-      nodeIds: options.parsed ? collectNodeIds(options.parsed.json) : void 0
-    }
+    dataPath: options.dataPath
+  });
+}
+function resultFileInvocation(session) {
+  return removeUndefined3({
+    invocationId: session.invocationId,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    outputRoot: session.outputRoot
+  });
+}
+function resultPayloadWithoutUpstreamPayload(result) {
+  const upstream = asRecord3(result.upstream);
+  if (!Object.prototype.hasOwnProperty.call(upstream, "result") && !Object.prototype.hasOwnProperty.call(upstream, "text")) {
+    return result;
+  }
+  const { result: _result, text: _text, ...summary } = upstream;
+  return { ...result, upstream: summary };
+}
+function writeRunOutput(outputWriter, session, result, options) {
+  return outputWriter.write({
+    result,
+    receipt: {
+      tool: "figma:run",
+      invocation: resultFileInvocation(session)
+    },
+    ...options
   });
 }
 async function executeRun(args, runtime) {
@@ -23988,14 +24387,7 @@ async function executeRun(args, runtime) {
       repairPlan: repairPlanForResponse(diagnostics2),
       script: responseScriptMetadata({ scriptPath })
     });
-    const outputFiles = await outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload: resultPayload2,
-        diagnostics: diagnostics2
-      }),
-      writeResult: true
-    });
+    const outputFiles = await writeRunOutput(outputWriter, session, resultPayload2, { writeResult: true });
     return {
       ...limitInlineScriptResult(resultPayload2, inlineResultLimit, []),
       outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0
@@ -24037,14 +24429,7 @@ async function executeRun(args, runtime) {
       script: responseScript
     });
     const limitedPayload2 = limitInlineScriptResult(resultPayload2, inlineResultLimit, []);
-    const outputFiles = await outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload: resultPayload2,
-        diagnostics
-      }),
-      writeResult: true
-    });
+    const outputFiles = await writeRunOutput(outputWriter, session, resultPayload2, { writeResult: true });
     const payload = {
       ...limitedPayload2,
       outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0
@@ -24065,12 +24450,7 @@ async function executeRun(args, runtime) {
       script: responseScript,
       upstreamError: responseUpstreamError(upstreamError)
     });
-    const outputFiles = await outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload: resultPayload2,
-        diagnostics
-      }),
+    const outputFiles = await writeRunOutput(outputWriter, session, resultPayload2, {
       compiledScript: wrappedScript,
       writeResult: true
     });
@@ -24102,12 +24482,7 @@ async function executeRun(args, runtime) {
     const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
       resultPayload: resultPayload2,
       stage: "scriptResultSidecars",
-      write: () => outputWriter.write({
-        result: createRunScriptResultFilePayload({
-          session,
-          resultPayload: resultPayload2,
-          diagnostics
-        }),
+      write: () => writeRunOutput(outputWriter, session, resultPayload2, {
         compiledScript: wrappedScript,
         writeResult: true
       })
@@ -24137,12 +24512,7 @@ async function executeRun(args, runtime) {
     const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
       resultPayload: resultPayload2,
       stage: "scriptResultSidecars",
-      write: () => outputWriter.write({
-        result: createRunScriptResultFilePayload({
-          session,
-          resultPayload: resultPayload2,
-          diagnostics
-        }),
+      write: () => writeRunOutput(outputWriter, session, resultPayload2, {
         compiledScript: wrappedScript,
         writeResult: true
       })
@@ -24165,18 +24535,23 @@ async function executeRun(args, runtime) {
       script: responseScript,
       upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : void 0
     });
+    const diagnosticPayload = localPostprocessingFailure(
+      resultPayload2,
+      "upstreamResponseBudget",
+      attempt.postResponseError
+    );
+    const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
+      resultPayload: diagnosticPayload,
+      stage: "scriptResultReceipt",
+      write: () => writeRunOutput(outputWriter, session, diagnosticPayload, { writeResult: true })
+    });
     return limitInlineScriptResult(
-      localPostprocessingFailure(
-        resultPayload2,
-        "upstreamResponseBudget",
-        attempt.postResponseError
-      ),
+      payloadWithOutputFiles,
       inlineResultLimit,
       []
     );
   }
   if (parsed.upstreamError) {
-    const upstreamResult2 = upstreamEnvelope(parsed);
     const atomicScriptFailure = isConfirmedAtomicUseFigmaScriptFailure(evalSettings, parsed);
     const resultPayload2 = removeUndefined3({
       ok: false,
@@ -24192,21 +24567,10 @@ async function executeRun(args, runtime) {
     const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
       resultPayload: resultPayload2,
       stage: "scriptResultSidecars",
-      write: async () => addUpstreamSidecar(
-        await outputWriter.write({
-          result: createRunScriptResultFilePayload({
-            session,
-            resultPayload: resultPayload2,
-            diagnostics,
-            parsed,
-            upstream: upstreamResult2
-          }),
-          compiledScript: wrappedScript,
-          writeResult: true
-        }),
-        outputWriter.files.resultFile,
-        upstreamResult2
-      )
+      write: () => writeRunOutput(outputWriter, session, resultPayload2, {
+        compiledScript: wrappedScript,
+        writeResult: true
+      })
     });
     const payload = {
       ...limitInlineScriptResult(
@@ -24234,7 +24598,6 @@ async function executeRun(args, runtime) {
     script: successScript,
     ...runUpstreamFields(parsed)
   });
-  const upstreamResult = upstreamEnvelope(parsed);
   const limitedPayload = limitInlineScriptResult(
     resultPayload,
     inlineResultLimit,
@@ -24244,25 +24607,7 @@ async function executeRun(args, runtime) {
   return attachPostExecutionOutputFiles({
     resultPayload: limitedPayload,
     stage: "scriptResultSidecars",
-    write: async () => needsOutputFile ? addUpstreamSidecar(await outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload,
-        diagnostics,
-        parsed,
-        upstream: upstreamResult
-      }),
-      writeResult: true
-    }), outputWriter.files.resultFile, upstreamResult) : outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload,
-        diagnostics,
-        parsed,
-        upstream: upstreamResult
-      }),
-      writeResult: false
-    })
+    write: () => writeRunOutput(outputWriter, session, resultPayload, { writeResult: needsOutputFile })
   });
 }
 async function executeApplyAssetManifest(args, runtime) {
@@ -24370,7 +24715,6 @@ async function executeApplyAssetManifest(args, runtime) {
         });
       }
     }
-    const files = {};
     const application = await applyUploadedAssetFillsIfAvailable({
       session,
       runtime,
@@ -24406,31 +24750,20 @@ async function executeApplyAssetManifest(args, runtime) {
       failures: failures.length > 0 ? failures : void 0
     };
     if (!ok) {
-      files.debugFile = responseFilePointer(await writeJsonFile(resolveAssetManifestDebugFile(args, session), createResultFileEnvelope({
-        tool: "figma:assets:apply",
-        session,
-        ok,
-        fields: {
-          assetCount: assetResults.length,
-          failureCount: failures.length,
-          applicationOk: application.ok,
-          applicationReason: application.reason,
-          applicationSource: application.applicationSource,
-          validationOk: validation.ok,
-          validationReason: validation.reason,
-          validationSource: validation.validationSource,
-          validationExpectedCount: validation.expectedCount,
-          validationMissingCount: validation.missingValidationCount,
-          failures: failures.length > 0 ? failures : void 0,
-          assetDetails
-        }
-      })));
+      return attachPostExecutionOutputFiles({
+        resultPayload: payload,
+        stage: "assetResultFile",
+        write: async () => ({
+          resultFile: await writeRuntimeResultFile({
+            path: resolveAssetManifestDebugFile(args, session),
+            tool: "figma:assets:apply",
+            session,
+            result: { ...payload, assetDetails }
+          })
+        })
+      });
     }
-    const response = {
-      ...payload,
-      outputFiles: Object.keys(files).length > 0 ? files : void 0
-    };
-    return response;
+    return payload;
   } finally {
     await Promise.allSettled(assetInputs.map(({ handle }) => handle.close()));
   }
@@ -24445,9 +24778,9 @@ function resolveAssetManifestDebugFile(args, session) {
   const slug = "asset-manifest";
   const fileName = `${slug}.assets.result.json`;
   if (session.workspace) {
-    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "debugFile");
+    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "resultFile");
   }
-  return resolveWorkspaceFile(session.outputRoot, fileName, "debugFile");
+  return resolveWorkspaceFile(session.outputRoot, fileName, "resultFile");
 }
 function compactUploadSummary(upload) {
   if (!upload) {
@@ -24523,7 +24856,7 @@ async function executeDownloadAssets(args, runtime) {
           code: "FIGMA_WORKSPACE_DOWNLOAD_SVG_ASSET_SHAPE_UNSUPPORTED",
           severity: "fatal",
           message: unsupportedSvgAssetError.message,
-          suggestion: "Inspect outputFiles.debugFile and the live download_assets description before adapting the parser to a new response shape.",
+          suggestion: "Inspect outputFiles.resultFile and the live download_assets description before adapting the parser to a new response shape.",
           docsHint: "Figma Workspace CLI: figma:upstream:read download_assets"
         });
       }
@@ -24601,26 +24934,21 @@ async function executeDownloadAssets(args, runtime) {
     diagnostics: diagnostics.length > 0 ? diagnosticsForResponse(dedupeDiagnostics(diagnostics)) : void 0,
     failures: failures.length > 0 ? failures : void 0
   });
-  const outputFiles = {};
   if (!ok) {
-    outputFiles.debugFile = responseFilePointer(await writeJsonFile(paths.resultFile, createResultFileEnvelope({
-      tool: "figma:assets:download",
-      session,
-      ok,
-      fields: {
-        upstreamToolName: tool.name,
-        targetCount: targetResults.length,
-        failureCount: failures.length,
-        failures: failures.length > 0 ? failures : void 0,
-        targetDetails
-      }
-    })));
+    return attachPostExecutionOutputFiles({
+      resultPayload: payload,
+      stage: "downloadResultFile",
+      write: async () => ({
+        resultFile: await writeRuntimeResultFile({
+          path: paths.resultFile,
+          tool: "figma:assets:download",
+          session,
+          result: { ...payload, targetDetails }
+        })
+      })
+    });
   }
-  const response = {
-    ...payload,
-    outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : void 0
-  };
-  return response;
+  return payload;
 }
 async function loadDownloadAssetsManifest(args, session, resourceBudget) {
   const inlineTargets = Array.isArray(args.targets) ? args.targets : void 0;
@@ -24635,7 +24963,7 @@ async function loadDownloadAssetsManifest(args, session, resourceBudget) {
     resourceBudget,
     label: "Download manifest"
   })).toString("utf8")) : void 0;
-  const manifestRecord = asRecord2(manifestValue);
+  const manifestRecord = asRecord3(manifestValue);
   if (manifestRecord.assets !== void 0) {
     throw new Error('Download manifest field "assets" is not supported. Use "targets".');
   }
@@ -24649,7 +24977,7 @@ async function loadDownloadAssetsManifest(args, session, resourceBudget) {
   };
 }
 function normalizeDownloadAssetTarget(value, index, session) {
-  const record3 = asRecord2(value);
+  const record3 = asRecord3(value);
   const targetResolution = resolveRequestScopedTarget({
     target: record3.target,
     session,
@@ -24686,7 +25014,7 @@ function resolveDownloadAssetsOutputPaths(args, session) {
   if (!outputDir) {
     outputDir = session.workspace ? resolveWorkspaceFile(session.workspace.outputDir, `${slug}.downloads`, "outputDir") : resolveDownloadAssetsTempPath(session, `${slug}.downloads`);
   }
-  const resultFile = session.workspace ? resolveWorkspaceFile(session.workspace.outputDir, `${slug}.downloads.result.json`, "debugFile") : resolveDownloadAssetsTempPath(session, `${slug}.downloads.result.json`);
+  const resultFile = session.workspace ? resolveWorkspaceFile(session.workspace.outputDir, `${slug}.downloads.result.json`, "resultFile") : resolveDownloadAssetsTempPath(session, `${slug}.downloads.result.json`);
   return { outputDir, resultFile };
 }
 function resolveDownloadAssetsTempPath(session, fileName) {
@@ -25282,7 +25610,7 @@ async function executeCaptureNodeForTool(args, runtime, resourceBudget = command
   return payload;
 }
 async function prepareBoundedCapturePayload(upstream, parsed, resourceBudget) {
-  const content = Array.isArray(asRecord2(upstream).content) ? asRecord2(upstream).content.filter(isRecord5) : [];
+  const content = Array.isArray(asRecord3(upstream).content) ? asRecord3(upstream).content.filter(isRecord5) : [];
   const inlineImage = content.find((item) => item.type === "image" && typeof item.data === "string");
   if (inlineImage && typeof inlineImage.data === "string") {
     const compactBase64 = inlineImage.data.replace(/\s/gu, "");
@@ -25324,7 +25652,7 @@ async function prepareBoundedCapturePayload(upstream, parsed, resourceBudget) {
   }
 }
 function findCaptureImageUrlForResourceLimit(upstream, parsedJson) {
-  const content = Array.isArray(asRecord2(upstream).content) ? asRecord2(upstream).content.filter(isRecord5) : [];
+  const content = Array.isArray(asRecord3(upstream).content) ? asRecord3(upstream).content.filter(isRecord5) : [];
   for (const item of content) {
     if (item.type !== "image") continue;
     for (const value of [item.url, item.imageUrl, item.image_url, item.screenshotUrl, item.downloadUrl]) {
@@ -25527,7 +25855,7 @@ function compactQueuedCaptureResult(requestId, result) {
   });
 }
 function compactQueuedCaptureError(error2) {
-  const record3 = asRecord2(error2);
+  const record3 = asRecord3(error2);
   return removeUndefined3({
     message: truncateUtf82(asOptionalString2(record3.message) ?? "Queued capture failed.", QUEUED_CAPTURE_ERROR_MESSAGE_BYTES),
     code: asOptionalString2(record3.code) ? truncateUtf82(asOptionalString2(record3.code), 120) : void 0
@@ -25566,17 +25894,38 @@ async function handleInspect(args, runtime) {
     throw new Error("figma:inspect requires file context. Pass --file with a raw node id, or pass a full Figma node URL.");
   }
   const target2 = targetResolution.nodeId;
-  const depth = normalizePositiveInteger(args.depth, 2);
-  const code = [
-    `const __target = ${literal3(target2)};`,
-    `const __depth = ${literal3(depth)};`,
-    "const __value = await __figmaWorkspaceResolveNode(__target, 'figma:inspect target');",
-    "return {",
-    "  target: __target,",
-    "  mode: 'inspect',",
-    "  summary: Array.isArray(__value) ? __value.map((node) => __figmaWorkspaceSummarizeNode(node, __depth)) : __figmaWorkspaceSummarizeNode(__value, __depth),",
-    "};"
-  ].join("\n");
+  let page;
+  try {
+    page = resolveInspectPagination({
+      fileKey: targetResolution.fileKey,
+      nodeId: target2,
+      depth: args.depth,
+      fields: args.fields,
+      cursor: args.cursor
+    });
+  } catch (error2) {
+    if (!(error2 instanceof FigmaWorkspaceInspectPaginationError)) {
+      throw error2;
+    }
+    const diagnostic = inspectPaginationDiagnostic({
+      code: error2.code,
+      message: error2.message,
+      details: error2.details
+    });
+    return makeJsonToolResult({
+      ok: false,
+      target: target2,
+      mode: "inspect",
+      readConsistency: "live",
+      diagnostics: optionalDiagnosticsForResponse([...session.lastDiagnostics, diagnostic]),
+      error: {
+        code: error2.code,
+        message: error2.message,
+        details: error2.details
+      }
+    });
+  }
+  const code = buildInspectPaginationCode(page);
   const evalSettings = await resolveEvalSettings(session, args, runtime, targetResolution.fileKey);
   const upstream = await callUpstreamEval(
     runtime.client,
@@ -25586,12 +25935,34 @@ async function handleInspect(args, runtime) {
   const parsed = parseUpstreamToolResult(upstream);
   if (!targetResolution.crossFile) {
   }
-  const payload = {
-    ok: !parsed.upstreamError,
-    diagnostics: optionalDiagnosticsForResponse(session.lastDiagnostics),
-    ...inspectInlineResultFields(parsed, "inspect")
+  if (parsed.upstreamError) {
+    return makeJsonToolResult({
+      ok: false,
+      target: target2,
+      mode: "inspect",
+      readConsistency: "live",
+      depth: page.depth,
+      fields: page.fields,
+      offset: page.offset,
+      diagnostics: optionalDiagnosticsForResponse(session.lastDiagnostics),
+      upstreamError: responseUpstreamError(parsed.upstreamError)
+    });
+  }
+  const pageResult = finalizeInspectPaginationResult(asRecord3(asRecord3(parsed.json).result), page);
+  const diagnostics = pageResult.ok ? session.lastDiagnostics : [...session.lastDiagnostics, inspectPaginationDiagnostic(pageResult.error, pageResult.suggestion)];
+  return makeJsonToolResult({
+    ...pageResult,
+    diagnostics: optionalDiagnosticsForResponse(diagnostics)
+  });
+}
+function inspectPaginationDiagnostic(error2, suggestion) {
+  return {
+    code: error2.code,
+    severity: "fatal",
+    message: error2.message,
+    suggestion: suggestion ?? "Adjust the inspect cursor, depth, or selected fields, then retry this read.",
+    docsHint: "Figma Workspace CLI: figma:inspect"
   };
-  return makeJsonToolResult(payload);
 }
 async function executeInspectStyle(args, runtime) {
   const session = currentInvocationContext();
@@ -25630,13 +26001,13 @@ async function executeInspectStyle(args, runtime) {
   return payload;
 }
 function buildInspectStyleCode(options) {
-  const limitLiteral = options.limit === void 0 ? "undefined" : literal3(options.limit);
+  const limitLiteral = options.limit === void 0 ? "undefined" : literal4(options.limit);
   return [
-    `const __target = ${literal3(options.target)};`,
-    `const __depth = ${literal3(options.depth)};`,
-    `const __offset = ${literal3(options.offset ?? 0)};`,
+    `const __target = ${literal4(options.target)};`,
+    `const __depth = ${literal4(options.depth)};`,
+    `const __offset = ${literal4(options.offset ?? 0)};`,
     `const __limit = ${limitLiteral};`,
-    `const __includeSummary = ${literal3(options.includeSummary)};`,
+    `const __includeSummary = ${literal4(options.includeSummary)};`,
     "const __value = await __figmaWorkspaceResolveNode(__target, 'figma:inspect target');",
     "function __hex(__color) {",
     "  const __r = Math.max(0, Math.min(255, Math.round((__color.r || 0) * 255)));",
@@ -25772,7 +26143,7 @@ async function readInspectStyleWithAdaptiveBatches(options) {
     chunks.push(...chunkResult.chunks);
     expectedNodeCount = expectedNodeCount ?? inspectStyleNodeCount(chunkResult.chunks);
     if (expectedNodeCount === void 0) {
-      const scannedCount = chunkResult.chunks.reduce((sum, chunk) => sum + (finiteNonNegativeNumber(asRecord2(chunk).scannedNodeCount) ?? 0), 0);
+      const scannedCount = chunkResult.chunks.reduce((sum, chunk) => sum + (finiteNonNegativeNumber(asRecord3(chunk).scannedNodeCount) ?? 0), 0);
       if (scannedCount === 0) {
         break;
       }
@@ -25831,7 +26202,7 @@ async function readInspectStyleChunk(options) {
       text: parsed.text
     };
   }
-  const result = asRecord2(asRecord2(parsed.json).result);
+  const result = asRecord3(asRecord3(parsed.json).result);
   return { chunks: [result] };
 }
 function inspectStyleNodeCount(chunks) {
@@ -25868,8 +26239,8 @@ function mergeInspectStyleChunks(target2, chunks) {
     if (targetSummary === void 0) {
       targetSummary = chunk.targetSummary ?? targetSummaryFromSummary(chunk.summary);
     }
-    const style = asRecord2(chunk.style);
-    const counts = asRecord2(chunk.styleCounts);
+    const style = asRecord3(chunk.style);
+    const counts = asRecord3(chunk.styleCounts);
     styleCounts.textStyles += finiteNonNegativeNumber(counts.textStyles) ?? countRecords(style.textStyles);
     styleCounts.imageNodes += finiteNonNegativeNumber(counts.imageNodes) ?? countRecords(style.imageNodes);
     styleCounts.strokes += finiteNonNegativeNumber(counts.strokes) ?? countRecords(style.strokes);
@@ -25984,9 +26355,13 @@ async function executeGetMetadata(args, runtime) {
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["metadata.json"]);
   if (metadataOk && metadata && isRecord5(limitedPayload.inlineResultLimit)) {
-    const outputFiles = asRecord2(limitedPayload.outputFiles);
-    outputFiles.metadataFile = await writeMetadataFile({ args, session, metadata });
-    limitedPayload.outputFiles = outputFiles;
+    try {
+      const outputFiles = { ...asRecord3(limitedPayload.outputFiles) };
+      outputFiles.resultFile = await writeMetadataResultFile({ session, result: resultPayload });
+      limitedPayload.outputFiles = outputFiles;
+    } catch (error2) {
+      return localPostprocessingFailure(limitedPayload, "metadataResultFile", error2);
+    }
   }
   return limitedPayload;
 }
@@ -26183,7 +26558,6 @@ async function executeDedicatedUpstreamTool(options) {
       wrapperToolName: options.contract.toolName,
       session: options.session,
       resultPayload,
-      upstream: upstreamEnvelope(parsed),
       upstreamCallResult
     })
   });
@@ -26204,7 +26578,7 @@ async function selectNodeForSelectionDependentWrapper(options) {
   const script = buildFigmaEvalScript({
     session: options.session,
     code: [
-      `const __nodeId = ${literal3(options.nodeId)};`,
+      `const __nodeId = ${literal4(options.nodeId)};`,
       "const __node = await __figmaWorkspaceGetNodeById(__nodeId);",
       "const __nodeType = __node && __node.type;",
       "if (__nodeType === 'PAGE' || __nodeType === 'DOCUMENT') {",
@@ -26233,7 +26607,7 @@ async function selectNodeForSelectionDependentWrapper(options) {
       }]
     };
   }
-  const result = asRecord2(asRecord2(parsed.json).result);
+  const result = asRecord3(asRecord3(parsed.json).result);
   if (result.selected === true) {
     return { selected: true, diagnostics: [] };
   }
@@ -26333,16 +26707,12 @@ async function directUpstreamResponseBudgetFailure(options) {
     return {
       ...resultPayload,
       outputFiles: {
-        debugFile: responseFilePointer(await writeJsonFile(
-          outputFile,
-          createUpstreamBackedResultFilePayload({
-            tool: "figma:upstream:call",
-            session: options.session,
-            resultPayload,
-            upstream: upstreamEnvelope(options.parsed, { includePayload: false }),
-            fields: { upstreamToolName: options.args.toolName }
-          })
-        ))
+        resultFile: await writeRuntimeResultFile({
+          path: outputFile,
+          tool: "figma:upstream:call",
+          session: options.session,
+          result: resultPayload
+        })
       }
     };
   } catch (error2) {
@@ -26365,13 +26735,11 @@ async function shapeDirectUpstreamCallResponse(options) {
     parsed: options.parsed,
     resultPayload,
     inlineResultLimit: options.args.inlineResultLimit,
-    forceOutputFile: true,
     writeOutputFiles: (upstreamCallResult) => writeCallUpstreamResultFiles({
       toolName: options.args.toolName,
       wrapperToolName: "figma:upstream:call",
       session: options.session,
       resultPayload,
-      upstream: upstreamEnvelope(options.parsed),
       upstreamCallResult
     })
   });
@@ -26706,7 +27074,7 @@ async function beginCodeConnectWorkflow(client, contracts) {
       await client.connect();
       return void 0;
     }, false);
-    const raw = asRecord2(await deadline.run("tool discovery", (signal) => client.listTools(signal), true));
+    const raw = asRecord3(await deadline.run("tool discovery", (signal) => client.listTools(signal), true));
     const tools = (Array.isArray(raw.tools) ? raw.tools : []).filter(isRecord5).map((tool) => ({
       name: asOptionalString2(tool.name) ?? "",
       title: asOptionalString2(tool.title),
@@ -26744,9 +27112,9 @@ function resolveRequiredCodeConnectFileKey(args, session, command) {
 }
 function codeConnectLabelEnum(tools) {
   const tool = selectRequiredUpstreamTool(tools, CODE_CONNECT_SEND_TOOL_NAME, "Code Connect bulk mapping write");
-  const schema = asRecord2(tool.inputSchema);
-  const mappings = asRecord2(asRecord2(schema.properties).mappings);
-  const label = asRecord2(asRecord2(asRecord2(mappings.items).properties).label);
+  const schema = asRecord3(tool.inputSchema);
+  const mappings = asRecord3(asRecord3(schema.properties).mappings);
+  const label = asRecord3(asRecord3(asRecord3(mappings.items).properties).label);
   const labels = Array.isArray(label.enum) ? label.enum.filter((value) => typeof value === "string" && value.length > 0) : [];
   if (labels.length === 0) throw new Error("Live send_code_connect_mappings schema does not advertise a usable mapping label enum.");
   return labels;
@@ -26813,7 +27181,7 @@ async function readCodeConnectMapping(options) {
   return { ...normalizeCodeConnectMapRead(call.parsed.json, options.mapping.nodeId, options.mapping.label), parsed: call.parsed };
 }
 function normalizeCodeConnectMapRead(value, nodeId2, label) {
-  const topLevel = asRecord2(value);
+  const topLevel = asRecord3(value);
   const roots = [
     isRecord5(value) ? value : void 0,
     isRecord5(topLevel.result) ? topLevel.result : void 0,
@@ -26821,7 +27189,7 @@ function normalizeCodeConnectMapRead(value, nodeId2, label) {
   ].filter((root) => root !== void 0);
   for (const root of roots) {
     if (Object.keys(root).length === 0) return { available: true };
-    const candidate = asRecord2(root[nodeId2]);
+    const candidate = asRecord3(root[nodeId2]);
     if (Object.keys(candidate).length === 0) continue;
     const source = asOptionalString2(candidate.codeConnectSrc) ?? asOptionalString2(candidate.source);
     const componentName = asOptionalString2(candidate.codeConnectName) ?? asOptionalString2(candidate.componentName);
@@ -26886,17 +27254,17 @@ async function readCodeConnectPlanArtifact(pathValue, session) {
   return parseCodeConnectPlanArtifact(value);
 }
 function parseCodeConnectPlanArtifact(value) {
-  const artifact = asRecord2(value);
+  const artifact = asRecord3(value);
   const required2 = ["schemaVersion", "kind", "fileKey", "surface", "scope", "client", "mappings", "manifestFingerprint", "currentMappingFingerprints", "actions", "planDigest"];
   if (Object.keys(artifact).length !== required2.length || required2.some((key) => !(key in artifact))) throw new Error("Code Connect plan has an invalid or unsupported artifact shape.");
   if (artifact.schemaVersion !== 1 || artifact.kind !== "figma-code-connect-plan" || artifact.surface !== "design" || !isFigmaFileKey(asOptionalString2(artifact.fileKey) ?? "")) throw new Error("Code Connect plan has invalid identity fields.");
-  const scope = asRecord2(artifact.scope);
-  const client = asRecord2(artifact.client);
+  const scope = asRecord3(artifact.scope);
+  const client = asRecord3(artifact.client);
   if (!hasExactKeys(scope, ["nodeId"]) || !hasExactKeys(client, ["languages", "frameworks"])) throw new Error("Code Connect plan has unknown scope or client fields.");
   if (!isSimpleFigmaNodeId(asOptionalString2(scope.nodeId) ?? "") || !asOptionalString2(client.languages) || !asOptionalString2(client.frameworks)) throw new Error("Code Connect plan has invalid scope or client fields.");
   const mappings = parseCodeConnectArtifactMappings(artifact.mappings);
   const actions = parseCodeConnectArtifactActions(artifact.actions, mappings);
-  const fingerprints = asRecord2(artifact.currentMappingFingerprints);
+  const fingerprints = asRecord3(artifact.currentMappingFingerprints);
   if (Object.values(fingerprints).some((entry) => typeof entry !== "string" || entry !== "absent" && !/^[a-f0-9]{64}$/iu.test(entry))) throw new Error("Code Connect plan has invalid mapping fingerprints.");
   if (mappings.some((mapping) => fingerprints[codeConnectMappingIdentity(mapping)] === void 0)) throw new Error("Code Connect plan is missing a mapping snapshot fingerprint.");
   const manifestFingerprint = asOptionalString2(artifact.manifestFingerprint);
@@ -26930,7 +27298,7 @@ function parseCodeConnectPlanArtifact(value) {
 function parseCodeConnectArtifactMappings(value) {
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_MANIFEST_ITEMS2) throw new Error("Code Connect plan has invalid mappings.");
   const mappings = value.map((entry) => {
-    const record3 = asRecord2(entry);
+    const record3 = asRecord3(entry);
     const allowed2 = ["nodeId", "componentName", "source", "label", "conflictPolicy"];
     if (Object.keys(record3).some((key) => !allowed2.includes(key))) throw new Error("Code Connect plan mapping has unknown fields.");
     const nodeId2 = asOptionalString2(record3.nodeId)?.replace(/-/gu, ":");
@@ -26951,7 +27319,7 @@ function parseCodeConnectArtifactActions(value, mappings) {
   if (!Array.isArray(value) || value.length !== mappings.length) throw new Error("Code Connect plan actions do not match mappings.");
   const statuses = /* @__PURE__ */ new Set(["create", "noop", "replace", "conflict"]);
   return value.map((entry, index) => {
-    const record3 = asRecord2(entry);
+    const record3 = asRecord3(entry);
     if (!statuses.has(asOptionalString2(record3.status) ?? "")) throw new Error("Code Connect plan action status is invalid.");
     const expected = mappingStatus(mappings[index], record3.status, {
       currentMappingFingerprint: asOptionalString2(record3.currentMappingFingerprint),
@@ -27027,7 +27395,6 @@ async function attachCodeConnectSidecarIfNeeded(options) {
       wrapperToolName: options.wrapperToolName,
       session: options.session,
       resultPayload: options.resultPayload,
-      upstream: upstreamEnvelope(options.parsed),
       upstreamCallResult: sanitizedCallToolResult(options.parsed)
     });
     return { ...options.resultPayload, outputFiles };
@@ -27276,7 +27643,7 @@ function isConfirmedAtomicDirectUseFigmaFailure(toolName, parsed) {
 }
 function hasDirectUseFigmaScriptErrorEvidence(parsed) {
   const structured = parsed.callResult?.structuredContent;
-  const structuredError = asRecord2(structured).error;
+  const structuredError = asRecord3(structured).error;
   if (typeof structuredError === "string" || isRecord5(structuredError)) {
     return true;
   }
@@ -27291,7 +27658,7 @@ function createUpstreamToolCache(client) {
         return cached2;
       }
       await connectUpstream(client, "Discover upstream Figma MCP tools");
-      const result = asRecord2(await listUpstreamToolsWithLimits(client, "Discover upstream Figma MCP tools"));
+      const result = asRecord3(await listUpstreamToolsWithLimits(client, "Discover upstream Figma MCP tools"));
       const tools = Array.isArray(result.tools) ? result.tools : [];
       cached2 = tools.filter(isRecord5).map((tool) => ({
         name: String(tool.name ?? ""),
@@ -27375,7 +27742,7 @@ return {
 }
 function createFigmaWorkspacePrelude(session) {
   return `const __figmaWorkspace = {
-  invocationId: ${literal3(session.invocationId)},
+  invocationId: ${literal4(session.invocationId)},
   captureRequests: []
 };
 
@@ -27548,7 +27915,7 @@ const $ = Object.freeze({
 async function loadAssetManifest(args, session, resourceBudget) {
   const manifestPath = resolveInvocationAwareFile(args.manifestPath, session, "manifestPath");
   const manifestValue = manifestPath ? await readAssetManifestValue(manifestPath, resourceBudget, session) : void 0;
-  const manifestRecord = asRecord2(manifestValue);
+  const manifestRecord = asRecord3(manifestValue);
   const manifestAssets = Array.isArray(manifestValue) ? manifestValue : Array.isArray(manifestRecord.assets) ? manifestRecord.assets : void 0;
   const inlineAssets = Array.isArray(args.assets) ? args.assets : void 0;
   const rawAssets = inlineAssets ?? manifestAssets;
@@ -27599,7 +27966,7 @@ function errorMessage2(error2) {
   return error2 instanceof Error ? error2.message : String(error2);
 }
 function normalizeManifestAsset(value, index, baseDir, session) {
-  const record3 = asRecord2(value);
+  const record3 = asRecord3(value);
   assertRemovedManifestAssetFields(record3, index);
   const rawPath = asOptionalString2(record3.path);
   if (!rawPath) {
@@ -27725,7 +28092,7 @@ async function applyUploadedAssetFillsIfAvailable(options) {
       return void 0;
     }
     const detail = options.assetDetails[index];
-    const args = asRecord2(detail?.arguments);
+    const args = asRecord3(detail?.arguments);
     return {
       targetNodeId,
       fileKey: asOptionalString2(args.fileKey),
@@ -27886,7 +28253,7 @@ async function applyAssetManifestApplicationChunk(options) {
   return { found: true, applicationSource: applicationResult.sourcePath, applications };
 }
 function buildAssetManifestApplicationCode(candidates) {
-  return `const assetFills = ${literal3(candidates)};
+  return `const assetFills = ${literal4(candidates)};
 const applications = [];
 function compactName(name) {
   return typeof name === "string" && name.length > 120 ? name.slice(0, 117) + "..." : name;
@@ -27942,8 +28309,8 @@ return {
 };`;
 }
 function extractAssetUploadImageHash(upload) {
-  const uploadRecord = asRecord2(upload);
-  const response = asRecord2(uploadRecord.response);
+  const uploadRecord = asRecord3(upload);
+  const response = asRecord3(uploadRecord.response);
   return asOptionalString2(response.imageHash);
 }
 function findAssetManifestApplicationResult(value, depth = 0, sourcePath = "parsed.json") {
@@ -27969,7 +28336,7 @@ function findAssetManifestApplicationResult(value, depth = 0, sourcePath = "pars
     }
     return void 0;
   }
-  const record3 = asRecord2(value);
+  const record3 = asRecord3(value);
   if (Array.isArray(record3.applications) || record3.appliedCount !== void 0 || record3.failedCount !== void 0) {
     return { result: record3, sourcePath };
   }
@@ -27994,7 +28361,7 @@ function findAssetManifestApplicationResult(value, depth = 0, sourcePath = "pars
   return void 0;
 }
 function isAssetManifestApplicationRecord(value) {
-  const record3 = asRecord2(value);
+  const record3 = asRecord3(value);
   return asOptionalString2(record3.targetNodeId) !== void 0 && asOptionalString2(record3.status) !== void 0;
 }
 async function validateAssetManifestTargetsIfAvailable(options) {
@@ -28006,7 +28373,7 @@ async function validateAssetManifestTargetsIfAvailable(options) {
     if (!targetNodeId) return [];
     return [{
       targetNodeId,
-      fileKey: asOptionalString2(asRecord2(detail.arguments).fileKey)
+      fileKey: asOptionalString2(asRecord3(detail.arguments).fileKey)
     }];
   });
   const targetNodeIds = Array.from(new Set(targets.map((target2) => target2.targetNodeId)));
@@ -28139,7 +28506,7 @@ async function readAssetManifestTargetValidationChunk(options) {
   return { found: true, validationSource: validationResult.sourcePath, validations };
 }
 function buildAssetManifestTargetValidationCode(targetNodeIds) {
-  return `const targetNodeIds = ${literal3(targetNodeIds)};
+  return `const targetNodeIds = ${literal4(targetNodeIds)};
 const validations = [];
 for (const targetNodeId of targetNodeIds) {
   try {
@@ -28200,7 +28567,7 @@ function findAssetManifestValidationResult(value, depth = 0, sourcePath = "parse
     }
     return void 0;
   }
-  const record3 = asRecord2(value);
+  const record3 = asRecord3(value);
   if (Array.isArray(record3.validations) || record3.validCount !== void 0 || record3.invalidCount !== void 0) {
     return { result: record3, sourcePath };
   }
@@ -28225,7 +28592,7 @@ function findAssetManifestValidationResult(value, depth = 0, sourcePath = "parse
   return void 0;
 }
 function isAssetManifestValidationRecord(value) {
-  const record3 = asRecord2(value);
+  const record3 = asRecord3(value);
   return asOptionalString2(record3.targetNodeId) !== void 0 && asOptionalString2(record3.status) !== void 0;
 }
 async function submitLocalAssetUploadIfAvailable(input, parsed, resourceBudget) {
@@ -28304,7 +28671,7 @@ async function submitLocalAssetUploadIfAvailable(input, parsed, resourceBudget) 
   }
 }
 function extractAssetSubmitUrl(value) {
-  const record3 = asRecord2(value);
+  const record3 = asRecord3(value);
   if (isRecord5(record3.result)) {
     const nestedUrl = extractAssetSubmitUrl(record3.result);
     if (nestedUrl) {
@@ -28313,7 +28680,7 @@ function extractAssetSubmitUrl(value) {
   }
   const uploads = Array.isArray(record3.uploads) ? record3.uploads : [];
   for (const upload of uploads) {
-    const uploadRecord = asRecord2(upload);
+    const uploadRecord = asRecord3(upload);
     const submitUrl = asOptionalString2(uploadRecord.submitUrl) ?? asOptionalString2(uploadRecord.uploadUrl) ?? asOptionalString2(uploadRecord.url);
     if (submitUrl) {
       return submitUrl;
@@ -28480,8 +28847,8 @@ function chunkArray(values, size) {
 }
 function buildMetadataEnrichmentReadbackCode(nodeIds) {
   return [
-    `const __metadataNodeIds = ${literal3(nodeIds)};`,
-    `const __metadataFields = ${literal3([...FIGMA_METADATA_ENRICHMENT_FIELDS])};`,
+    `const __metadataNodeIds = ${literal4(nodeIds)};`,
+    `const __metadataFields = ${literal4([...FIGMA_METADATA_ENRICHMENT_FIELDS])};`,
     "async function __metadataGetNodeById(__id) {",
     "  if (figma && typeof figma.getNodeByIdAsync === 'function') return await figma.getNodeByIdAsync(__id);",
     "  if (figma && typeof figma.getNodeById === 'function') return figma.getNodeById(__id);",
@@ -28523,13 +28890,13 @@ function collectMetadataTreeNodeIds(root) {
   return [...ids];
 }
 function metadataNativeFieldsByNodeId(value) {
-  const record3 = asRecord2(value);
-  const result = asRecord2(record3.result);
-  const enrichment = asRecord2(result.enrichment ?? record3.enrichment);
-  const nodes = asRecord2(enrichment.nodes);
+  const record3 = asRecord3(value);
+  const result = asRecord3(record3.result);
+  const enrichment = asRecord3(result.enrichment ?? record3.enrichment);
+  const nodes = asRecord3(enrichment.nodes);
   const fieldsByNodeId = /* @__PURE__ */ new Map();
   for (const [nodeId2, nodeValue] of Object.entries(nodes)) {
-    const nodeRecord = asRecord2(nodeValue);
+    const nodeRecord = asRecord3(nodeValue);
     const fields = {};
     for (const field of FIGMA_METADATA_ENRICHMENT_FIELDS) {
       const value2 = nodeRecord[field];
@@ -28817,7 +29184,7 @@ function safeJsonStringify(value) {
   }
 }
 function summarizeMcpContentBlock(block) {
-  const record3 = asRecord2(block);
+  const record3 = asRecord3(block);
   if (block.type === "image" || block.type === "audio") {
     return removeUndefined3({
       type: block.type,
@@ -28827,7 +29194,7 @@ function summarizeMcpContentBlock(block) {
     });
   }
   if (block.type === "resource") {
-    const resource = asRecord2(record3.resource);
+    const resource = asRecord3(record3.resource);
     return removeUndefined3({
       type: "resource",
       uri: asOptionalString2(resource.uri),
@@ -28875,11 +29242,11 @@ function sanitizedCallToolResult(parsed) {
   };
 }
 function sanitizeMcpContentBlock(block) {
-  const record3 = asRecord2(block);
+  const record3 = asRecord3(block);
   if (block.type === "resource") {
     return {
       ...omitProtocolMetadata(record3),
-      resource: omitProtocolMetadata(asRecord2(record3.resource))
+      resource: omitProtocolMetadata(asRecord3(record3.resource))
     };
   }
   return omitProtocolMetadata(record3);
@@ -28909,7 +29276,7 @@ function extractParsedUpstreamError(text, json) {
       parsed: json
     };
   }
-  const record3 = asRecord2(json);
+  const record3 = asRecord3(json);
   if (record3.ok !== false) {
     const trimmed = text.trim();
     if (!/^Error:/u.test(trimmed) && !/Figma Debug UUID:/u.test(trimmed)) {
@@ -28923,7 +29290,7 @@ function extractParsedUpstreamError(text, json) {
       parsed: json
     };
   }
-  const errorRecord = asRecord2(record3.error);
+  const errorRecord = asRecord3(record3.error);
   const message = stringFromUnknown(record3.error) ?? asOptionalString2(errorRecord.message) ?? asOptionalString2(record3.message) ?? text.slice(0, 1e3) ?? "Upstream Figma execution failed.";
   return {
     message,
@@ -29100,36 +29467,6 @@ function firstBalancedJsonSlice(text) {
   }
   return void 0;
 }
-function collectNodeIds(value) {
-  const ids = /* @__PURE__ */ new Set();
-  const visit = (item) => {
-    if (typeof item === "string" && /^\d+[:;]\d+/u.test(item)) {
-      ids.add(item);
-      return;
-    }
-    if (Array.isArray(item)) {
-      item.forEach(visit);
-      return;
-    }
-    if (isRecord5(item)) {
-      if (typeof item.id === "string") ids.add(item.id);
-      for (const child of Object.values(item)) visit(child);
-    }
-  };
-  visit(value);
-  return [...ids];
-}
-function summarizeParsedResult(parsed) {
-  const record3 = asRecord2(parsed.json);
-  const result = record3.result;
-  if (isRecord5(result)) {
-    if (typeof result.summary === "string") return result.summary;
-    if (typeof result.opCount === "number") return `Returned opCount=${result.opCount}.`;
-  }
-  if (typeof result === "string") return result.slice(0, 160);
-  if (parsed.text) return parsed.text.slice(0, 160);
-  return "Figma Workspace command completed.";
-}
 function diagnosticsForResponse(diagnostics) {
   return diagnostics && diagnostics.length > 0 ? diagnostics : void 0;
 }
@@ -29186,7 +29523,7 @@ async function shapeUpstreamBackedResponse(options) {
     inlineResultLimit,
     [...options.contract.outputPolicy.inlineLimitFields]
   );
-  const needsOutputFile = options.forceOutputFile === true || options.parsed.upstreamError || options.parsed.nonTextContent.length > 0 || isRecord5(limitedPayload.inlineResultLimit);
+  const needsOutputFile = options.parsed.upstreamError || options.parsed.nonTextContent.length > 0 || isRecord5(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {
     return limitedPayload;
   }
@@ -29208,11 +29545,11 @@ function localPostprocessingFailure(resultPayload, stage, error2, outputFiles) {
     ok: false,
     retryGuidance: existingGuidance ? `${existingGuidance} ${localGuidance}` : localGuidance,
     postProcessing: {
-      ...asRecord2(resultPayload.postProcessing),
+      ...asRecord3(resultPayload.postProcessing),
       [stage]: {
         status: "failed",
         message: errorMessage2(error2),
-        code: asOptionalString2(asRecord2(error2).code)
+        code: asOptionalString2(asRecord3(error2).code)
       }
     },
     outputFiles: outputFiles && Object.keys(outputFiles).length > 0 ? outputFiles : resultPayload.outputFiles
@@ -29249,7 +29586,7 @@ function inspectInlineResultFields(parsed, fallbackMode) {
     };
   }
   const result = {
-    ...asRecord2(asRecord2(parsed.json).result)
+    ...asRecord3(asRecord3(parsed.json).result)
   };
   if (fallbackMode === "inspect") {
     return removeUndefined3({
@@ -29257,11 +29594,11 @@ function inspectInlineResultFields(parsed, fallbackMode) {
       mode: asOptionalString2(result.mode) ?? "inspect"
     });
   }
-  const style = { ...asRecord2(result.style) };
+  const style = { ...asRecord3(result.style) };
   delete style.caps;
   delete style.limits;
   const targetSummary = targetSummaryFromSummary(result.targetSummary ?? result.summary);
-  const truncated = inspectStyleTruncated(style, asRecord2(result.styleCounts));
+  const truncated = inspectStyleTruncated(style, asRecord3(result.styleCounts));
   return removeUndefined3({
     ...result,
     mode: "style",
@@ -29274,7 +29611,7 @@ function inspectInlineResultFields(parsed, fallbackMode) {
   });
 }
 function targetSummaryFromSummary(value) {
-  const source = Array.isArray(value) ? asRecord2(value[0]) : asRecord2(value);
+  const source = Array.isArray(value) ? asRecord3(value[0]) : asRecord3(value);
   const result = removeUndefined3({
     id: asOptionalString2(source.id),
     type: asOptionalString2(source.type),
@@ -29329,7 +29666,7 @@ function upstreamEnvelope(parsed, options = {}) {
   }) : { kind, ok };
 }
 function shapePublicUpstreamResult(value) {
-  const record3 = asRecord2(value);
+  const record3 = asRecord3(value);
   if (!Object.prototype.hasOwnProperty.call(record3, "__figmaWorkspace")) {
     return consumeTopLevelOk(value);
   }
@@ -29484,7 +29821,7 @@ function parseJsonToolResult(result) {
     return result.structuredContent;
   }
   const content = Array.isArray(result.content) ? result.content : [];
-  const firstText = content.map((item) => asRecord2(item).text).find((item) => typeof item === "string");
+  const firstText = content.map((item) => asRecord3(item).text).find((item) => typeof item === "string");
   if (firstText === void 0) {
     return result;
   }
@@ -29507,7 +29844,7 @@ function removeUndefined3(value) {
     Object.entries(value).filter(([, item]) => item !== void 0).map(([key, item]) => [key, removeUndefined3(item)])
   );
 }
-function asRecord2(value) {
+function asRecord3(value) {
   if (isRecord5(value)) {
     return value;
   }
@@ -29647,7 +29984,7 @@ function clampIntegerParameter(options) {
   }
   return applied;
 }
-function literal3(value) {
+function literal4(value) {
   return JSON.stringify(value);
 }
 var FIGMA_WORKSPACE_INTERNAL_WRAPPER_CONTRACTS, DEFAULT_EVAL_CONTRACT, DEFAULT_EVAL_TOOL_NAME, DEFAULT_EVAL_ARGUMENT_NAME, DEFAULT_EVAL_DESCRIPTION, DEFAULT_INLINE_RESULT_LIMIT, MAX_QUEUED_CAPTURE_REQUESTS, MAX_MANIFEST_ITEMS2, MAX_MANIFEST_FILE_BYTES, MAX_CODE_CONNECT_PLAN_BYTES, MAX_SINGLE_ASSET_BYTES, MAX_UPLOAD_ASSET_BYTES, MAX_COMMAND_DATA_PLANE_BYTES, NETWORK_REQUEST_TOTAL_TIMEOUT_MS, NETWORK_REQUEST_IDLE_TIMEOUT_MS, QUEUED_CAPTURE_ERROR_MESSAGE_BYTES, QUEUED_CAPTURE_DIAGNOSTIC_FIELD_BYTES, QUEUED_CAPTURE_FAILURE_RETRY_GUIDANCE, UNKNOWN_EXECUTION_RETRY_GUIDANCE, ATOMIC_SCRIPT_FAILURE_RETRY_GUIDANCE, APPLY_ASSET_MANIFEST_CONTRACT, DOWNLOAD_ASSETS_CONTRACT, CAPTURE_NODE_CONTRACT, GET_METADATA_CONTRACT, GET_DESIGN_CONTEXT_CONTRACT, GET_MOTION_CONTEXT_CONTRACT, SEARCH_DESIGN_SYSTEM_CONTRACT, GET_LIBRARIES_CONTRACT, GET_VARIABLE_DEFS_CONTRACT, CALL_UPSTREAM_TOOL_CONTRACT, CODE_CONNECT_INSPECT_CONTRACT, CODE_CONNECT_PLAN_CONTEXT_CONTRACT, CODE_CONNECT_PLAN_SUGGESTIONS_CONTRACT, CODE_CONNECT_PLAN_MAPPING_READ_CONTRACT, CODE_CONNECT_APPLY_MAPPING_READ_CONTRACT, CODE_CONNECT_APPLY_CONTRACT, CODE_CONNECT_VERIFY_MAPPING_READ_CONTRACT, UPLOAD_ASSETS_TOOL_NAME, DOWNLOAD_ASSETS_TOOL_NAME, SCREENSHOT_TOOL_NAME, GET_METADATA_TOOL_NAME, GET_DESIGN_CONTEXT_TOOL_NAME, GET_MOTION_CONTEXT_TOOL_NAME, SEARCH_DESIGN_SYSTEM_TOOL_NAME, GET_LIBRARIES_TOOL_NAME, GET_VARIABLE_DEFS_TOOL_NAME, CODE_CONNECT_INSPECT_TOOL_NAME, CODE_CONNECT_CONTEXT_TOOL_NAME, CODE_CONNECT_SUGGESTIONS_TOOL_NAME, CODE_CONNECT_MAP_TOOL_NAME, CODE_CONNECT_SEND_TOOL_NAME, DataPlaneResourceBudget, COMMAND_RESOURCE_CONTEXT, NetworkRequestDeadline, CodeConnectWorkflowDeadline, PostResponseResourceError, FIGMA_METADATA_ENRICHMENT_FIELDS, FIGMA_METADATA_ENRICHMENT_BATCH_SIZE, FIGMA_INSPECT_STYLE_BATCH_SIZE, FIGMA_ASSET_APPLICATION_BATCH_SIZE, FIGMA_ASSET_VALIDATION_BATCH_SIZE, SVG_CONTENT_SNIFF_BYTES, INVOCATION_CONTEXT, UPSTREAM_TOOL_DIRECTORY_CATEGORY_ORDER, UPSTREAM_TOOL_DIRECTORY_CATEGORIES, PUBLIC_HISTORY_COMMAND_IDS, AssetManifestLoadError, FIGMA_FILE_URL_KINDS;
@@ -29658,6 +29995,7 @@ var init_workspace_client = __esm({
     init_remote_mcp_client();
     init_doc_search();
     init_guidance_catalog();
+    init_inspect_pagination();
     init_task_routing();
     init_script_runner();
     init_tool_args();
@@ -29938,6 +30276,7 @@ init_workspace_client();
 init_tool_args();
 init_workspace_client();
 init_managed_files();
+init_workspace_files();
 import { createHash as createHash4, randomUUID as randomUUID3 } from "node:crypto";
 import { mkdir as mkdir3, open as open4, readFile as readFile3, rm as rm2, stat as stat3 } from "node:fs/promises";
 import { tmpdir as tmpdir3 } from "node:os";
@@ -30179,6 +30518,7 @@ function formatFigmaWorkspaceCommandMarkdown(command, result, input, presentatio
     `Status: ${presentation.status.replaceAll("-", " ")}`,
     "",
     ...formatExecutionFailureSummary(result, presentation),
+    ...formatResultFileSummary(result),
     "```json",
     JSON.stringify(result, null, 2),
     "```"
@@ -30326,6 +30666,46 @@ function formatExecutionFailureSummary(result, presentation) {
     ...atomicScriptFailure ? ["", "Figma host confirmed this use_figma script failed atomically. No file changes were applied; repair the script and retry safely."] : [],
     ""
   ];
+}
+function formatResultFileSummary(result) {
+  const resultFile = existingResultFilePointer(result);
+  if (!resultFile) return [];
+  const path = typeof resultFile.path === "string" && resultFile.path.trim() ? resultFile.path : void 0;
+  const jq = isRecord6(resultFile.jq) ? resultFile.jq : void 0;
+  if (!path || !jq) return [];
+  const filters = [
+    ["full receipt", jq.full],
+    ["status", jq.status],
+    ["data", jq.data],
+    ["nodes", jq.nodes],
+    ["next cursor", jq.nextCursor],
+    ["has more", jq.hasMore]
+  ].filter((entry) => typeof entry[1] === "string" && entry[1].trim().length > 0);
+  if (filters.length === 0) return [];
+  const shell = resultFileShellFormatter();
+  const quotedPath = shell.quote(path);
+  return [
+    "## Full result",
+    "",
+    "JSON receipt: `figma-cli-result` schema version `1`.",
+    "",
+    `\`\`\`${shell.language}`,
+    ...filters.flatMap(([label, filter]) => [`# ${label}`, `jq ${shell.quote(filter)} -- ${quotedPath}`]),
+    "```",
+    ""
+  ];
+}
+function resultFileShellFormatter() {
+  if (process.platform === "win32") {
+    return { language: "powershell", quote: quotePowerShellLiteral };
+  }
+  return { language: "sh", quote: quotePosixShellLiteral };
+}
+function quotePowerShellLiteral(value) {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+function quotePosixShellLiteral(value) {
+  return `'${value.replaceAll("'", `'"'"'`)}'`;
 }
 var FIGMA_WORKSPACE_CLI_HELP = [
   "Stateless Figma Workspace internal runtime.",
@@ -30477,10 +30857,31 @@ async function persistOversizedResult(result, command, outputRoot, limit) {
   const serialized = `${JSON.stringify(result, null, 2)}
 `;
   if (Buffer.byteLength(serialized, "utf8") <= limit) return result;
+  const existingResultFile = existingResultFilePointer(result);
+  if (existingResultFile !== void 0) return createResultFileSummary(result, existingResultFile);
   await ensureManagedDirectory({ root: outputRoot, directory: outputRoot });
   const resultPath = resolve9(outputRoot, `${command.replace(/[^a-z0-9]+/giu, "-")}.result.json`);
-  const written = await atomicWriteManagedTextFile({ root: outputRoot, path: resultPath, overwrite: true }, serialized);
-  const existingOutputFiles = isRecord6(result) && isRecord6(result.outputFiles) ? result.outputFiles : {};
+  const receipt = resultReceiptPayload(result);
+  const written = await writeFigmaWorkspaceResultFile(resultPath, {
+    tool: publicCommandName(command),
+    invocation: receipt.invocation,
+    result: receipt.result
+  });
+  return createResultFileSummary(result, { ...written });
+}
+function resultReceiptPayload(result) {
+  if (!isRecord6(result)) return { invocation: {}, result };
+  const { invocation: invocation3, ...businessResult } = result;
+  return {
+    invocation: isRecord6(invocation3) ? invocation3 : {},
+    result: businessResult
+  };
+}
+function existingResultFilePointer(result) {
+  if (!isRecord6(result) || !isRecord6(result.outputFiles) || !isRecord6(result.outputFiles.resultFile)) return void 0;
+  return result.outputFiles.resultFile;
+}
+function createResultFileSummary(result, resultFile) {
   const failure = isRecord6(result) && result.ok === false ? presentationFailureForResult(result) : {};
   const upstreamError = (isRecord6(result) ? compactPresentationError(result.upstreamError) : void 0) ?? (failure.isUpstream ? compactPresentationError(failure.error) : void 0);
   return {
@@ -30491,8 +30892,7 @@ async function persistOversizedResult(result, command, outputRoot, limit) {
     ok: isRecord6(result) ? result.ok !== false : true,
     invocation: isRecord6(result) ? result.invocation : void 0,
     outputFiles: {
-      ...existingOutputFiles,
-      cliResultFile: { path: written.path, bytes: written.bytes, lineCount: serialized.split("\n").length - 1 }
+      resultFile
     }
   };
 }
@@ -30529,8 +30929,7 @@ function selectRecoveryFacts(result) {
     "imageFile",
     "planFile",
     "script",
-    "inlineResultLimit",
-    "outputFiles"
+    "inlineResultLimit"
   ].flatMap((key) => result[key] === void 0 ? [] : [[key, result[key]]]));
 }
 function presentationFailureForResult(result) {
@@ -30835,14 +31234,32 @@ var designSystemQueries = () => ({
   description: "Ordered design-system search intents; each item is dispatched in one batch request."
 });
 var objectSchema = (properties, required2 = [], anyOf) => ({ type: "object", properties, required: [...required2], ...anyOf ? { anyOf } : {}, additionalProperties: false });
-var resultSchema = (properties = {}) => ({ type: "object", properties: { ok: boolean4("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, error: { type: "object", description: "Compact command-level error details for a local or nested batch failure." }, upstreamError: { type: "object", description: "Compact top-level upstream error details when Figma cannot complete the request." }, primaryFix: string4("Primary recovery action for the reported error."), ...properties }, required: ["ok"], additionalProperties: true });
+var resultOutputFilesSchema = {
+  type: "object",
+  properties: {
+    resultFile: {
+      type: "object",
+      description: "The single complete JSON result file, created when inline output is insufficient or diagnostics require persistence. Business artifacts have their own pointers.",
+      properties: {
+        path: string4("Absolute path to the JSON result file."),
+        bytes: integer3("UTF-8 file size."),
+        lineCount: integer3("Formatted JSON line count."),
+        jq: { type: "object", properties: { full: string4("jq filter for the complete file."), data: string4("jq filter for this command's result data."), status: string4("jq filter for execution status and diagnostics.") }, required: ["full", "data", "status"], additionalProperties: { type: "string" } }
+      },
+      required: ["path", "bytes", "lineCount", "jq"],
+      additionalProperties: false
+    }
+  },
+  additionalProperties: true
+};
+var resultSchema = (properties = {}) => ({ type: "object", properties: { ok: boolean4("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, error: { type: "object", description: "Compact command-level error details for a local or nested batch failure." }, upstreamError: { type: "object", description: "Compact top-level upstream error details when Figma cannot complete the request." }, primaryFix: string4("Primary recovery action for the reported error."), outputFiles: resultOutputFilesSchema, ...properties }, required: ["ok"], additionalProperties: true });
 function createReplToolDescriptions(_options) {
   const descriptions = /* @__PURE__ */ new Map([
     ["figma_workspace_run", {
       name: "figma_workspace_run",
       description: "Execute one strict .figma.ts file or stdin TypeScript source against an explicitly identified Figma file. This is the only Plugin API mutation entrypoint. A direct returned use_figma script error reports executionOutcome=failed_atomic, so repair and retry safely; response loss remains outcome_unknown.",
       inputSchema: objectSchema({ ...invocation2(), scriptPath: string4("Absolute or cwd-resolved regular non-symlink .figma.ts file."), source: string4("TypeScript source read from --source -."), targetPageId: nodeId("Optional PAGE node id.") }, ["file"], [{ required: ["scriptPath"] }, { required: ["source"] }]),
-      outputSchema: resultSchema({ phase: string4("preflight or execute."), executionOutcome: { type: "string", enum: ["not_started", "failed_atomic", "succeeded", "outcome_unknown"], description: "failed_atomic confirms a returned use_figma script error made no changes and can be retried after repair; succeeded confirms remote execution; outcome_unknown requires read-back and reconciliation before retry." }, upstreamError: { type: "object", description: "Compact upstream error details for failure diagnosis." }, retryGuidance: string4("Safe recovery direction for the reported execution outcome."), captures: { type: "array" }, diagnostics: { type: "array" }, outputFiles: { type: "object" } })
+      outputSchema: resultSchema({ phase: string4("preflight or execute."), executionOutcome: { type: "string", enum: ["not_started", "failed_atomic", "succeeded", "outcome_unknown"], description: "failed_atomic confirms a returned use_figma script error made no changes and can be retried after repair; succeeded confirms remote execution; outcome_unknown requires read-back and reconciliation before retry." }, upstreamError: { type: "object", description: "Compact upstream error details for failure diagnosis." }, retryGuidance: string4("Safe recovery direction for the reported execution outcome."), captures: { type: "array" }, diagnostics: { type: "array" }, outputFiles: resultOutputFilesSchema })
     }],
     ["figma_workspace_apply_asset_manifest", {
       name: "figma_workspace_apply_asset_manifest",
@@ -30862,12 +31279,20 @@ function createReplToolDescriptions(_options) {
       inputSchema: objectSchema({ ...invocation2(), target: nodeTarget(), nodeId: nodeId("Raw node id alias used with file."), imageFile: string4("Optional PNG output path."), maxDimension: integer3("Maximum screenshot dimension.", CAPTURE_MAX_DIMENSION_MIN, CAPTURE_MAX_DIMENSION_MAX), contentsOnly: boolean4("Capture node contents only.") }, [], [{ required: ["target"] }, { required: ["file", "nodeId"] }]),
       outputSchema: resultSchema({ imageFile: string4("Absolute PNG path."), nodeId: string4("Captured node id."), bytes: integer3("PNG bytes.") })
     }],
-    ["figma_workspace_inspect", nodeReadDescription("figma_workspace_inspect", "Run a compact Plugin API inspection.", { mode: { type: "string", enum: ["inspect", "style"] }, depth: integer3("Traversal depth.", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX) })],
+    ["figma_workspace_inspect", {
+      ...nodeReadDescription("figma_workspace_inspect", "Read one explicit page of Plugin API nodes, or aggregate styles. Each inspect page is a live read, not a file snapshot.", {
+        mode: { type: "string", enum: ["inspect", "style"] },
+        depth: integer3("Maximum descendant depth; zero reads only the target. Style mode requires a positive depth. Omit on continuation to use the cursor's depth.", INSPECT_DEPTH_MIN, INSPECT_DEPTH_MAX),
+        cursor: string4("Opaque nextCursor from the preceding inspect page for the same file and node. Not accepted in style mode."),
+        fields: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", enum: [...FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS] }, description: "Selected detail fields for inspect mode. All are included by default; structural fields are always returned. Omit on continuation to reuse the cursor's fields." }
+      }),
+      outputSchema: resultSchema({ nodes: { type: "array", description: "One depth-first page. Each node includes id, type, parentId, depth, childCount, and selected detail fields." }, hasMore: boolean4("Whether this live traversal has another page."), nextCursor: string4("Pass to the next explicit inspect invocation when hasMore is true."), readConsistency: { type: "string", enum: ["live"], description: "Changes between pages can cause repeated or omitted nodes; this is not a snapshot." } })
+    }],
     ["figma_workspace_get_metadata", {
       name: "figma_workspace_get_metadata",
       description: "Read broad official metadata from a Design file. FigJam and Slides structure must be inspected with a read-only figma:run script.",
       inputSchema: objectSchema({ ...invocation2(), file: designFileReference("Design file URL or raw key; raw keys require surface design."), surface: designSurface(), target: designNodeTarget(), nodeId: nodeId("Raw Figma node id.", true), refresh: boolean4("Refresh upstream discovery.") }, [], [{ required: ["target"] }, { required: ["file"] }]),
-      outputSchema: resultSchema({ upstream: { type: "object" }, outputFiles: { type: "object" } })
+      outputSchema: resultSchema({ upstream: { type: "object" }, outputFiles: resultOutputFilesSchema })
     }],
     ["figma_workspace_get_design_context", nodeReadDescription("figma_workspace_get_design_context", "Read official design implementation context.", { forceCode: boolean4("Force code generation."), disableCodeConnect: boolean4("Disable Code Connect."), excludeScreenshot: boolean4("Exclude screenshot context.") }, true, true)],
     ["figma_workspace_get_motion_context", nodeReadDescription("figma_workspace_get_motion_context", "Read official motion context.", { recursive: boolean4("Read recursively.") })],
@@ -30888,7 +31313,7 @@ function createReplToolDescriptions(_options) {
       name: "figma_workspace_call_upstream_tool",
       description: "Call any official Figma MCP capability through its live schema. Covered first-class commands add local validation and result handling but do not block direct calls.",
       inputSchema: objectSchema({ ...invocation2(), toolName: string4("Exact official tool name."), arguments: { type: "object" }, refresh: boolean4("Refresh upstream discovery.") }, ["toolName"]),
-      outputSchema: resultSchema({ toolName: string4("Called official tool name."), phase: { type: "string", enum: ["preflight", "execute"] }, executionOutcome: { type: "string", enum: ["not_started", "failed_atomic", "succeeded", "outcome_unknown"] }, retryGuidance: string4("Safe recovery direction when execution completion is not confirmed."), upstream: { type: "object" }, outputFiles: { type: "object" } })
+      outputSchema: resultSchema({ toolName: string4("Called official tool name."), phase: { type: "string", enum: ["preflight", "execute"] }, executionOutcome: { type: "string", enum: ["not_started", "failed_atomic", "succeeded", "outcome_unknown"] }, retryGuidance: string4("Safe recovery direction when execution completion is not confirmed."), upstream: { type: "object" }, outputFiles: resultOutputFilesSchema })
     }],
     ["figma_workspace_lookup", {
       name: "figma_workspace_lookup",
@@ -30923,7 +31348,7 @@ function nodeReadDescription(name, description, extra = {}, requireNode = true, 
     name,
     description,
     inputSchema: objectSchema({ ...invocation2(), target: nodeTarget(allowComposite), nodeId: nodeId("Raw node id alias used with file.", allowComposite), refresh: boolean4("Refresh upstream discovery."), ...extra }, [], requireNode ? [{ required: ["target"] }, { required: ["file", "nodeId"] }] : void 0),
-    outputSchema: resultSchema({ upstream: { type: "object" }, outputFiles: { type: "object" } })
+    outputSchema: resultSchema({ upstream: { type: "object" }, outputFiles: resultOutputFilesSchema })
   };
 }
 

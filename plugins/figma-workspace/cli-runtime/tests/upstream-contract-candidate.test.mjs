@@ -69,7 +69,7 @@ test("wrapper coverage requires every declared property to have one valid parame
       hiddenUpstreamOptional: [],
     },
     targetSupport: "none",
-    outputPolicy: { inlineLimitFields: [], debugFiles: [], upstreamEnvelope: false },
+    outputPolicy: { inlineLimitFields: [], resultFiles: [], upstreamEnvelope: false },
   };
   assert.deepEqual(
     inspectFigmaUpstreamWrapperCoverage(upstream, [contract], ["example"])
@@ -111,7 +111,7 @@ test("wrapper coverage enforces per-wrapper public nodeId pattern parity", () =>
       hiddenUpstreamOptional: [],
     },
     targetSupport: "node-scoped",
-    outputPolicy: { inlineLimitFields: [], debugFiles: [], upstreamEnvelope: false },
+    outputPolicy: { inlineLimitFields: [], resultFiles: [], upstreamEnvelope: false },
   });
   const mismatch = (snapshotValue, toolName) =>
     inspectFigmaUpstreamWrapperCoverage(snapshotValue, [contract(toolName)], ["example"])

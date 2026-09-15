@@ -398,16 +398,17 @@ export function createNpmCommandExecutor(options = {}) {
 }
 
 export function extractCliResultSidecarPath(stdout) {
-  const marker = /^#{2,6} Cli Result File\s*$/mu.exec(stdout);
-  if (!marker || marker.index === undefined) {
-    throw new LiveSmokeCommandError("Command did not publish outputFiles.cliResultFile despite --max-inline-bytes 0.");
+  let inlineResult;
+  try {
+    inlineResult = extractCliInlineResult(String(stdout));
+  } catch (error) {
+    throw new LiveSmokeCommandError("Command did not publish outputFiles.resultFile despite --max-inline-bytes 0.", { cause: error });
   }
-  const section = stdout.slice(marker.index + marker[0].length);
-  const pathMatch = /^Path:\s*(.+?)\s*$/mu.exec(section);
-  if (!pathMatch?.[1]) {
-    throw new LiveSmokeCommandError("Command result sidecar did not include its Path field.");
+  const path = resultFilePointer(inlineResult)?.path;
+  if (!isNonEmptyString(path)) {
+    throw new LiveSmokeCommandError("Command did not publish outputFiles.resultFile despite --max-inline-bytes 0.");
   }
-  return pathMatch[1];
+  return path;
 }
 
 export function extractCliInlineResult(stdout) {
@@ -481,39 +482,49 @@ async function readBoundedJsonArtifact(path, options, description = "CLI sidecar
 }
 
 async function hydrateOmittedUpstreamResult(result, options) {
-  if (!isRecord(result) || !isRecord(result.upstream) || Object.hasOwn(result.upstream, "result")) {
+  if (!isCanonicalResultReceipt(result) || !isRecord(result.result) || !isRecord(result.result.upstream) || Object.hasOwn(result.result.upstream, "result")) {
     return result;
   }
-  const outputFiles = isRecord(result.outputFiles) ? result.outputFiles : undefined;
-  const upstreamFile = outputFiles !== undefined && isRecord(outputFiles.upstreamFile)
-    ? outputFiles.upstreamFile
+  const resultFile = resultFilePointer(result);
+  if (resultFile === undefined) {
+    return result;
+  }
+  const path = resultFile.path;
+  if (!isFullyQualifiedAbsolutePath(path)) {
+    throw new LiveSmokeCommandError("CLI result sidecar path must be a normalized fully qualified absolute file.");
+  }
+  const hydrated = (await readBoundedJsonArtifact(path, options, "CLI result sidecar")).value;
+  if (
+    !isCanonicalResultReceipt(hydrated)
+    || hydrated.tool !== result.tool
+    || !isRecord(hydrated.result)
+    || !isRecord(hydrated.result.upstream)
+    || !Object.hasOwn(hydrated.result.upstream, "result")
+  ) {
+    throw new LiveSmokeCommandError("CLI result sidecar did not match the command result envelope.");
+  }
+  return hydrated;
+}
+
+function isCanonicalResultReceipt(value) {
+  return isRecord(value)
+    && value.kind === "figma-cli-result"
+    && value.schemaVersion === 1
+    && isNonEmptyString(value.tool)
+    && isRecord(value.result);
+}
+
+function resultFilePointer(value) {
+  if (!isRecord(value)) return undefined;
+  const outputFiles = isRecord(value.outputFiles)
+    ? value.outputFiles
+    : isCanonicalResultReceipt(value) && isRecord(value.result.outputFiles)
+      ? value.result.outputFiles
+      : undefined;
+  const pointer = outputFiles !== undefined && isRecord(outputFiles.resultFile)
+    ? outputFiles.resultFile
     : undefined;
-  if (upstreamFile === undefined) {
-    return result;
-  }
-  const path = upstreamFile.path;
-  if (
-    !isFullyQualifiedAbsolutePath(path)
-    || !resolve(path).toLowerCase().endsWith(".upstream.json")
-  ) {
-    throw new LiveSmokeCommandError("CLI upstream sidecar path must be a normalized absolute .upstream.json file.");
-  }
-  const hydrated = (await readBoundedJsonArtifact(path, options, "CLI upstream sidecar")).value;
-  if (
-    !isRecord(hydrated)
-    || hydrated.kind !== result.upstream.kind
-    || hydrated.ok !== result.upstream.ok
-    || !Object.hasOwn(hydrated, "result")
-  ) {
-    throw new LiveSmokeCommandError("CLI upstream sidecar did not match the command result envelope.");
-  }
-  return {
-    ...result,
-    upstream: {
-      ...result.upstream,
-      result: hydrated.result,
-    },
-  };
+  return pointer !== undefined && isNonEmptyString(pointer.path) ? pointer : undefined;
 }
 
 function describeExecutionFailure(step, execution) {
@@ -554,8 +565,8 @@ async function runFigmaSidecarCommand(options) {
       result = extractCliInlineResult(String(execution.stdout ?? ""));
     } else {
       const stdout = String(execution.stdout ?? "");
-      const hasMarker = /^#{2,6} Cli Result File\s*$/mu.test(stdout);
-      const markerPath = hasMarker
+      const hasResultFile = /"resultFile"\s*:/u.test(stdout);
+      const markerPath = hasResultFile
         ? assertSafeSidecarPath(extractCliResultSidecarPath(stdout), options.outputDir)
         : undefined;
       const markerCandidate = markerPath === undefined
@@ -568,11 +579,7 @@ async function runFigmaSidecarCommand(options) {
           return undefined;
         }
       })();
-      const inlineCliResultPath = isRecord(inlineResult)
-        && isRecord(inlineResult.outputFiles)
-        && isRecord(inlineResult.outputFiles.cliResultFile)
-        ? inlineResult.outputFiles.cliResultFile.path
-        : undefined;
+      const inlineCliResultPath = resultFilePointer(inlineResult)?.path;
       let inlineCliResult;
       if (typeof inlineCliResultPath === "string" && inlineCliResultPath !== markerPath) {
         const preferredPath = assertSafeSidecarPath(inlineCliResultPath, options.outputDir);
@@ -583,9 +590,12 @@ async function runFigmaSidecarCommand(options) {
         ...(inlineResult === undefined ? [] : [{ path: undefined, value: inlineResult }]),
         ...(inlineCliResult === undefined ? [] : [inlineCliResult]),
       ];
-      const wrapper = candidates.find(({ value }) => isHydratableUpstreamWrapper(value));
+      const wrapper = candidates.find(({ value }) => isCanonicalResultReceipt(value));
       const completeCapture = options.script === "figma:capture"
-        ? candidates.find(({ value }) => isRecord(value) && typeof value.imageFile === "string")
+        ? candidates.find(({ value }) => (
+          isCanonicalResultReceipt(value)
+          && typeof value.result.imageFile === "string"
+        ))
         : undefined;
       const selected = wrapper ?? completeCapture ?? candidates.find(({ value }) => isRecord(value));
       if (selected === undefined) throw new LiveSmokeCommandError("Command sidecar candidates did not contain a JSON object.");
@@ -618,14 +628,6 @@ async function runFigmaSidecarCommand(options) {
     });
   }
   return { execution, result, sidecarPath };
-}
-
-function isHydratableUpstreamWrapper(value) {
-  return isRecord(value)
-    && isRecord(value.upstream)
-    && isRecord(value.outputFiles)
-    && isRecord(value.outputFiles.upstreamFile)
-    && typeof value.outputFiles.upstreamFile.path === "string";
 }
 
 function commonCommandArgs() {
@@ -663,13 +665,14 @@ async function runScriptCommand(options) {
 }
 
 function requireSuccessfulResult(command, invocation) {
-  if (invocation.execution.exitCode !== 0 || invocation.result.ok !== true) {
+  const result = unwrapRuntimeResult(invocation.result, command);
+  if (invocation.execution.exitCode !== 0 || result.ok !== true) {
     throw new LiveSmokeCommandError(`${command} failed. Inspect its retained sidecar before rerunning this live test.`, {
       command,
       execution: invocation.execution,
     });
   }
-  return invocation.result;
+  return result;
 }
 
 function requireRecordField(record, field, command) {
@@ -681,22 +684,49 @@ function requireRecordField(record, field, command) {
 }
 
 function requireUpstreamResult(record, command) {
-  const upstream = requireRecordField(record, "upstream", command);
+  const receipt = requireReceipt(record, command);
+  if (receipt.tool === "figma:run") {
+    const runtime = requireRecordField(receipt, "result", command);
+    const upstream = requireRecordField(runtime, "upstream", command);
+    if (upstream.ok !== true) {
+      throw new LiveSmokeCommandError(`${command} did not report upstream.ok: true.`);
+    }
+    return requireRecordField(upstream, "result", command);
+  }
+  const upstream = requireRecordField(receipt, "upstream", command);
   if (upstream.ok !== true) {
     throw new LiveSmokeCommandError(`${command} did not report upstream.ok: true.`);
   }
-  return requireRecordField(upstream, "result", command);
+  return upstream;
+}
+
+function requireReceipt(record, command) {
+  if (!isCanonicalResultReceipt(record)) {
+    throw new LiveSmokeCommandError(`${command} did not return a figma-cli-result receipt.`);
+  }
+  return record;
+}
+
+function unwrapRuntimeResult(record, command) {
+  if (isCanonicalResultReceipt(record)) {
+    return record.result;
+  }
+  // Targetless upstream schema commands intentionally return their small
+  // runtime payload inline and do not emit a result-file receipt.
+  if (isRecord(record)) return record;
+  throw new LiveSmokeCommandError(`${command} did not return a readable runtime result.`);
 }
 
 function requireExecutionOutcome(invocation, command) {
-  const outcome = invocation.result.executionOutcome;
+  const result = unwrapRuntimeResult(invocation.result, command);
+  const outcome = result.executionOutcome;
   if (outcome === "outcome_unknown") {
-    if (!isNonEmptyString(invocation.result.retryGuidance)) {
+    if (!isNonEmptyString(result.retryGuidance)) {
       throw new LiveSmokeCommandError(`${command} returned outcome_unknown without retryGuidance.`);
     }
     return outcome;
   }
-  if (outcome === "succeeded" && invocation.result.ok === true && invocation.execution.exitCode === 0) {
+  if (outcome === "succeeded" && result.ok === true && invocation.execution.exitCode === 0) {
     return outcome;
   }
   throw new LiveSmokeCommandError(

@@ -33,6 +33,7 @@ import {
   type FigmaWorkspaceClientOptions,
 } from "../runtime/workspace-client.js";
 import { atomicWriteManagedTextFile, ensureManagedDirectory } from "../runtime/managed-files.js";
+import { writeFigmaWorkspaceResultFile } from "../runtime/workspace-files.js";
 
 export const FIGMA_WORKSPACE_CLI_EXIT_SUCCESS = 0;
 export const FIGMA_WORKSPACE_CLI_EXIT_EXECUTION_ERROR = 1;
@@ -314,6 +315,7 @@ export function formatFigmaWorkspaceCommandMarkdown(
     `Status: ${presentation.status.replaceAll("-", " ")}`,
     "",
     ...formatExecutionFailureSummary(result, presentation),
+    ...formatResultFileSummary(result),
     "```json",
     JSON.stringify(result, null, 2),
     "```",
@@ -494,6 +496,50 @@ function formatExecutionFailureSummary(
   ];
 }
 
+function formatResultFileSummary(result: unknown): string[] {
+  const resultFile = existingResultFilePointer(result);
+  if (!resultFile) return [];
+  const path = typeof resultFile.path === "string" && resultFile.path.trim() ? resultFile.path : undefined;
+  const jq = isRecord(resultFile.jq) ? resultFile.jq : undefined;
+  if (!path || !jq) return [];
+  const filters = [
+    ["full receipt", jq.full],
+    ["status", jq.status],
+    ["data", jq.data],
+    ["nodes", jq.nodes],
+    ["next cursor", jq.nextCursor],
+    ["has more", jq.hasMore],
+  ].filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0);
+  if (filters.length === 0) return [];
+  const shell = resultFileShellFormatter();
+  const quotedPath = shell.quote(path);
+  return [
+    "## Full result",
+    "",
+    "JSON receipt: `figma-cli-result` schema version `1`.",
+    "",
+    `\`\`\`${shell.language}`,
+    ...filters.flatMap(([label, filter]) => [`# ${label}`, `jq ${shell.quote(filter)} -- ${quotedPath}`]),
+    "```",
+    "",
+  ];
+}
+
+function resultFileShellFormatter(): { language: "powershell" | "sh"; quote(value: string): string } {
+  if (process.platform === "win32") {
+    return { language: "powershell", quote: quotePowerShellLiteral };
+  }
+  return { language: "sh", quote: quotePosixShellLiteral };
+}
+
+function quotePowerShellLiteral(value: string): string {
+  return `'${value.replaceAll("'", "''")}'`;
+}
+
+function quotePosixShellLiteral(value: string): string {
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
 export const FIGMA_WORKSPACE_CLI_HELP = [
   "Stateless Figma Workspace internal runtime.",
   "",
@@ -665,10 +711,37 @@ async function writeLockOwner(
 async function persistOversizedResult(result: unknown, command: FigmaWorkspaceCliCommand, outputRoot: string, limit: number): Promise<unknown> {
   const serialized = `${JSON.stringify(result, null, 2)}\n`;
   if (Buffer.byteLength(serialized, "utf8") <= limit) return result;
+  const existingResultFile = existingResultFilePointer(result);
+  if (existingResultFile !== undefined) return createResultFileSummary(result, existingResultFile);
   await ensureManagedDirectory({ root: outputRoot, directory: outputRoot });
   const resultPath = resolve(outputRoot, `${command.replace(/[^a-z0-9]+/giu, "-")}.result.json`);
-  const written = await atomicWriteManagedTextFile({ root: outputRoot, path: resultPath, overwrite: true }, serialized);
-  const existingOutputFiles = isRecord(result) && isRecord(result.outputFiles) ? result.outputFiles : {};
+  const receipt = resultReceiptPayload(result);
+  const written = await writeFigmaWorkspaceResultFile(resultPath, {
+    tool: publicCommandName(command),
+    invocation: receipt.invocation,
+    result: receipt.result,
+  });
+  return createResultFileSummary(result, { ...written });
+}
+
+function resultReceiptPayload(result: unknown): {
+  invocation: Record<string, unknown>;
+  result: unknown;
+} {
+  if (!isRecord(result)) return { invocation: {}, result };
+  const { invocation, ...businessResult } = result;
+  return {
+    invocation: isRecord(invocation) ? invocation : {},
+    result: businessResult,
+  };
+}
+
+function existingResultFilePointer(result: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(result) || !isRecord(result.outputFiles) || !isRecord(result.outputFiles.resultFile)) return undefined;
+  return result.outputFiles.resultFile;
+}
+
+function createResultFileSummary(result: unknown, resultFile: Record<string, unknown>): Record<string, unknown> {
   const failure = isRecord(result) && result.ok === false ? presentationFailureForResult(result) : {};
   const upstreamError = (isRecord(result) ? compactPresentationError(result.upstreamError) : undefined)
     ?? (failure.isUpstream ? compactPresentationError(failure.error) : undefined);
@@ -680,8 +753,7 @@ async function persistOversizedResult(result: unknown, command: FigmaWorkspaceCl
     ok: isRecord(result) ? result.ok !== false : true,
     invocation: isRecord(result) ? result.invocation : undefined,
     outputFiles: {
-      ...existingOutputFiles,
-      cliResultFile: { path: written.path, bytes: written.bytes, lineCount: serialized.split("\n").length - 1 },
+      resultFile,
     },
   };
 }
@@ -722,7 +794,6 @@ function selectRecoveryFacts(result: unknown): Record<string, unknown> {
     "planFile",
     "script",
     "inlineResultLimit",
-    "outputFiles",
   ].flatMap((key) => result[key] === undefined ? [] : [[key, result[key]]]));
 }
 
