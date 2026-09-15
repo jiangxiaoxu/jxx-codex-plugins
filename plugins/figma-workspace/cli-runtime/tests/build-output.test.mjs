@@ -15,7 +15,7 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.6.5");
+  assert.equal(packageJson.version, "0.6.6");
 });
 
 test("distribution stages TypeScript declaration libs for strict preflight", () => {
@@ -117,7 +117,7 @@ test("large local doctor output stays inline and creates no result sidecar", asy
   assert.equal(exit, 0);
   const rendered = output.stdout.join("");
   assert.match(rendered, /local-diagnostic-/u);
-  assert.doesNotMatch(rendered, /cliResultFile/u);
+  assert.doesNotMatch(rendered, /resultFile/u);
   const outputRoot = /"outputRoot": "([^"]+)"/u.exec(rendered)?.[1].replaceAll("\\\\", "\\");
   assert.ok(outputRoot);
   await assert.rejects(stat(outputRoot), /ENOENT/u);
@@ -138,7 +138,7 @@ test("upstream tool discovery dispatches without an inline result limit", async 
   });
   assert.equal(exit, 0);
   assert.deepEqual(observedArgs, { name: "get_metadata", refresh: true });
-  assert.doesNotMatch(output.stdout.join(""), /cliResultFile/u);
+  assert.doesNotMatch(output.stdout.join(""), /resultFile/u);
 });
 
 test("upstream tool discovery rejects inline limits before client creation", async () => {
@@ -221,7 +221,7 @@ test("remote results default to a 2048-byte inline boundary", async () => {
         assert.match(await readFile(match[1], "utf8"), /"payload": "x{100}/u);
       } else {
         assert.match(rendered, /"payload": "x{100}/u);
-        assert.doesNotMatch(rendered, /cliResultFile/u);
+        assert.doesNotMatch(rendered, /resultFile/u);
       }
     }
   } finally {
@@ -248,7 +248,7 @@ test("remote inline limits are forwarded to the client and outer renderer withou
     assert.equal(exit, 0);
     assert.equal(observedLimit, 10_000);
     assert.match(output.stdout.join(""), /"payload": "x{100}/u);
-    assert.doesNotMatch(output.stdout.join(""), /cliResultFile/u);
+    assert.doesNotMatch(output.stdout.join(""), /resultFile/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -317,11 +317,13 @@ test("atomic script failure replacement preserves recovery facts and reports an 
     assert.match(rendered, /"retryGuidance": "Repair before retrying\."/u);
     assert.match(rendered, /"captureProcessingSucceeded": false/u);
     assert.match(rendered, /"postProcessing"/u);
-    assert.match(rendered, /"compiledFile"/u);
-    assert.match(rendered, /cliResultFile/u);
-    const resultFile = /"cliResultFile":\s*\{\s*"path": "([^"]+)"/u.exec(rendered)?.[1];
+    assert.match(rendered, /resultFile/u);
+    const resultFile = /"resultFile":\s*\{\s*"path": "([^"]+)"/u.exec(rendered)?.[1];
     assert.ok(resultFile);
-    assert.match(await readFile(resultFile, "utf8"), /diagnosticPayload/u);
+    const receipt = JSON.parse(await readFile(resultFile, "utf8"));
+    assert.equal(receipt.result.executionOutcome, "failed_atomic");
+    assert.equal(receipt.result.outputFiles.compiledFile.path, resolve(directory, "compiled.js"));
+    assert.match(JSON.stringify(receipt.result), /diagnosticPayload/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -359,7 +361,7 @@ test("oversized unknown execution failures keep compact upstream errors inline",
     assert.match(rendered, /"code": "FIGMA_UPSTREAM_RESPONSE_LOST"/u);
     assert.match(rendered, /"message": "Figma execution response was lost\."/u);
     assert.doesNotMatch(rendered, /diagnosticPayload/u);
-    assert.match(rendered, /cliResultFile/u);
+    assert.match(rendered, /resultFile/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -410,7 +412,7 @@ test("oversized local failures keep their error, recovery hint, and operation id
     assert.match(rendered, new RegExp(`"planDigest": "${"a".repeat(64)}"`, "u"));
     assert.match(rendered, /"outputDir":/u);
     assert.doesNotMatch(rendered, /diagnosticPayload/u);
-    assert.match(rendered, /cliResultFile/u);
+    assert.match(rendered, /resultFile/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -450,7 +452,7 @@ test("oversized preflight failures keep the first actionable diagnostic in the C
     assert.match(rendered, /"code": "FIGMA_WORKSPACE_PARSE_ERROR"/u);
     assert.match(rendered, /"recoveryHint": "Fix the syntax error before retrying\."/u);
     assert.doesNotMatch(rendered, /"repairPlan"|"diagnostics"/u);
-    assert.match(rendered, /cliResultFile/u);
+    assert.match(rendered, /resultFile/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -491,7 +493,7 @@ test("oversized batch failures preserve nested upstream error provenance", async
     assert.match(rendered, /FIGMA_ASSET_UPLOAD_FAILED: Asset upload failed\./u);
     assert.match(rendered, /"upstreamError":\s*\{/u);
     assert.doesNotMatch(rendered, /"error":\s*\{|diagnosticPayload/u);
-    assert.match(rendered, /cliResultFile/u);
+    assert.match(rendered, /resultFile/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -523,7 +525,7 @@ test("oversized successful results do not promote advisory records to errors", a
     assert.equal(exit, 0);
     assert.match(rendered, /^Status: succeeded$/mu);
     assert.doesNotMatch(rendered, /"error":\s*\{|"upstreamError":\s*\{|^## Error$/mu);
-    assert.match(rendered, /cliResultFile/u);
+    assert.match(rendered, /resultFile/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

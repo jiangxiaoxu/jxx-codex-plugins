@@ -4,7 +4,7 @@
 
 ## 读操作的选择
 
-每次命令都显式传入 Figma file 或 node target. 命令标准输出是 Restricted Markdown. 结果指向 sidecar 时读取该 JSON 文件, 不要把标准输出当 JSON.
+每次命令都显式传入 Figma file 或 node target. 命令标准输出是 Restricted Markdown. 结果指向 `outputFiles.resultFile` 时, 使用 `Full result` 中的 jq 命令读取该 JSON receipt, 不要把标准输出当 JSON.
 
 | 需要回答的问题 | 使用的命令 |
 | --- | --- |

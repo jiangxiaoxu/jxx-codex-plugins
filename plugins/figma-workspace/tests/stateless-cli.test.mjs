@@ -147,7 +147,7 @@ test("fixed public leaf wrappers are complete, unique, and separate from mainten
   }
 });
 
-test("release metadata keeps the 0.6.5 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
+test("release metadata keeps the 0.6.6 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
   const [manifest, packageJson, cliPackageJson, cliLockfile, authConstants] = await Promise.all([
     readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
@@ -157,7 +157,7 @@ test("release metadata keeps the 0.6.5 plugin, CLI package, lockfile, and OAuth 
   ]);
   const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
 
-  assert.equal(manifest.version, "0.6.5");
+  assert.equal(manifest.version, "0.6.6");
   assert.equal(packageJson.version, manifest.version);
   assert.equal(cliPackageJson.version, manifest.version);
   assert.equal(cliLockfile.version, manifest.version);
@@ -224,7 +224,7 @@ test("numeric help exposes exact ranges, clamp output is explicit, and API read 
 
   for (const [scriptName, expectedRange] of [
     ["figma:docs:catalog", /--limit <1\.\.100>/u],
-    ["figma:inspect", /--depth <1\.\.9007199254740991>/u],
+    ["figma:inspect", /--depth <0\.\.9007199254740991>/u],
     ["figma:libraries", /--offset <0\.\.9007199254740991>/u],
     ["figma:capture", /--max-dimension <1\.\.65536>/u],
   ]) {
@@ -330,7 +330,7 @@ test("local docs and API lookup stay inline without a state file or remote resul
   });
   assert.equal(search.status, 0, commandOutput(search));
   assert.match(search.stdout, /"taskFamily": "code-connect"/u);
-  assert.doesNotMatch(search.stdout, /cliResultFile|^Path:/mu);
+  assert.doesNotMatch(search.stdout, /resultFile|^Path:/mu);
 
   const invalidLimit = runNpm([
     "--silent", "run", "figma:docs:search", "--", "layout", "--max-inline-bytes", "0",
@@ -371,17 +371,16 @@ test("Skill routes static discovery and documents explicit targets without retir
     "--file <Figma-file-URL|fileKey>",
     "--target <URL>",
     "--source -",
-    "outputFiles.cliResultFile",
+    "outputFiles.resultFile",
     "outcome_unknown",
     "Never blindly replay a mutation",
   ]) {
     assert.equal(skill.includes(required), true, required);
   }
   assert.match(artifactsReference, /Local Artifacts/u);
+  assert.match(artifactsReference, /`jq\.full`.*`jq\.status`.*`jq\.data`/u);
   assert.doesNotMatch(artifactsReference, /--state-file|--session-file|figma:open|figma:sessions/u);
   assert.match(upstreamReference, /coverage.*never blocks/iu);
-  assert.match(upstreamReference, /sanitized visible-protocol sidecar/u);
-  assert.match(artifactsReference, /ordinary `_meta`.*`structuredContent` business data/u);
   assert.match(safetyReference, /100 pages/u);
   assert.doesNotMatch(agentMetadata, /English-only/u);
   assert.doesNotMatch(skill, /maintenance:raw|figma:raw|transport schema escape hatch/iu);

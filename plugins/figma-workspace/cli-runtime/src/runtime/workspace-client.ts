@@ -39,6 +39,12 @@ import {
 import {
   findWrapperLookupProfile,
 } from "./guidance-catalog.js";
+import {
+  buildInspectPaginationCode,
+  finalizeInspectPaginationResult,
+  FigmaWorkspaceInspectPaginationError,
+  resolveInspectPagination,
+} from "./inspect-pagination.js";
 import { resolveTaskRoute, type TaskRouteResult } from "./task-routing.js";
 import type { FigmaWorkspacePublicCommandId } from "./public-command-registry.js";
 import {
@@ -132,8 +138,10 @@ import {
   resolveScriptInputPath,
   resolveWorkspaceFile,
   writeCaptureOutputFile,
-  writeJsonFile,
+  writeFigmaWorkspaceResultFile,
   type FigmaWorkspaceInvocationWorkspace,
+  type FigmaWorkspaceResultFilePointer,
+  type ScriptOutputFileMetadata,
 } from "./workspace-files.js";
 import {
   atomicWriteManagedBinaryFile,
@@ -549,10 +557,8 @@ export interface FigmaWorkspaceFilePointer {
 
 export interface FigmaWorkspaceOutputFiles {
   [key: string]: unknown;
-  debugFile?: FigmaWorkspaceFilePointer;
+  resultFile?: FigmaWorkspaceResultFilePointer;
   compiledScriptFile?: FigmaWorkspaceFilePointer;
-  upstreamFile?: FigmaWorkspaceFilePointer;
-  metadataFile?: FigmaWorkspaceFilePointer;
 }
 
 export interface FigmaWorkspaceToolResultBase {
@@ -1367,151 +1373,100 @@ async function writeCallUpstreamResultFiles(options: {
   wrapperToolName: string;
   session: FigmaWorkspaceInvocationContext;
   resultPayload: Record<string, unknown>;
-  upstream: Record<string, unknown>;
   upstreamCallResult: Record<string, unknown>;
 }): Promise<FigmaWorkspaceOutputFiles> {
   const outputFile = resolveCallUpstreamOutputFile(options.toolName, options.session);
-  const outputFiles: FigmaWorkspaceOutputFiles = {
-    debugFile: responseFilePointer(await writeJsonFile(
-      outputFile,
-      createUpstreamBackedResultFilePayload({
-        tool: options.wrapperToolName,
-        session: options.session,
-        resultPayload: options.resultPayload,
-        upstream: options.upstream,
-        fields: {
-          upstreamToolName: options.toolName,
-        },
-      }),
-    )),
+  return {
+    resultFile: await writeRuntimeResultFile({
+      path: outputFile,
+      tool: options.wrapperToolName,
+      session: options.session,
+      result: resultPayloadWithoutUpstreamPayload(options.resultPayload),
+      upstream: options.upstreamCallResult,
+    }),
   };
-  outputFiles.upstreamFile = responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(outputFile), options.upstreamCallResult));
-  return outputFiles;
 }
 
-async function writeMetadataFile(options: {
-  args: FigmaWorkspaceGetMetadataArguments;
+async function writeMetadataResultFile(options: {
   session: FigmaWorkspaceInvocationContext;
-  metadata: FigmaWorkspaceMetadataJson;
-}): Promise<FigmaWorkspaceFilePointer> {
+  result: Record<string, unknown>;
+}): Promise<FigmaWorkspaceResultFilePointer> {
   const metadataFile = metadataResultFilePath(options.session);
-  return responseFilePointer(await writeJsonFile(metadataFile, options.metadata));
+  return writeRuntimeResultFile({
+    path: metadataFile,
+    tool: "figma:metadata",
+    session: options.session,
+    result: options.result,
+  });
 }
 
 function metadataResultFilePath(session: FigmaWorkspaceInvocationContext): string {
   const timestamp = new Date().toISOString().replace(/[^\dTZ]/gu, "");
-  const fileName = `metadata-${timestamp}.metadata.json`;
+  const fileName = `metadata-${timestamp}.result.json`;
   if (session.workspace) {
-    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "metadataFile");
+    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "resultFile");
   }
-  return resolveWorkspaceFile(session.outputRoot, fileName, "metadataFile");
+  return resolveWorkspaceFile(session.outputRoot, fileName, "resultFile");
 }
 
 function resolveCallUpstreamOutputFile(toolName: string, session: FigmaWorkspaceInvocationContext): string {
   const timestamp = new Date().toISOString().replace(/[^\dTZ]/gu, "");
   const fileName = `upstream-${slugifyTaskName(toolName || "tool")}-${timestamp}.result.json`;
   if (session.workspace) {
-    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "debugFile");
+    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "resultFile");
   }
-  return resolveWorkspaceFile(session.outputRoot, fileName, "debugFile");
+  return resolveWorkspaceFile(session.outputRoot, fileName, "resultFile");
 }
 
-function upstreamFilePathForResultFile(resultFile: string): string {
-  if (resultFile.endsWith(".result.json")) {
-    return `${resultFile.slice(0, -".result.json".length)}.upstream.json`;
-  }
-  if (resultFile.endsWith(".json")) {
-    return `${resultFile.slice(0, -".json".length)}.upstream.json`;
-  }
-  return `${resultFile}.upstream.json`;
-}
-
-async function addUpstreamSidecar(
-  outputFiles: object,
-  resultFile: string | undefined,
-  upstream: Record<string, unknown> | undefined,
-): Promise<Record<string, unknown>> {
-  if (!resultFile || !upstream) {
-    return { ...outputFiles };
-  }
-  return {
-    ...outputFiles,
-    upstreamFile: responseFilePointer(await writeJsonFile(upstreamFilePathForResultFile(resultFile), upstream)),
-  };
-}
-
-function responseFilePointer(pointer: { path: string; bytes: number; lineCount: number }): FigmaWorkspaceFilePointer {
-  return {
-    path: pointer.path,
-    bytes: pointer.bytes,
-    lineCount: pointer.lineCount,
-  };
-}
-
-function createResultFileEnvelope(options: {
+async function writeRuntimeResultFile(options: {
+  path: string;
   tool: string;
   session: FigmaWorkspaceInvocationContext;
-  ok: boolean;
-  fields?: Record<string, unknown>;
-}): Record<string, unknown> {
-  return removeUndefined({
-    kind: "figma-cli-result",
-    ok: options.ok,
+  result: unknown;
+  upstream?: unknown;
+  dataPath?: string;
+}): Promise<FigmaWorkspaceResultFilePointer> {
+  return writeFigmaWorkspaceResultFile(options.path, {
     tool: options.tool,
-    invocationId: options.session.invocationId,
-    generatedAt: new Date().toISOString(),
-    ...options.fields,
-  }) as Record<string, unknown>;
-}
-
-function createUpstreamBackedResultFilePayload(options: {
-  tool: string;
-  session: FigmaWorkspaceInvocationContext;
-  resultPayload: Record<string, unknown>;
-  upstream?: Record<string, unknown>;
-  fields?: Record<string, unknown>;
-}): Record<string, unknown> {
-  return createResultFileEnvelope({
-    tool: options.tool,
-    session: options.session,
-    ok: options.resultPayload.ok !== false,
-    fields: {
-      ...options.fields,
-      upstreamKind: asOptionalString(options.upstream?.kind),
-      upstreamOk: typeof options.upstream?.ok === "boolean" ? options.upstream.ok : undefined,
-      upstreamError: isRecord(options.resultPayload.upstreamError) ? options.resultPayload.upstreamError : undefined,
-    },
+    invocation: resultFileInvocation(options.session),
+    result: options.result,
+    upstream: options.upstream,
+    dataPath: options.dataPath,
   });
 }
 
-function createRunScriptResultFilePayload(options: {
-  session: FigmaWorkspaceInvocationContext;
-  resultPayload: Record<string, unknown>;
-  diagnostics: FigmaWorkspaceDiagnostic[];
-  parsed?: ParsedUpstreamToolResult;
-  upstream?: Record<string, unknown>;
-}): Record<string, unknown> {
-  const script = asRecord(options.resultPayload.script);
-  return createUpstreamBackedResultFilePayload({
-    tool: "figma:run",
-    session: options.session,
-    resultPayload: options.resultPayload,
-    upstream: options.upstream,
-    fields: {
-      phase: asOptionalString(options.resultPayload.phase),
-      executionOutcome: asOptionalString(options.resultPayload.executionOutcome),
-      diagnosticsCount: options.diagnostics.length,
-      fatalDiagnostics: options.diagnostics.filter((item) => item.severity === "fatal").length,
-      warningDiagnostics: options.diagnostics.filter((item) => item.severity === "warning").length,
-      diagnostics: options.diagnostics.length > 0 ? options.diagnostics : undefined,
-      repairPlan: options.resultPayload.repairPlan,
-      script,
-      captureProcessingSucceeded: options.resultPayload.captureProcessingSucceeded,
-      retryGuidance: options.resultPayload.retryGuidance,
-      captures: options.resultPayload.captures,
-      resultSummary: options.parsed ? summarizeParsedResult(options.parsed) : undefined,
-      nodeIds: options.parsed ? collectNodeIds(options.parsed.json) : undefined,
+function resultFileInvocation(session: FigmaWorkspaceInvocationContext): Record<string, unknown> {
+  return removeUndefined({
+    invocationId: session.invocationId,
+    fileKey: session.fileKey,
+    surface: session.surface,
+    outputRoot: session.outputRoot,
+  }) as Record<string, unknown>;
+}
+
+function resultPayloadWithoutUpstreamPayload(result: Record<string, unknown>): Record<string, unknown> {
+  const upstream = asRecord(result.upstream);
+  if (!Object.prototype.hasOwnProperty.call(upstream, "result")
+    && !Object.prototype.hasOwnProperty.call(upstream, "text")) {
+    return result;
+  }
+  const { result: _result, text: _text, ...summary } = upstream;
+  return { ...result, upstream: summary };
+}
+
+function writeRunOutput(
+  outputWriter: ReturnType<typeof createRunOutputWriter>,
+  session: FigmaWorkspaceInvocationContext,
+  result: Record<string, unknown>,
+  options: { compiledScript?: string; writeResult: boolean },
+): Promise<ScriptOutputFileMetadata> {
+  return outputWriter.write({
+    result,
+    receipt: {
+      tool: "figma:run",
+      invocation: resultFileInvocation(session),
     },
+    ...options,
   });
 }
 
@@ -1566,14 +1521,7 @@ async function executeRun(
       repairPlan: repairPlanForResponse(diagnostics),
       script: responseScriptMetadata({ scriptPath }),
     }) as Record<string, unknown>;
-    const outputFiles = await outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload,
-        diagnostics,
-      }),
-      writeResult: true,
-    });
+    const outputFiles = await writeRunOutput(outputWriter, session, resultPayload, { writeResult: true });
     return {
       ...limitInlineScriptResult(resultPayload, inlineResultLimit, []),
       outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
@@ -1617,14 +1565,7 @@ async function executeRun(
       script: responseScript,
     }) as Record<string, unknown>;
     const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, []);
-    const outputFiles = await outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload,
-        diagnostics,
-      }),
-      writeResult: true,
-    });
+    const outputFiles = await writeRunOutput(outputWriter, session, resultPayload, { writeResult: true });
     const payload = {
       ...limitedPayload,
       outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
@@ -1646,12 +1587,7 @@ async function executeRun(
       script: responseScript,
       upstreamError: responseUpstreamError(upstreamError),
     }) as Record<string, unknown>;
-    const outputFiles = await outputWriter.write({
-      result: createRunScriptResultFilePayload({
-        session,
-        resultPayload,
-        diagnostics,
-      }),
+    const outputFiles = await writeRunOutput(outputWriter, session, resultPayload, {
       compiledScript: wrappedScript,
       writeResult: true,
     });
@@ -1683,12 +1619,7 @@ async function executeRun(
     const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
       resultPayload,
       stage: "scriptResultSidecars",
-      write: () => outputWriter.write({
-        result: createRunScriptResultFilePayload({
-          session,
-          resultPayload,
-          diagnostics,
-        }),
+      write: () => writeRunOutput(outputWriter, session, resultPayload, {
         compiledScript: wrappedScript,
         writeResult: true,
       }),
@@ -1718,12 +1649,7 @@ async function executeRun(
     const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
       resultPayload,
       stage: "scriptResultSidecars",
-      write: () => outputWriter.write({
-        result: createRunScriptResultFilePayload({
-          session,
-          resultPayload,
-          diagnostics,
-        }),
+      write: () => writeRunOutput(outputWriter, session, resultPayload, {
         compiledScript: wrappedScript,
         writeResult: true,
       }),
@@ -1746,18 +1672,23 @@ async function executeRun(
       script: responseScript,
       upstreamError: parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined,
     }) as Record<string, unknown>;
+    const diagnosticPayload = localPostprocessingFailure(
+      resultPayload,
+      "upstreamResponseBudget",
+      attempt.postResponseError,
+    );
+    const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
+      resultPayload: diagnosticPayload,
+      stage: "scriptResultReceipt",
+      write: () => writeRunOutput(outputWriter, session, diagnosticPayload, { writeResult: true }),
+    });
     return limitInlineScriptResult(
-      localPostprocessingFailure(
-        resultPayload,
-        "upstreamResponseBudget",
-        attempt.postResponseError,
-      ),
+      payloadWithOutputFiles,
       inlineResultLimit,
       [],
     );
   }
   if (parsed.upstreamError) {
-    const upstreamResult = upstreamEnvelope(parsed);
     const atomicScriptFailure = isConfirmedAtomicUseFigmaScriptFailure(evalSettings, parsed);
     const resultPayload = removeUndefined({
       ok: false,
@@ -1775,21 +1706,10 @@ async function executeRun(
     const payloadWithOutputFiles = await attachPostExecutionOutputFiles({
       resultPayload,
       stage: "scriptResultSidecars",
-      write: async () => addUpstreamSidecar(
-        await outputWriter.write({
-          result: createRunScriptResultFilePayload({
-            session,
-            resultPayload,
-            diagnostics,
-            parsed,
-            upstream: upstreamResult,
-          }),
-          compiledScript: wrappedScript,
-          writeResult: true,
-        }),
-        outputWriter.files.resultFile,
-        upstreamResult,
-      ),
+      write: () => writeRunOutput(outputWriter, session, resultPayload, {
+        compiledScript: wrappedScript,
+        writeResult: true,
+      }),
     });
     const payload = {
       ...limitInlineScriptResult(
@@ -1817,7 +1737,6 @@ async function executeRun(
     script: successScript,
     ...runUpstreamFields(parsed),
   }) as Record<string, unknown>;
-  const upstreamResult = upstreamEnvelope(parsed);
   const limitedPayload = limitInlineScriptResult(
     resultPayload,
     inlineResultLimit,
@@ -1827,27 +1746,7 @@ async function executeRun(
   return attachPostExecutionOutputFiles({
     resultPayload: limitedPayload,
     stage: "scriptResultSidecars",
-    write: async () => needsOutputFile
-      ? addUpstreamSidecar(await outputWriter.write({
-        result: createRunScriptResultFilePayload({
-          session,
-          resultPayload,
-          diagnostics,
-          parsed,
-          upstream: upstreamResult,
-        }),
-        writeResult: true,
-      }), outputWriter.files.resultFile, upstreamResult)
-      : outputWriter.write({
-        result: createRunScriptResultFilePayload({
-          session,
-          resultPayload,
-          diagnostics,
-          parsed,
-          upstream: upstreamResult,
-        }),
-        writeResult: false,
-      }),
+    write: () => writeRunOutput(outputWriter, session, resultPayload, { writeResult: needsOutputFile }),
   });
 }
 
@@ -1963,7 +1862,6 @@ async function executeApplyAssetManifest(
     }
   }
 
-  const files: Record<string, unknown> = {};
   const application = await applyUploadedAssetFillsIfAvailable({
     session,
     runtime,
@@ -1999,31 +1897,20 @@ async function executeApplyAssetManifest(
     failures: failures.length > 0 ? failures : undefined,
   };
   if (!ok) {
-    files.debugFile = responseFilePointer(await writeJsonFile(resolveAssetManifestDebugFile(args, session), createResultFileEnvelope({
-      tool: "figma:assets:apply",
-      session,
-      ok,
-      fields: {
-        assetCount: assetResults.length,
-        failureCount: failures.length,
-        applicationOk: application.ok,
-        applicationReason: application.reason,
-        applicationSource: application.applicationSource,
-        validationOk: validation.ok,
-        validationReason: validation.reason,
-        validationSource: validation.validationSource,
-        validationExpectedCount: validation.expectedCount,
-        validationMissingCount: validation.missingValidationCount,
-        failures: failures.length > 0 ? failures : undefined,
-        assetDetails,
-      },
-    })));
+    return attachPostExecutionOutputFiles({
+      resultPayload: payload,
+      stage: "assetResultFile",
+      write: async () => ({
+        resultFile: await writeRuntimeResultFile({
+          path: resolveAssetManifestDebugFile(args, session),
+          tool: "figma:assets:apply",
+          session,
+          result: { ...payload, assetDetails },
+        }),
+      }),
+    });
   }
-  const response = {
-    ...payload,
-    outputFiles: Object.keys(files).length > 0 ? files : undefined,
-  };
-  return response;
+  return payload;
   } finally {
     await Promise.allSettled(assetInputs.map(({ handle }) => handle.close()));
   }
@@ -2040,9 +1927,9 @@ function resolveAssetManifestDebugFile(args: FigmaWorkspaceApplyAssetManifestArg
   const slug = "asset-manifest";
   const fileName = `${slug}.assets.result.json`;
   if (session.workspace) {
-    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "debugFile");
+    return resolveWorkspaceFile(session.workspace.outputDir, fileName, "resultFile");
   }
-  return resolveWorkspaceFile(session.outputRoot, fileName, "debugFile");
+  return resolveWorkspaceFile(session.outputRoot, fileName, "resultFile");
 }
 
 function compactUploadSummary(upload: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
@@ -2131,7 +2018,7 @@ async function executeDownloadAssets(
           code: "FIGMA_WORKSPACE_DOWNLOAD_SVG_ASSET_SHAPE_UNSUPPORTED",
           severity: "fatal",
           message: unsupportedSvgAssetError.message,
-          suggestion: "Inspect outputFiles.debugFile and the live download_assets description before adapting the parser to a new response shape.",
+          suggestion: "Inspect outputFiles.resultFile and the live download_assets description before adapting the parser to a new response shape.",
           docsHint: "Figma Workspace CLI: figma:upstream:read download_assets",
         });
       }
@@ -2219,26 +2106,21 @@ async function executeDownloadAssets(
     diagnostics: diagnostics.length > 0 ? diagnosticsForResponse(dedupeDiagnostics(diagnostics)) : undefined,
     failures: failures.length > 0 ? failures : undefined,
   }) as Record<string, unknown>;
-  const outputFiles: FigmaWorkspaceOutputFiles = {};
   if (!ok) {
-    outputFiles.debugFile = responseFilePointer(await writeJsonFile(paths.resultFile, createResultFileEnvelope({
-      tool: "figma:assets:download",
-      session,
-      ok,
-      fields: {
-        upstreamToolName: tool.name,
-        targetCount: targetResults.length,
-        failureCount: failures.length,
-        failures: failures.length > 0 ? failures : undefined,
-        targetDetails,
-      },
-    })));
+    return attachPostExecutionOutputFiles({
+      resultPayload: payload,
+      stage: "downloadResultFile",
+      write: async () => ({
+        resultFile: await writeRuntimeResultFile({
+          path: paths.resultFile,
+          tool: "figma:assets:download",
+          session,
+          result: { ...payload, targetDetails },
+        }),
+      }),
+    });
   }
-  const response = {
-    ...payload,
-    outputFiles: Object.keys(outputFiles).length > 0 ? outputFiles : undefined,
-  };
-  return response;
+  return payload;
 }
 
 async function loadDownloadAssetsManifest(
@@ -2326,7 +2208,7 @@ function resolveDownloadAssetsOutputPaths(
       : resolveDownloadAssetsTempPath(session, `${slug}.downloads`);
   }
   const resultFile = session.workspace
-    ? resolveWorkspaceFile(session.workspace.outputDir, `${slug}.downloads.result.json`, "debugFile")
+    ? resolveWorkspaceFile(session.workspace.outputDir, `${slug}.downloads.result.json`, "resultFile")
     : resolveDownloadAssetsTempPath(session, `${slug}.downloads.result.json`);
   return { outputDir, resultFile };
 }
@@ -3421,17 +3303,38 @@ async function handleInspect(
     throw new Error('figma:inspect requires file context. Pass --file with a raw node id, or pass a full Figma node URL.');
   }
   const target = targetResolution.nodeId as string;
-  const depth = normalizePositiveInteger(args.depth, 2);
-  const code = [
-    `const __target = ${literal(target)};`,
-    `const __depth = ${literal(depth)};`,
-    "const __value = await __figmaWorkspaceResolveNode(__target, 'figma:inspect target');",
-    "return {",
-    "  target: __target,",
-    "  mode: 'inspect',",
-    "  summary: Array.isArray(__value) ? __value.map((node) => __figmaWorkspaceSummarizeNode(node, __depth)) : __figmaWorkspaceSummarizeNode(__value, __depth),",
-    "};",
-  ].join("\n");
+  let page;
+  try {
+    page = resolveInspectPagination({
+      fileKey: targetResolution.fileKey,
+      nodeId: target,
+      depth: args.depth,
+      fields: args.fields,
+      cursor: args.cursor,
+    });
+  } catch (error) {
+    if (!(error instanceof FigmaWorkspaceInspectPaginationError)) {
+      throw error;
+    }
+    const diagnostic = inspectPaginationDiagnostic({
+      code: error.code,
+      message: error.message,
+      details: error.details,
+    });
+    return makeJsonToolResult({
+      ok: false,
+      target,
+      mode: "inspect",
+      readConsistency: "live",
+      diagnostics: optionalDiagnosticsForResponse([...session.lastDiagnostics, diagnostic]),
+      error: {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      },
+    });
+  }
+  const code = buildInspectPaginationCode(page);
   const evalSettings = await resolveEvalSettings(session, args as Record<string, unknown>, runtime, targetResolution.fileKey);
   const upstream = await callUpstreamEval(
     runtime.client,
@@ -3441,12 +3344,40 @@ async function handleInspect(
   const parsed = parseUpstreamToolResult(upstream);
   if (!targetResolution.crossFile) {
   }
-  const payload = {
-    ok: !parsed.upstreamError,
-    diagnostics: optionalDiagnosticsForResponse(session.lastDiagnostics),
-    ...inspectInlineResultFields(parsed, "inspect"),
+  if (parsed.upstreamError) {
+    return makeJsonToolResult({
+      ok: false,
+      target,
+      mode: "inspect",
+      readConsistency: "live",
+      depth: page.depth,
+      fields: page.fields,
+      offset: page.offset,
+      diagnostics: optionalDiagnosticsForResponse(session.lastDiagnostics),
+      upstreamError: responseUpstreamError(parsed.upstreamError),
+    });
+  }
+  const pageResult = finalizeInspectPaginationResult(asRecord(asRecord(parsed.json).result), page);
+  const diagnostics = pageResult.ok
+    ? session.lastDiagnostics
+    : [...session.lastDiagnostics, inspectPaginationDiagnostic(pageResult.error, pageResult.suggestion)];
+  return makeJsonToolResult({
+    ...pageResult,
+    diagnostics: optionalDiagnosticsForResponse(diagnostics),
+  });
+}
+
+function inspectPaginationDiagnostic(
+  error: { code: string; message: string; details?: Record<string, unknown> },
+  suggestion?: string,
+): FigmaWorkspaceDiagnostic {
+  return {
+    code: error.code,
+    severity: "fatal",
+    message: error.message,
+    suggestion: suggestion ?? "Adjust the inspect cursor, depth, or selected fields, then retry this read.",
+    docsHint: "Figma Workspace CLI: figma:inspect",
   };
-  return makeJsonToolResult(payload);
 }
 
 async function executeInspectStyle(
@@ -3905,9 +3836,13 @@ async function executeGetMetadata(
   const inlineResultLimit = normalizeInlineResultLimit(args.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
   const limitedPayload = limitInlineScriptResult(resultPayload, inlineResultLimit, ["metadata.json"]);
   if (metadataOk && metadata && isRecord(limitedPayload.inlineResultLimit)) {
-    const outputFiles = asRecord(limitedPayload.outputFiles);
-    outputFiles.metadataFile = await writeMetadataFile({ args, session, metadata });
-    limitedPayload.outputFiles = outputFiles;
+    try {
+      const outputFiles: FigmaWorkspaceOutputFiles = { ...asRecord(limitedPayload.outputFiles) };
+      outputFiles.resultFile = await writeMetadataResultFile({ session, result: resultPayload });
+      limitedPayload.outputFiles = outputFiles;
+    } catch (error) {
+      return localPostprocessingFailure(limitedPayload, "metadataResultFile", error);
+    }
   }
   return limitedPayload;
 }
@@ -4191,7 +4126,6 @@ async function executeDedicatedUpstreamTool(options: {
       wrapperToolName: options.contract.toolName,
       session: options.session,
       resultPayload,
-      upstream: upstreamEnvelope(parsed),
       upstreamCallResult,
     }),
   });
@@ -4381,16 +4315,12 @@ async function directUpstreamResponseBudgetFailure(options: {
     return {
       ...resultPayload,
       outputFiles: {
-        debugFile: responseFilePointer(await writeJsonFile(
-          outputFile,
-          createUpstreamBackedResultFilePayload({
-            tool: "figma:upstream:call",
-            session: options.session,
-            resultPayload,
-            upstream: upstreamEnvelope(options.parsed, { includePayload: false }),
-            fields: { upstreamToolName: options.args.toolName },
-          }),
-        )),
+        resultFile: await writeRuntimeResultFile({
+          path: outputFile,
+          tool: "figma:upstream:call",
+          session: options.session,
+          result: resultPayload,
+        }),
       },
     };
   } catch (error) {
@@ -4424,13 +4354,11 @@ async function shapeDirectUpstreamCallResponse(options: {
     parsed: options.parsed,
     resultPayload,
     inlineResultLimit: options.args.inlineResultLimit,
-    forceOutputFile: true,
     writeOutputFiles: (upstreamCallResult) => writeCallUpstreamResultFiles({
       toolName: options.args.toolName,
       wrapperToolName: "figma:upstream:call",
       session: options.session,
       resultPayload,
-      upstream: upstreamEnvelope(options.parsed),
       upstreamCallResult,
     }),
   });
@@ -5201,7 +5129,6 @@ async function attachCodeConnectSidecarIfNeeded(options: {
       wrapperToolName: options.wrapperToolName,
       session: options.session,
       resultPayload: options.resultPayload,
-      upstream: upstreamEnvelope(options.parsed),
       upstreamCallResult: sanitizedCallToolResult(options.parsed),
     });
     return { ...options.resultPayload, outputFiles };
@@ -7910,7 +7837,6 @@ async function shapeUpstreamBackedResponse(options: {
   parsed: ParsedUpstreamToolResult;
   resultPayload: Record<string, unknown>;
   inlineResultLimit: unknown;
-  forceOutputFile?: boolean;
   writeOutputFiles: (upstreamCallResult: Record<string, unknown>) => Promise<FigmaWorkspaceOutputFiles>;
 }): Promise<Record<string, unknown>> {
   const inlineResultLimit = normalizeInlineResultLimit(options.inlineResultLimit ?? DEFAULT_INLINE_RESULT_LIMIT);
@@ -7919,8 +7845,7 @@ async function shapeUpstreamBackedResponse(options: {
     inlineResultLimit,
     [...options.contract.outputPolicy.inlineLimitFields],
   );
-  const needsOutputFile = options.forceOutputFile === true
-    || options.parsed.upstreamError
+  const needsOutputFile = options.parsed.upstreamError
     || options.parsed.nonTextContent.length > 0
     || isRecord(limitedPayload.inlineResultLimit);
   if (!needsOutputFile) {

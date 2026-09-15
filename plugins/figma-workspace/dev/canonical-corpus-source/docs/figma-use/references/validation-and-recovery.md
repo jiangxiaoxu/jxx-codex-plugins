@@ -66,7 +66,7 @@ Classify every result by its required `executionOutcome` before taking another w
 **Recovery steps when `.figma.ts` script returns an error:**
 1. **STOP — do not immediately rerun the mutation.** Read `executionOutcome`, diagnostics, `retryGuidance`, and the runtime's documented failure presentation first.
 2. **Understand the error.** `not_started` applies only to local validation, TypeScript preflight, auth, or connection failures before dispatch. Font loading, invalid runtime property values, and missing runtime node references occur inside the host script after dispatch; use the returned outcome and failure presentation for recovery, never label them `not_started`.
-3. For `outcome_unknown`, use `figma:metadata`, `figma:inspect`, or a narrow read-only query by returned ID or stable name to reconcile structural state. Use `figma:capture` followed by `view_image` when visual evidence is needed.
+3. For `outcome_unknown`, use `figma:metadata`, `figma:inspect`, or a narrow read-only query by returned ID or stable name to reconcile structural state. For a large tree, use `figma:inspect` pages with `--cursor` and the returned `nextCursor`; each page is a separate live read, so edits between calls can produce duplicates or omissions. Use `--fields` to leave out verbose properties and never rely on silent text truncation. Use `figma:capture` followed by `view_image` when visual evidence is needed.
 4. **Fix the script** based on the error and reconciled state.
 5. Retry only work confirmed not to have run. Direct retry is valid for a corrected `not_started` request, not for an un-reconciled `outcome_unknown` mutation.
 

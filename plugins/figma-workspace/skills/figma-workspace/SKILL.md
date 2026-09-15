@@ -11,7 +11,7 @@ Use the bundled Node CLI for Figma work. It has no agent-facing local MCP server
 
 1. Resolve `<plugin-root>` as `<skill-dir>/../..` and run commands there with `npm --silent`.
 2. Run `npm --silent run figma:help` for the public leaf-command inventory. Use the selected leaf command's `--help` before first use; generated help owns exact input schemas, limits, result fields, and exit behavior.
-3. Read stdout as Restricted Markdown; never parse it as JSON. Keep the default inline-result threshold for normal agent calls. If stdout provides `outputFiles.cliResultFile`, treat that complete JSON sidecar as the machine-readable result: inspect its keys, paths, types, and structure, extract the necessary fields, then expand further only as needed. Do not raise the inline threshold merely to avoid sidecar handling; consider raising it only when the user needs the complete result rendered inline for direct reading or visual presentation.
+3. Read stdout as Restricted Markdown; never parse it as JSON. Keep the default inline-result threshold for normal agent calls. If stdout provides `outputFiles.resultFile`, treat that complete JSON receipt as the machine-readable result. The `Full result` section prints directly executable `jq` commands; use its `full`, `status`, or `data` filters to read the receipt, status, or business data, then expand only the fields needed. Do not raise the inline threshold merely to avoid the result file; consider raising it only when the user needs the complete result rendered inline for direct reading or visual presentation.
 
 Use `figma:docs:help`, `figma:api:help`, or `figma:upstream:help` only to browse the corresponding fixed command family; they do not establish target context.
 
@@ -82,6 +82,7 @@ Prefer these English keyword patterns as search seeds. Add the known surface and
 ## Implement And Verify
 
 1. Start with a full Figma URL whenever available. Use `figma:metadata` only for broad Design-file discovery; use a read-only `figma:run` script for FigJam or Slides structure, then use targeted `figma:inspect` and applicable context commands.
+   For a large tree, keep `figma:inspect` to one remote read per invocation and request pages explicitly with `--cursor`. Use `--fields` to omit verbose properties such as `characters` when they are not needed. The result includes `nodes`, `hasMore`, and an opaque `nextCursor`; pass the cursor to the next invocation with the same file and node. Pages are live reads and do not form a snapshot, so edits between pages can cause duplicates or omissions.
 2. Create `.figma.ts` files in the shell or project working directory. For a file script, run:
 
    ```text
@@ -108,9 +109,9 @@ Read [workflow](references/figma-workspace-workflow.md) for `.figma.ts`, capture
 
 ## Local Artifacts And Mutation Results
 
-- Pure inline reads do not create a persistent workspace record. When an invocation must write a sidecar, diagnostic, capture, or download and no explicit output path is supplied, the CLI returns an absolute path beneath its invocation-specific OS temp directory.
-- Treat `outputFiles.cliResultFile` as the machine-readable result. Discover its structure and extract only relevant content before expanding large values; do not treat the Restricted Markdown envelope as JSON.
-- A `figma:upstream:call` within the response budget writes a sanitized visible-protocol result sidecar. An over-budget response does not persist its payload; it returns a bounded resource-limit diagnostic (and, when emitted, a diagnostic-only sidecar). Typed commands write an upstream-response sidecar only for a remote error, inline truncation, or unrendered non-text content. These sidecars omit protocol `_meta` and tool annotations, while preserving an ordinary `_meta` field inside `structuredContent` business data.
+- Pure inline reads do not create a persistent workspace record. When an invocation must write a result receipt, diagnostic, capture, or download and no explicit output path is supplied, the CLI returns an absolute path beneath its invocation-specific OS temp directory.
+- Treat `outputFiles.resultFile` as the machine-readable result. Use the advertised `jq` filters (`.`, `.result | {ok,phase,executionOutcome,upstreamError,diagnostics,retryGuidance,postProcessing}`, and the command-specific data filter) instead of exploring large result keys through stdout; do not treat the Restricted Markdown envelope as JSON.
+- A complete invocation result is published once through `outputFiles.resultFile` when inline output is omitted. The receipt has `kind: "figma-cli-result"`, `schemaVersion: 1`, `tool`, `invocation`, and `result`; direct and typed protocol calls additionally expose sanitized `upstream`. Its `jq.full`, `jq.status`, and `jq.data` filters are the supported machine-readable entry points. Protocol `_meta` and tool-definition annotations are omitted, while an ordinary business `_meta` inside `structuredContent` is preserved. Over-budget direct responses return a bounded resource-limit diagnostic without persisting the payload.
 - Use explicit `--output-dir`, `--image-file`, or download output options when the caller needs a durable local location. Managed paths reject links and reparse points and publish atomically.
 - The temporary fileKey lock covers `figma:run`, `figma:assets:apply`, `figma:code-connect:apply`, and `figma:upstream:call` only when that call resolves a fileKey. This is coordination only, not distributed durability.
 - `figma:run` and `figma:upstream:call` report `executionOutcome`: `not_started`, `failed_atomic`, `succeeded`, or `outcome_unknown` when they dispatch a mutation. A direct returned `use_figma` script error is `failed_atomic`: Figma confirmed no file changes, so repair and retry safely. A post-dispatch error from another direct official tool remains `outcome_unknown` unless completion is independently confirmed.
@@ -128,6 +129,6 @@ If a result reports `FIGMA_UPSTREAM_AUTH_REQUIRED` or `FIGMA_UPSTREAM_OAUTH_*`, 
 - Read [guidance and lookup](references/figma-workspace-guidance-and-lookup.md) for static topic keywords, docs navigation, `canonical:` links, and API lookup.
 - Read [workflow](references/figma-workspace-workflow.md) for execution, capture, local artifacts, and mutation recovery.
 - Read [safety](references/figma-workspace-safety.md) for hard runtime boundaries and timeout semantics.
-- Read [local artifacts](references/figma-workspace-artifacts.md) for output, sidecar, and same-machine lock behavior.
+- Read [local artifacts](references/figma-workspace-artifacts.md) for output receipt and same-machine lock behavior.
 - Read [diagnostics](references/figma-workspace-diagnostics.md) only to choose a failure repair.
 - Read [upstream tools](references/figma-workspace-upstream-tools.md) before an official fallback call.

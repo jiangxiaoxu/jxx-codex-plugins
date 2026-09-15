@@ -71,8 +71,8 @@ test("non-display numeric boundaries remain strict", async () => {
       /maxDimension.*1 to 65536/iu,
     );
     await assert.rejects(
-      current.inspect({ file: FILE_KEY, surface: "design", target: "1:2", depth: 0 }),
-      /depth.*1 to 9007199254740991/iu,
+      current.inspect({ file: FILE_KEY, surface: "design", target: "1:2", mode: "style", depth: 0 }),
+      /style.*depth.*1 to 9007199254740991/iu,
     );
     await assert.rejects(
       current.getLibraries({ file: FILE_KEY, surface: "design", offset: -1 }),

@@ -295,7 +295,7 @@ The result's required `executionOutcome` identifies the retry boundary:
 
 - `not_started`: the request was not dispatched. Repair validation, preflight, connection, or auth, then resubmit the corrected script.
 - `failed_atomic`: `figma:run` directly returned a host or script error, and Figma confirmed no file changes. Repair the named cause; a new run after repair does not require reconciliation.
-- `succeeded`: Figma confirmed the script completed. Preserve returned IDs and do not rerun the mutation because capture, state, sidecar, or lock post-processing failed.
+- `succeeded`: Figma confirmed the script completed. Preserve returned IDs and do not rerun the mutation because capture, state, result-receipt, or lock post-processing failed.
 - `outcome_unknown`: completion cannot be confirmed, for example after timeout, response loss, or truncated execution state. Assume partial or complete effects are possible. Follow `retryGuidance`, inspect or read back the intended targets, and reconcile by returned IDs, stable names, and narrow read-back queries.
 
 ### When `.figma.ts` script returns an error

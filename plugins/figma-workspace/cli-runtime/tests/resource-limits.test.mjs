@@ -75,8 +75,11 @@ test("download fails visibly when an svgAssets entry has no supported URL", asyn
     assert.ok(result.diagnostics.some((diagnostic) =>
       diagnostic.code === "FIGMA_WORKSPACE_DOWNLOAD_SVG_ASSET_SHAPE_UNSUPPORTED"
       && diagnostic.severity === "fatal"));
-    assert.ok(result.outputFiles?.debugFile?.path);
-    assert.match(await readFile(result.outputFiles.debugFile.path, "utf8"), /<svg\/>/u);
+    assert.ok(result.outputFiles?.resultFile?.path);
+    const receipt = JSON.parse(await readFile(result.outputFiles.resultFile.path, "utf8"));
+    assert.equal(receipt.schemaVersion, 1);
+    assert.match(JSON.stringify(receipt.result.targetDetails), /<svg\/>/u);
+    assert.equal(result.outputFiles.resultFile.jq.data, ".result");
   } finally {
     await client.close();
     await rm(tempDir, { recursive: true, force: true });

@@ -31,7 +31,7 @@ export type FigmaWorkspaceWrapperTargetSupport =
 
 export interface FigmaWorkspaceWrapperOutputPolicy {
   inlineLimitFields: readonly string[];
-  debugFiles: readonly string[];
+  resultFiles: readonly string[];
   upstreamEnvelope: boolean;
 }
 
@@ -123,7 +123,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "none",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-      debugFiles: ["debugFile", "upstreamFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: true,
     },
   },
@@ -143,7 +143,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "string-only",
     outputPolicy: {
       inlineLimitFields: [],
-      debugFiles: [],
+      resultFiles: [],
       upstreamEnvelope: false,
     },
   },
@@ -163,7 +163,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: ["metadata.json"],
-      debugFiles: ["metadataFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: true,
     },
     guidanceProfile: {
@@ -187,7 +187,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-      debugFiles: ["debugFile", "upstreamFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: true,
     },
     guidanceProfile: {
@@ -210,7 +210,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-      debugFiles: ["debugFile", "upstreamFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: true,
     },
     guidanceProfile: {
@@ -243,7 +243,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "none",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-      debugFiles: ["debugFile", "upstreamFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: true,
     },
     guidanceProfile: {
@@ -266,7 +266,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "none",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-      debugFiles: ["debugFile", "upstreamFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: true,
     },
     guidanceProfile: {
@@ -286,7 +286,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-      debugFiles: ["debugFile", "upstreamFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: true,
     },
     guidanceProfile: {
@@ -309,7 +309,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "node-scoped-list",
     outputPolicy: {
       inlineLimitFields: [],
-      debugFiles: ["debugFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: false,
     },
   },
@@ -329,7 +329,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "node-scoped-list",
     outputPolicy: {
       inlineLimitFields: [],
-      debugFiles: ["debugFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: false,
     },
   },
@@ -350,7 +350,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: [],
-      debugFiles: [],
+      resultFiles: [],
       upstreamEnvelope: false,
     },
   },
@@ -365,7 +365,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       derivedUpstream: ["fileKey"],
     }),
     targetSupport: "file-scoped",
-    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true },
   },
   {
     toolName: "figma_workspace_code_connect_plan_context",
@@ -378,7 +378,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       derivedUpstream: ["fileKey", "nodeId"],
     }),
     targetSupport: "node-scoped",
-    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true },
   },
   {
     toolName: "figma_workspace_code_connect_plan_suggestions",
@@ -393,7 +393,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       hiddenUpstreamOptional: ["excludeMappingPrompt"],
     }),
     targetSupport: "node-scoped",
-    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true },
   },
   {
     toolName: "figma_workspace_code_connect_plan_mapping_read",
@@ -408,7 +408,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       hiddenUpstreamOptional: ["codeConnectLabel"],
     }),
     targetSupport: "node-scoped",
-    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true },
   },
   {
     toolName: "figma_workspace_code_connect_apply_mapping_read",
@@ -423,7 +423,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       hiddenUpstreamOptional: ["codeConnectLabel"],
     }),
     targetSupport: "node-scoped",
-    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true },
   },
   {
     toolName: "figma_workspace_code_connect_apply",
@@ -438,7 +438,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       hiddenUpstreamOptional: ["clientLanguages", "clientFrameworks"],
     }),
     targetSupport: "node-scoped",
-    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true },
   },
   {
     toolName: "figma_workspace_code_connect_verify_mapping_read",
@@ -453,7 +453,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       hiddenUpstreamOptional: ["codeConnectLabel"],
     }),
     targetSupport: "node-scoped",
-    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, debugFiles: ["debugFile", "upstreamFile"], upstreamEnvelope: true },
+    outputPolicy: { inlineLimitFields: UPSTREAM_INLINE_FIELDS, resultFiles: ["resultFile"], upstreamEnvelope: true },
   },
   {
     toolName: "figma_workspace_call_upstream_tool",
@@ -462,7 +462,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
     targetSupport: "freeform-upstream",
     outputPolicy: {
       inlineLimitFields: UPSTREAM_INLINE_FIELDS,
-      debugFiles: ["debugFile", "upstreamFile"],
+      resultFiles: ["resultFile"],
       upstreamEnvelope: true,
     },
   },

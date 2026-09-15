@@ -27,8 +27,29 @@ export interface FilePointerMetadata {
   lineCount: number;
 }
 
+export interface FigmaWorkspaceResultFileJq {
+  full: string;
+  data: string;
+  status: string;
+  nodes?: string;
+  nextCursor?: string;
+  hasMore?: string;
+}
+
+export interface FigmaWorkspaceResultFilePointer extends FilePointerMetadata {
+  jq: FigmaWorkspaceResultFileJq;
+}
+
+export interface FigmaWorkspaceResultFileReceiptOptions {
+  tool: string;
+  invocation: Record<string, unknown>;
+  result: unknown;
+  upstream?: unknown;
+  dataPath?: string;
+}
+
 export interface ScriptOutputFileMetadata {
-  debugFile?: FilePointerMetadata;
+  resultFile?: FigmaWorkspaceResultFilePointer;
   compiledScriptFile?: FilePointerMetadata;
 }
 
@@ -51,6 +72,7 @@ export function createRunOutputWriter(
   cleanupCompiledScriptFile(): Promise<void>;
   write(payload: {
     result: unknown;
+    receipt?: Omit<FigmaWorkspaceResultFileReceiptOptions, "result">;
     compiledScript?: string;
     writeResult?: boolean;
   }): Promise<ScriptOutputFileMetadata>;
@@ -69,18 +91,57 @@ export function createRunOutputWriter(
     },
     async write(payload) {
       const written: ScriptOutputFileMetadata = {};
-      if (payload.writeResult && files.resultFile) {
-        written.debugFile = await writeJsonFile(files.resultFile, payload.result);
-      }
       if (payload.compiledScript && files.compiledScriptFile) {
         written.compiledScriptFile = await writeTextFile(
           files.compiledScriptFile,
           formatCompiledScriptFailureFile(payload.compiledScript, args),
         );
       }
+      if (payload.writeResult && files.resultFile) {
+        if (!payload.receipt) {
+          throw new Error("Figma Workspace result receipt metadata is required when writing a result file.");
+        }
+        written.resultFile = await writeFigmaWorkspaceResultFile(files.resultFile, {
+          ...payload.receipt,
+          result: resultWithOutputFiles(payload.result, written),
+        });
+      }
       return written;
     },
   };
+}
+
+export function createFigmaWorkspaceResultFileReceipt(
+  options: FigmaWorkspaceResultFileReceiptOptions,
+): Record<string, unknown> {
+  return removeUndefined({
+    kind: "figma-cli-result",
+    schemaVersion: 1,
+    tool: options.tool,
+    invocation: options.invocation,
+    result: resultWithoutOwnResultFile(options.result),
+    upstream: options.upstream,
+  }) as Record<string, unknown>;
+}
+
+export function createFigmaWorkspaceResultFilePointer(
+  pointer: FilePointerMetadata,
+  receipt: Record<string, unknown>,
+  dataPath?: string,
+): FigmaWorkspaceResultFilePointer {
+  return {
+    ...pointer,
+    jq: resultFileJqQueries(receipt, dataPath),
+  };
+}
+
+export async function writeFigmaWorkspaceResultFile(
+  path: string,
+  options: FigmaWorkspaceResultFileReceiptOptions,
+): Promise<FigmaWorkspaceResultFilePointer> {
+  const receipt = createFigmaWorkspaceResultFileReceipt(options);
+  const pointer = await writeJsonFile(path, receipt);
+  return createFigmaWorkspaceResultFilePointer(pointer, receipt, options.dataPath);
 }
 
 export function resolveScriptInputPath(
@@ -273,6 +334,81 @@ export async function writeJsonFile(path: string, value: unknown): Promise<FileP
   return textFileMetadata(path, content);
 }
 
+function resultWithOutputFiles(
+  result: unknown,
+  outputFiles: object,
+): unknown {
+  if (!isRecord(result)) {
+    return result;
+  }
+  const existing = asRecord(result.outputFiles);
+  const combined = removeUndefined({ ...existing, ...asRecord(outputFiles) }) as Record<string, unknown>;
+  return {
+    ...result,
+    ...(Object.keys(combined).length > 0 ? { outputFiles: combined } : {}),
+  };
+}
+
+function resultWithoutOwnResultFile(result: unknown): unknown {
+  if (!isRecord(result)) {
+    return result;
+  }
+  const outputFiles = asRecord(result.outputFiles);
+  if (!Object.prototype.hasOwnProperty.call(outputFiles, "resultFile")) {
+    return result;
+  }
+  const { resultFile: _resultFile, ...remainingOutputFiles } = outputFiles;
+  const receiptResult = { ...result };
+  if (Object.keys(remainingOutputFiles).length > 0) {
+    receiptResult.outputFiles = remainingOutputFiles;
+  } else {
+    delete receiptResult.outputFiles;
+  }
+  return receiptResult;
+}
+
+function resultFileJqQueries(
+  receipt: Record<string, unknown>,
+  dataPath: string | undefined,
+): FigmaWorkspaceResultFileJq {
+  const result = asRecord(receipt.result);
+  const queries: FigmaWorkspaceResultFileJq = {
+    full: ".",
+    data: dataPath ?? inferredResultFileDataPath(receipt, result),
+    status: ".result | {ok,phase,executionOutcome,upstreamError,error,operationError,diagnostics,retryGuidance,postProcessing}",
+  };
+  if (result.mode === "inspect") {
+    queries.nodes = ".result.nodes";
+    queries.nextCursor = ".result.nextCursor";
+    queries.hasMore = ".result.hasMore";
+  }
+  return queries;
+}
+
+function inferredResultFileDataPath(
+  receipt: Record<string, unknown>,
+  result: Record<string, unknown>,
+): string {
+  if (Object.prototype.hasOwnProperty.call(receipt, "upstream")) {
+    return ".upstream";
+  }
+  if (result.mode === "inspect") {
+    return ".result.nodes";
+  }
+  const metadata = asRecord(result.metadata);
+  if (Object.prototype.hasOwnProperty.call(metadata, "json")) {
+    return ".result.metadata.json";
+  }
+  const upstream = asRecord(result.upstream);
+  if (Object.prototype.hasOwnProperty.call(upstream, "result")) {
+    return ".result.upstream.result";
+  }
+  if (Object.prototype.hasOwnProperty.call(upstream, "text")) {
+    return ".result.upstream.text";
+  }
+  return ".result";
+}
+
 export function createInvocationWorkspace(options: {
   outputDir: string;
 }): FigmaWorkspaceInvocationWorkspace {
@@ -307,7 +443,7 @@ function resolveRunOutputFiles(
     const resultFile = resolveWorkspaceFile(
       invocation.workspace.outputDir,
       "figma-run.result.json",
-      "debugFile",
+      "resultFile",
     );
     return {
       resultFile,
