@@ -29,6 +29,7 @@ const MAX_INPUT_BYTES = 256 * 1024;
 
 type CommandInput = Record<string, unknown>;
 type RunWorkspaceCli = (argv: readonly string[], dependencies?: FigmaWorkspaceCliDependencies) => Promise<number>;
+type ApiOutputFormat = "json";
 
 export interface FigmaCommandRuntimeDependencies {
   runCli?: RunWorkspaceCli;
@@ -89,8 +90,12 @@ export async function runFigmaCommand(
     const parsed = await parsePublicArguments(commandName, argv, dependencies);
     normalizeExplicitPaths(commandName, parsed.input, dependencies.cwd?.() ?? process.cwd());
     assertStrictFigmaReferences(commandName, parsed.input);
-    return await invoke(parsed.internalCommand, parsed.input, dependencies, parsed.inlineResultLimit);
+    return await invoke(parsed.internalCommand, parsed.input, dependencies, parsed.inlineResultLimit, parsed.outputFormat);
   } catch (error) {
+    if (isApiJsonFormatRequested(commandName, argv)) {
+      stdout(`${formatApiJsonError(error, apiModeForCommand(commandName))}\n`);
+      return EXIT_USAGE;
+    }
     stderr(`${formatError(error)}\n\n${formatCommandHelp(commandName)}`);
     return EXIT_USAGE;
   }
@@ -100,6 +105,7 @@ interface ParsedPublicCommand {
   internalCommand: Parameters<typeof invoke>[0];
   input: CommandInput;
   inlineResultLimit?: number;
+  outputFormat?: ApiOutputFormat;
 }
 
 async function parsePublicArguments(
@@ -119,13 +125,24 @@ async function parsePublicArguments(
     return { internalCommand: "docs", input: { mode: "read", id: positionals[0] } };
   }
   if (command === "api:read") {
-    const { positionals } = parseTokens(argv, optionSet()); requirePositionals(positionals, 1, "api-id");
-    return { internalCommand: "lookup", input: { kind: "api", apiId: positionals[0] } };
+    const { positionals, options } = parseTokens(argv, optionSet("format")); requirePositionals(positionals, 1, "selector");
+    return {
+      internalCommand: "lookup",
+      input: { kind: "api", mode: "read", selector: positionals[0] },
+      outputFormat: parseApiOutputFormat(options.format),
+    };
   }
-  if (command === "docs:search" || command === "api:search") {
-    const names = command === "docs:search" ? optionSet("scope", "surface", "task-family", "limit", "snippet-lines") : optionSet("limit", "snippet-lines");
-    const { positionals, options } = parseTokens(argv, names); requirePositionals(positionals, 1, command === "docs:search" ? "query" : "symbol");
-    return { internalCommand: "lookup", input: clean({ kind: command === "docs:search" ? "docs" : "api", [command === "docs:search" ? "query" : "symbol"]: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: clampableInteger(options.limit, "--limit"), maxSnippetLines: clampableInteger(options["snippet-lines"], "--snippet-lines") }) };
+  if (command === "docs:search") {
+    const { positionals, options } = parseTokens(argv, optionSet("scope", "surface", "task-family", "limit", "snippet-lines")); requirePositionals(positionals, 1, "query");
+    return { internalCommand: "lookup", input: clean({ kind: "docs", query: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: clampableInteger(options.limit, "--limit"), maxSnippetLines: clampableInteger(options["snippet-lines"], "--snippet-lines") }) };
+  }
+  if (command === "api:search") {
+    const { positionals, options } = parseTokens(argv, optionSet("limit", "snippet-lines", "format")); requirePositionals(positionals, 1, "selector");
+    return {
+      internalCommand: "lookup",
+      input: clean({ kind: "api", mode: "search", selector: positionals[0], maxResults: clampableInteger(options.limit, "--limit"), maxSnippetLines: clampableInteger(options["snippet-lines"], "--snippet-lines") }),
+      outputFormat: parseApiOutputFormat(options.format),
+    };
   }
   if (command === "run") return parseRun(argv, dependencies);
   if (command === "capture") return parseCapture(argv);
@@ -303,9 +320,21 @@ function parseReadLeaf(command: Exclude<FigmaConcreteCommandName, "docs:list" | 
 
 type InternalCommand = "run" | "apply-asset-manifest" | "download-assets" | "capture-node" | "inspect" | "get-metadata" | "get-design-context" | "get-motion-context" | "search-design-system" | "get-libraries" | "get-variable-defs" | "call-upstream-tool" | "code-connect-inspect" | "code-connect-plan" | "code-connect-apply" | "code-connect-verify" | "lookup" | "docs" | "doctor" | "upstream-tools";
 
-async function invoke(internalCommand: InternalCommand, input: CommandInput, dependencies: FigmaCommandRuntimeDependencies, inlineResultLimit?: number): Promise<number> {
+async function invoke(
+  internalCommand: InternalCommand,
+  input: CommandInput,
+  dependencies: FigmaCommandRuntimeDependencies,
+  inlineResultLimit?: number,
+  outputFormat?: ApiOutputFormat,
+): Promise<number> {
   const runCli = dependencies.runCli ?? runFigmaWorkspaceCli;
-  return runCli([internalCommand, "--input", "-", ...(inlineResultLimit === undefined ? [] : ["--inline-result-limit", String(inlineResultLimit)])], {
+  return runCli([
+    internalCommand,
+    "--input",
+    "-",
+    ...(inlineResultLimit === undefined ? [] : ["--inline-result-limit", String(inlineResultLimit)]),
+    ...(outputFormat === undefined ? [] : ["--format", outputFormat]),
+  ], {
     io: mappedIo(input, dependencies),
   });
 }
@@ -333,6 +362,11 @@ function codeConnectDirect(internalCommand: InternalCommand, input: CommandInput
 function noArgs(internalCommand:InternalCommand,input:CommandInput,argv:readonly string[]):ParsedPublicCommand{if(argv.length)throw new Error("This command accepts no arguments.");return{internalCommand,input};}
 function integer(value:string|undefined,label:string):number|undefined{if(value===undefined)return undefined;const parsed=parseSafeIntegerToken(value,label);if(parsed<0)throw new Error(`${label} must be a non-negative safe integer.`);return parsed;}
 function clampableInteger(value:string|undefined,label:string):number|undefined{if(value===undefined)return undefined;return parseSafeIntegerToken(value,label,"must be a safe integer; out-of-range integers are clamped.");}
+function parseApiOutputFormat(value: string | undefined): ApiOutputFormat | undefined {
+  if (value === undefined) return undefined;
+  if (value === "json") return value;
+  throw new Error("--format supports only json.");
+}
 function parseSafeIntegerToken(value:string,label:string,errorSuffix="must be a safe integer."):number{if(!/^-?\d+$/u.test(value))throw new Error(`${label} ${errorSuffix}`);const parsed=Number(value);if(!Number.isSafeInteger(parsed))throw new Error(`${label} ${errorSuffix}`);return parsed;}
 function requirePositionals(values:string[],count:number,label:string):void{if(values.length!==count)throw new Error(`Expected exactly one ${label}.`);} function assertNoPositionals(values:string[]):void{if(values.length)throw new Error(`Unexpected positional argument: ${values[0]}`);}
 function chooseBool(flags:Set<string>,yes:string,no:string):boolean|undefined{if(flags.has(yes)&&flags.has(no))throw new Error(`--${yes} and --${no} are mutually exclusive.`);return flags.has(yes)?true:flags.has(no)?false:undefined;}
@@ -436,10 +470,25 @@ export async function assertSafeScriptFile(path: string): Promise<void> {
 export function formatRootHelp(): string {
   return ["# Figma Workspace stateless CLI", "", "Each invocation is independent. Commands, or live upstream schemas, that require a Figma file or node must receive that target explicitly; no command inherits a selection, history, or local state.", "", "## Documentation", "", "  figma:docs:help  figma:docs:list  figma:docs:catalog  figma:docs:read  figma:docs:search  figma:api:help  figma:api:read  figma:api:search  figma:doctor", "", "## Read and execute", "", "  figma:metadata  figma:inspect  figma:design-context  figma:motion-context  figma:variables  figma:design-system  figma:libraries  figma:run", "", "## Code Connect", "", "  figma:code-connect:help  figma:code-connect:inspect  figma:code-connect:plan  figma:code-connect:apply  figma:code-connect:verify", "", "## Assets and fallback", "", "  figma:capture  figma:assets:apply  figma:assets:download  figma:upstream:help  figma:upstream:list  figma:upstream:read  figma:upstream:call", ""].join("\n");
 }
-export function formatFamilyHelp(family:FigmaCommandFamily):string{return[`# figma:${family}:help`,"",...FAMILY_COMMANDS[family].map((name)=>`  figma:${name}`),""].join("\n");}
+export function formatFamilyHelp(family:FigmaCommandFamily):string{
+  if (family === "api") {
+    return [
+      "# figma:api:help",
+      "",
+      "Search and read bundled Figma Plugin API declarations with readable selectors.",
+      "",
+      `  figma:api:search <selector> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
+      "  figma:api:read <selector>",
+      "",
+      "A bare selector must be unique for read; otherwise use a qualified selector printed by search. Default output is readable TypeScript.",
+      "",
+    ].join("\n");
+  }
+  return [`# figma:${family}:help`,"",...FAMILY_COMMANDS[family].map((name)=>`  figma:${name}`),""].join("\n");
+}
 export function formatCommandHelp(command:string):string{
   if(!isPublicCommand(command))return `# figma:${command}\n\nUnknown public leaf. Use figma:help for the complete stateless command inventory.\n`;
-  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded.":command==="upstream:call"?"\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. Calls within the response budget write a sanitized .upstream.json sidecar. An over-budget response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry.":command==="code-connect:apply"?"\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write.":command==="code-connect:plan"?"\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback.":command==="code-connect:verify"?"\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":command==="docs:catalog"?"\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments.":command==="docs:search"||command==="api:search"?"\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="design-system"?"\nInput JSON must contain an ordered non-empty queries array. Each query item has an entity (component, variable, or style) and one search intent; one upstream batch call is made for the complete array.":command==="assets:apply"?"\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow.":command==="assets:download"?"\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg.":"";
+  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded.":command==="upstream:call"?"\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. Calls within the response budget write a sanitized .upstream.json sidecar. An over-budget response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry.":command==="code-connect:apply"?"\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write.":command==="code-connect:plan"?"\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback.":command==="code-connect:verify"?"\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":command==="docs:catalog"?"\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments.":command==="api:read"?"\nPass a bare or qualified Plugin API selector, such as fontName, BaseNonResizableTextMixin.fontName, or figma.createFrame(). A bare selector succeeds only when it identifies one owner; otherwise the result lists qualified selectors to copy. Default output is readable TypeScript.":command==="api:search"?"\nPass a bare, qualified, or call-shaped Plugin API selector. Results show copyable qualified selectors for figma:api:read. Out-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="docs:search"?"\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="design-system"?"\nInput JSON must contain an ordered non-empty queries array. Each query item has an entity (component, variable, or style) and one search intent; one upstream batch call is made for the complete array.":command==="assets:apply"?"\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow.":command==="assets:download"?"\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg.":"";
   return `# figma:${command}\n\nUsage: ${PUBLIC_COMMAND_USAGE[command]}${details}\n`;
 }
 
@@ -448,8 +497,8 @@ const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
   "docs:catalog":`figma:docs:catalog [--task-family <family>] [--surface design|figjam|slides] [--classification active|conditional|router|examples] [--limit <${DOCS_CATALOG_LIMIT_MIN}..${DOCS_CATALOG_LIMIT_MAX}>]`,
   "docs:read":"figma:docs:read <doc-id>",
   "docs:search":`figma:docs:search <query> [--scope auto|active|conditional|router|examples|all] [--surface design|figjam|slides] [--task-family <family>] [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
-  "api:read":"figma:api:read <api-id>",
-  "api:search":`figma:api:search <symbol> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
+  "api:read":"figma:api:read <selector>",
+  "api:search":`figma:api:search <selector> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
   doctor:"figma:doctor",
   metadata:`figma:metadata (--target <Design-node-url> | --file <Design-url|key> [--node <node-id>]) [--surface design] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   inspect:`figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <${INSPECT_DEPTH_MIN}..${INSPECT_DEPTH_MAX}>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
@@ -473,5 +522,30 @@ const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
 
 function isPublicCommand(value:string):value is FigmaConcreteCommandName{return(PUBLIC_COMMANDS as readonly string[]).includes(value);} function isFamily(value:string):value is FigmaCommandFamily{return value==="docs"||value==="api"||value==="upstream"||value==="code-connect";} function isHelp(value:string):boolean{return value==="--help"||value==="-h"||value==="help";}
 function write(override:((value:string)=>void)|undefined,stderr:boolean):(value:string)=>void{return override??(stderr?process.stderr.write.bind(process.stderr):process.stdout.write.bind(process.stdout));}
+function isApiJsonFormatRequested(command: string, argv: readonly string[]): boolean {
+  if (command !== "api:read" && command !== "api:search") return false;
+  return argv.some((value, index) => value === "--format" && argv[index + 1] === "json");
+}
+function apiModeForCommand(command: string): "read" | "search" {
+  return command === "api:read" ? "read" : "search";
+}
+function formatApiJsonError(error: unknown, mode: "read" | "search"): string {
+  const value = isRecord(error) ? error : {};
+  const code = typeof value.code === "string" || typeof value.code === "number"
+    ? value.code
+    : "FIGMA_WORKSPACE_API_USAGE_ERROR";
+  const candidates = Array.isArray(value.candidates) && value.candidates.every((candidate) => typeof candidate === "string")
+    ? value.candidates
+    : undefined;
+  return JSON.stringify({
+    ok: false,
+    mode,
+    error: {
+      code,
+      message: formatError(error),
+      ...(candidates === undefined ? {} : { candidates }),
+    },
+  }, null, 2);
+}
 function formatError(error:unknown):string{return error instanceof Error?error.message:String(error);} function isRecord(value:unknown):value is Record<string,unknown>{return Boolean(value)&&typeof value==="object"&&!Array.isArray(value);}
 function isFigmaUrl(value:string):boolean{try{parseStrictFigmaUrl(value,'Tool argument "file"',false);return true;}catch{return false;}}

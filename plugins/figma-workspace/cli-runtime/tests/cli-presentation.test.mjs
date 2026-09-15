@@ -105,3 +105,117 @@ test("nested failures take precedence over unrelated warning diagnostics", () =>
   assert.match(rendered, /HTTP_500: Asset download failed\./u);
   assert.doesNotMatch(rendered, /Next step: No local repair is required/u);
 });
+
+test("API lookup defaults to readable selectors and TypeScript instead of the generic lookup envelope", () => {
+  const search = cli.formatFigmaWorkspaceCommandMarkdown("lookup", {
+    ok: true,
+    mode: "search",
+    normalizedSelector: "fontName",
+    results: [{
+      selector: "BaseNonResizableTextMixin.fontName",
+      declarationKind: "property",
+      snippet: "readonly fontName: FontName | PluginAPI['mixed'];",
+    }],
+    parameterAdjustments: [{ option: "--limit", requested: 99, applied: 10, range: [1, 10] }],
+    invocation: { invocationId: "ephemeral", outputRoot: "C:/temporary/result" },
+  }, {
+    kind: "api",
+    mode: "search",
+    selector: "fontName",
+  });
+  assert.match(search, /^# Figma Plugin API search: fontName$/mu);
+  assert.match(search, /BaseNonResizableTextMixin\.fontName \(property\)/u);
+  assert.match(search, /^```ts$/mu);
+  assert.match(search, /Read: figma:api:read BaseNonResizableTextMixin\.fontName/u);
+  assert.match(search, /Note: --limit was adjusted to 10\./u);
+  assert.doesNotMatch(search, /# figma:lookup|invocationId|outputRoot|apiId/u);
+
+  const read = cli.formatFigmaWorkspaceCommandMarkdown("lookup", {
+    ok: true,
+    mode: "read",
+    selector: "PluginAPI.on",
+    declarations: [{
+      kind: "api",
+      selector: "PluginAPI.on",
+      declarationKind: "method",
+      source: { package: "@figma/plugin-typings", version: "1.138.0" },
+      content: "on(type: 'selectionchange', callback: () => void): void;",
+    }],
+  }, {
+    kind: "api",
+    mode: "read",
+    selector: "PluginAPI.on",
+  });
+  assert.match(read, /^# Figma Plugin API: PluginAPI\.on$/mu);
+  assert.match(read, /^Source: @figma\/plugin-typings 1\.138\.0$/mu);
+  assert.match(read, /on\(type: 'selectionchange'/u);
+  assert.doesNotMatch(read, /# figma:lookup|"content"|invocation/u);
+});
+
+test("API JSON output is a pure payload without invocation metadata", async () => {
+  const stdout = [];
+  const stderr = [];
+  const result = {
+    ok: true,
+    mode: "search",
+    normalizedSelector: "fontName",
+    results: [{
+      selector: "Font.fontName",
+      declarationKind: "property",
+      snippet: "fontName: FontName;",
+    }],
+  };
+  const exitCode = await cli.runFigmaWorkspaceCli(["lookup", "--input", "-", "--format", "json"], {
+    io: {
+      cwd: () => process.cwd(),
+      env: () => undefined,
+      readFile: async () => JSON.stringify({ kind: "api", mode: "search", selector: "fontName" }),
+      readStdin: async () => JSON.stringify({ kind: "api", mode: "search", selector: "fontName" }),
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    },
+    createClient: () => ({
+      lookup: async () => result,
+      close: async () => {},
+    }),
+  });
+  assert.equal(exitCode, 0);
+  assert.equal(stderr.join(""), "");
+  const payload = JSON.parse(stdout.join(""));
+  assert.deepEqual(payload, result);
+  assert.doesNotMatch(stdout.join(""), /```|# figma:lookup|invocation|outputRoot/u);
+});
+
+test("API JSON errors retain machine-readable code and ambiguity candidates", async () => {
+  const stdout = [];
+  const stderr = [];
+  const error = Object.assign(new Error("fontName is ambiguous."), {
+    code: "FIGMA_WORKSPACE_API_SELECTOR_AMBIGUOUS",
+    candidates: ["Font.fontName", "BaseNonResizableTextMixin.fontName"],
+  });
+  const exitCode = await cli.runFigmaWorkspaceCli(["lookup", "--input", "-", "--format", "json"], {
+    io: {
+      cwd: () => process.cwd(),
+      env: () => undefined,
+      readFile: async () => JSON.stringify({ kind: "api", mode: "read", selector: "fontName" }),
+      readStdin: async () => JSON.stringify({ kind: "api", mode: "read", selector: "fontName" }),
+      writeStdout: (value) => stdout.push(value),
+      writeStderr: (value) => stderr.push(value),
+    },
+    createClient: () => ({
+      lookup: async () => { throw error; },
+      close: async () => {},
+    }),
+  });
+  assert.equal(exitCode, 1);
+  assert.equal(stderr.join(""), "");
+  assert.deepEqual(JSON.parse(stdout.join("")), {
+    ok: false,
+    mode: "read",
+    error: {
+      code: "FIGMA_WORKSPACE_API_SELECTOR_AMBIGUOUS",
+      message: "fontName is ambiguous.",
+      candidates: ["Font.fontName", "BaseNonResizableTextMixin.fontName"],
+    },
+  });
+});

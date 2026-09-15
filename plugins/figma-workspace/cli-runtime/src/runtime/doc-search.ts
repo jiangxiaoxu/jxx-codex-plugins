@@ -45,19 +45,19 @@ const STATIC_DOCS_SEARCH_FILES = [
 ];
 
 export interface ReferenceSearchResult {
-  lineStart: number;
-  lineEnd: number;
+  lineStart?: number;
+  lineEnd?: number;
   matchType: "exact-symbol" | "phrase" | "token";
   confidence: "high" | "medium" | "low";
   snippet: string;
-  classification?: CanonicalClassification | "api";
+  classification?: CanonicalClassification;
   docId?: string;
-  apiId?: string;
   title?: string;
   taskFamily?: TaskFamily;
   surfaces?: TaskSurface[];
   nonExecutable?: boolean;
-  ownerMatch?: boolean;
+  selector?: string;
+  declarationKind?: PluginApiDeclarationKind;
   snippetTruncated?: boolean;
 }
 
@@ -70,7 +70,25 @@ export interface ReferenceSearchSnippetBudget {
   truncated: true;
 }
 
-interface RankedReferenceSearchResult extends ReferenceSearchResult {
+interface InternalReferenceSearchResult {
+  lineStart: number;
+  lineEnd: number;
+  matchType: "exact-symbol" | "phrase" | "token";
+  confidence: "high" | "medium" | "low";
+  snippet: string;
+  classification: CanonicalClassification | "api";
+  docId?: string;
+  title?: string;
+  taskFamily?: TaskFamily;
+  surfaces?: TaskSurface[];
+  nonExecutable?: boolean;
+  selector?: string;
+  declarationKind?: PluginApiDeclarationKind;
+  ownerMatch?: boolean;
+  snippetTruncated?: boolean;
+}
+
+interface RankedReferenceSearchResult extends InternalReferenceSearchResult {
   score: number;
 }
 
@@ -231,21 +249,32 @@ export interface FigmaWorkspaceCanonicalDoc extends FigmaWorkspaceCanonicalRecor
 
 export interface FigmaWorkspacePluginApiDeclaration {
   kind: "api";
-  apiId: string;
-  symbol: string;
-  ownerSymbol: string | null;
+  selector: string;
   declarationKind: PluginApiDeclarationKind;
-  qualifiedAliases: string[];
   source: {
     package: "@figma/plugin-typings";
     version: string;
-    file: string;
-    declarationLine: number;
-    lineStart: number;
-    lineEnd: number;
   };
-  contentSha256: string;
   content: string;
+}
+
+export class FigmaWorkspacePluginApiSelectorError extends Error {
+  readonly code:
+    | "FIGMA_WORKSPACE_API_SELECTOR_AMBIGUOUS"
+    | "FIGMA_WORKSPACE_API_SELECTOR_INVALID"
+    | "FIGMA_WORKSPACE_API_SELECTOR_NOT_FOUND";
+  readonly candidates?: string[];
+
+  constructor(options: {
+    code: FigmaWorkspacePluginApiSelectorError["code"];
+    message: string;
+    candidates?: readonly string[];
+  }) {
+    super(options.message);
+    this.name = "FigmaWorkspacePluginApiSelectorError";
+    this.code = options.code;
+    this.candidates = options.candidates === undefined ? undefined : [...options.candidates];
+  }
 }
 
 interface PluginApiIndex {
@@ -456,17 +485,16 @@ export function readFigmaWorkspaceCanonicalDoc(id: string): FigmaWorkspaceCanoni
   };
 }
 
-export function readFigmaWorkspacePluginApiDeclaration(apiId: string): FigmaWorkspacePluginApiDeclaration {
-  const prefix = "api:";
+export function readFigmaWorkspacePluginApiDeclarations(selector: string): FigmaWorkspacePluginApiDeclaration[] {
   const index = loadPluginApiIndex();
-  const record = apiId.startsWith(prefix) && apiId.length <= 512
-    ? index.records.get(apiId.slice(prefix.length))
-    : undefined;
-  if (!record) {
-    throw new Error(
-      `Unknown Figma Plugin API id "${apiId}". Use figma:api:search to discover an exact api: id.`,
-    );
-  }
+  const resolution = resolvePluginApiSelector(selector, index);
+  return resolution.records.map((record) => readPluginApiDeclaration(record, index));
+}
+
+function readPluginApiDeclaration(
+  record: PluginApiIndexRecord,
+  index: PluginApiIndex,
+): FigmaWorkspacePluginApiDeclaration {
   const sourceEntry = index.manifest.source.files.find((entry) => entry.file === record.sourceFile);
   if (!sourceEntry) {
     throw new Error(`Generated Figma Plugin API record references an unknown source file: ${record.sourceFile}.`);
@@ -486,20 +514,12 @@ export function readFigmaWorkspacePluginApiDeclaration(apiId: string): FigmaWork
     .join("\n");
   return {
     kind: "api",
-    apiId,
-    symbol: record.symbol,
-    ownerSymbol: record.ownerSymbol,
+    selector: pluginApiSelectorForRecord(record),
     declarationKind: record.declarationKind,
-    qualifiedAliases: [...record.qualifiedAliases],
     source: {
       package: index.manifest.source.package,
       version: index.manifest.source.version,
-      file: record.sourceFile,
-      declarationLine: record.declarationLine,
-      lineStart: record.declarationLineStart,
-      lineEnd: record.declarationLineEnd,
     },
-    contentSha256: sha256(content),
     content,
   };
 }
@@ -556,8 +576,7 @@ export async function searchReferenceFiles(options: {
 }): Promise<{
   maxResults: number;
   maxSnippetLines: number;
-  normalizedSymbol?: string;
-  ownerHint?: string;
+  selector?: string;
   results: ReferenceSearchResult[];
   snippetBudget?: ReferenceSearchSnippetBudget;
 }> {
@@ -570,12 +589,14 @@ export async function searchReferenceFiles(options: {
   const queryTokens = tokenizeQuery(rankingQuery);
   const chunks: ReferenceChunk[] = [];
   if (apiIndex) {
+    if (
+      apiQuery !== undefined
+      && ![...apiIndex.records.values()].some((record) => pluginApiRecordMatchesQuery(record, apiQuery))
+    ) {
+      throw unknownPluginApiSelector(apiQuery.normalizedInput);
+    }
     for (const record of apiIndex.records.values()) {
-      if (
-        apiQuery !== undefined
-        && apiQuery.directMatchRecordIds.size > 0
-        && !apiQuery.directMatchRecordIds.has(record.id)
-      ) {
+      if (apiQuery !== undefined && !pluginApiRecordMatchesQuery(record, apiQuery)) {
         continue;
       }
       chunks.push(buildPluginApiReferenceChunk(record));
@@ -631,9 +652,8 @@ export async function searchReferenceFiles(options: {
   return {
     maxResults: options.maxResults,
     maxSnippetLines: options.maxSnippetLines,
-    normalizedSymbol: apiQuery?.normalizedSymbol,
-    ownerHint: apiQuery?.ownerHint,
-    results: budgeted.results,
+    ...(apiQuery ? { selector: apiQuery.normalizedInput } : {}),
+    results: budgeted.results.map(publicReferenceSearchResult),
     ...(budgeted.snippetBudget ? { snippetBudget: budgeted.snippetBudget } : {}),
   };
 }
@@ -748,8 +768,8 @@ function staticReferenceMetadata(id: string, text: string): ReferenceRecordMetad
 function pluginApiReferenceMetadata(record: PluginApiIndexRecord): ReferenceRecordMetadata {
   return {
     classification: "api",
-    publicId: `api:${record.id}`,
-    title: record.ownerSymbol ? `${record.ownerSymbol}.${record.symbol}` : record.symbol,
+    publicId: pluginApiSelectorForRecord(record),
+    title: pluginApiSelectorForRecord(record),
     indexedSymbol: record.symbol,
     ownerSymbol: record.ownerSymbol ?? undefined,
     declarationKind: record.declarationKind,
@@ -969,20 +989,69 @@ function extractDtsChunkTitle(line: string): string | undefined {
   return match ? (match[2] ?? match[3]) : undefined;
 }
 
-function parsePluginApiLookupQuery(query: string, index: PluginApiIndex | undefined): PluginApiLookupQuery {
-  const normalizedInput = query.trim().replace(/;\s*$/u, "").replace(/\(\s*\)\s*$/u, "").trim();
-  const segments = normalizedInput.split(".");
-  if (
-    segments.length === 0
-    || segments.some((segment) => !/^[$A-Z_a-z][$\w]*$/u.test(segment))
-  ) {
-    return {
-      normalizedInput,
-      normalizedSymbol: normalizedInput,
-      ownerKnown: false,
-      directMatchRecordIds: new Set<string>(),
-    };
+function pluginApiSelectorForRecord(record: Pick<PluginApiIndexRecord, "ownerSymbol" | "symbol">): string {
+  return record.ownerSymbol ? `${record.ownerSymbol}.${record.symbol}` : record.symbol;
+}
+
+function resolvePluginApiSelector(
+  selector: string,
+  index: PluginApiIndex,
+): { records: PluginApiIndexRecord[] } {
+  const query = parsePluginApiLookupQuery(selector, index);
+  const matchingRecords = [...index.records.values()].filter((record) => pluginApiRecordMatchesQuery(record, query));
+  const candidates = sortedUnique(matchingRecords.map(pluginApiSelectorForRecord));
+  if (candidates.length === 0) {
+    throw unknownPluginApiSelector(query.normalizedInput);
   }
+  if (candidates.length > 1) {
+    throw new FigmaWorkspacePluginApiSelectorError({
+      code: "FIGMA_WORKSPACE_API_SELECTOR_AMBIGUOUS",
+      message: `Figma Plugin API selector "${query.normalizedInput}" is ambiguous. Use a qualified selector: ${candidates.join(", ")}.`,
+      candidates,
+    });
+  }
+  return {
+    records: matchingRecords
+      .filter((record) => pluginApiSelectorForRecord(record) === candidates[0])
+      .sort((left, right) => left.declarationLine - right.declarationLine || compareAscii(left.id, right.id)),
+  };
+}
+
+function pluginApiRecordMatchesQuery(
+  record: PluginApiIndexRecord,
+  query: PluginApiLookupQuery,
+): boolean {
+  return record.symbol === query.normalizedSymbol
+    && (
+      query.ownerHint === undefined
+      || query.directMatchRecordIds.has(record.id)
+    );
+}
+
+function unknownPluginApiSelector(selector: string): FigmaWorkspacePluginApiSelectorError {
+  return new FigmaWorkspacePluginApiSelectorError({
+    code: "FIGMA_WORKSPACE_API_SELECTOR_NOT_FOUND",
+    message: `Unknown Figma Plugin API selector "${selector}". Use figma:api:search with a bare or qualified selector.`,
+  });
+}
+
+function normalizePluginApiSelector(value: string): string {
+  const normalized = value.trim().replace(/;\s*$/u, "").replace(/\(\s*\)\s*$/u, "").trim();
+  if (
+    !normalized
+    || !normalized.split(".").every((segment) => /^[$A-Z_a-z][$\w]*$/u.test(segment))
+  ) {
+    throw new FigmaWorkspacePluginApiSelectorError({
+      code: "FIGMA_WORKSPACE_API_SELECTOR_INVALID",
+      message: `Invalid Figma Plugin API selector "${value}". Use a bare symbol such as createFrame or a qualified selector such as PluginAPI.createFrame.`,
+    });
+  }
+  return normalized;
+}
+
+function parsePluginApiLookupQuery(query: string, index: PluginApiIndex | undefined): PluginApiLookupQuery {
+  const normalizedInput = normalizePluginApiSelector(query);
+  const segments = normalizedInput.split(".");
   const normalizedSymbol = segments.at(-1) ?? normalizedInput;
   const ownerHint = segments.length > 1 ? segments.slice(0, -1).join(".") : undefined;
   const knownOwners = new Set<string>();
@@ -1155,7 +1224,8 @@ function scoredChunkToResult(entry: ScoredReferenceChunk, options: {
     title: metadata.title,
     ...(metadata.classification === "api"
       ? {
-        apiId: metadata.publicId,
+        selector: metadata.publicId,
+        declarationKind: metadata.declarationKind,
         ownerMatch: entry.ownerMatch,
       }
       : {
@@ -1356,12 +1426,16 @@ function deduplicateResultsByPublicRecord(results: readonly RankedReferenceSearc
   });
 }
 
-function referenceResultId(result: ReferenceSearchResult): string {
-  return result.docId ?? result.apiId ?? "";
+function referenceResultId(result: Pick<InternalReferenceSearchResult, "docId" | "selector">): string {
+  return result.docId ?? result.selector ?? "";
 }
 
 function compareAscii(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function sortedUnique(values: readonly string[]): string[] {
+  return [...new Set(values)].sort(compareAscii);
 }
 
 function truncateUtf8(value: string, maximumBytes: number): string {
@@ -1378,16 +1452,16 @@ function truncateUtf8(value: string, maximumBytes: number): string {
 }
 
 function applySearchSnippetBudget(
-  results: readonly ReferenceSearchResult[],
+  results: readonly InternalReferenceSearchResult[],
   limitBytes: number,
-): { results: ReferenceSearchResult[]; snippetBudget?: ReferenceSearchSnippetBudget } {
+): { results: InternalReferenceSearchResult[]; snippetBudget?: ReferenceSearchSnippetBudget } {
   const originalBytes = results.reduce(
     (total, result) => total + Buffer.byteLength(result.snippet, "utf8"),
     0,
   );
   if (originalBytes <= limitBytes) return { results: [...results] };
 
-  const budgetedResults: ReferenceSearchResult[] = [];
+  const budgetedResults: InternalReferenceSearchResult[] = [];
   let returnedBytes = 0;
   for (const result of results) {
     const remainingBytes = limitBytes - returnedBytes;
@@ -1421,6 +1495,43 @@ function applySearchSnippetBudget(
       truncated: true,
     },
   };
+}
+
+function publicReferenceSearchResult(result: InternalReferenceSearchResult): ReferenceSearchResult {
+  if (result.classification === "api") {
+    if (!result.selector || !result.declarationKind) {
+      throw new Error("Generated Figma Plugin API search record is missing its public selector.");
+    }
+    return result.snippetTruncated === undefined ? {
+      selector: result.selector,
+      declarationKind: result.declarationKind,
+      matchType: result.matchType,
+      confidence: result.confidence,
+      snippet: result.snippet,
+    } : {
+      selector: result.selector,
+      declarationKind: result.declarationKind,
+      matchType: result.matchType,
+      confidence: result.confidence,
+      snippet: result.snippet,
+      snippetTruncated: true,
+    };
+  }
+  const publicResult: ReferenceSearchResult = {
+    lineStart: result.lineStart,
+    lineEnd: result.lineEnd,
+    matchType: result.matchType,
+    confidence: result.confidence,
+    snippet: result.snippet,
+    classification: result.classification,
+    docId: result.docId,
+    title: result.title,
+    taskFamily: result.taskFamily,
+    surfaces: result.surfaces,
+    nonExecutable: result.nonExecutable,
+  };
+  if (result.snippetTruncated) publicResult.snippetTruncated = true;
+  return publicResult;
 }
 
 function normalizeCatalogLimit(value: number | undefined): number {

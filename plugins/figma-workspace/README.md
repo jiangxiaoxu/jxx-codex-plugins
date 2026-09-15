@@ -1,6 +1,6 @@
 # Figma Workspace
 
-Figma Workspace 0.6.4 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
+Figma Workspace 0.6.5 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
 
 ## Quick Start
 
@@ -12,13 +12,14 @@ npm --silent run figma:docs:help
 npm --silent run figma:docs:catalog -- --task-family design-editing --surface design
 npm --silent run figma:api:help
 npm --silent run figma:api:search -- "figma.createFrame()"
-npm --silent run figma:api:read -- "<api-id-from-search>"
+npm --silent run figma:api:read -- "createFrame"
+npm --silent run figma:api:read -- "BaseNonResizableTextMixin.fontName"
 npm --silent run figma:metadata -- --file "https://www.figma.com/design/FILE_KEY/File"
 npm --silent run figma:inspect -- --file FILE_KEY --node 230:2 --surface design
 npm --silent run figma:run -- --file "https://www.figma.com/design/FILE_KEY/File" --script C:/work/project/change.figma.ts
 ```
 
-Use generated `--help` for each exact input schema, option, limit, and JSON stdin/file contract. Typed results are Restricted Markdown, not JSON; if a result names `outputFiles.cliResultFile`, read that complete JSON sidecar instead of parsing stdout.
+Use generated `--help` for each exact input schema, option, limit, and JSON stdin/file contract. Typed results are Restricted Markdown. If a result names `outputFiles.cliResultFile`, read that complete JSON sidecar instead of parsing stdout.
 
 Every command that requires a Figma file or node target supplies it in that invocation. `figma:upstream:list` and `figma:upstream:read` are targetless; `figma:upstream:call` follows the selected live schema instead of inheriting a target. Use a full file or node URL whenever possible. A node URL's `node-id=230-2` converts to Plugin API ID `230:2`; a bare node ID is invalid without an explicit file. URLs infer Design, FigJam, or Slides; a raw fileKey needs `--surface` when the selected command needs a surface.
 
@@ -55,7 +56,7 @@ Upstream and bridge network requests have a 5-minute total deadline. The 60-seco
 
 ## Documentation And API Lookup
 
-Prefer concise English terms as documentation-search seeds; this is a relevance recommendation, not an input-language restriction. For a non-trivial or ambiguous request, select a query from the skill's Search Query Recipes and use the known surface. If routing is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected task family and surface, and use `figma:docs:read` for returned `project:` or `canonical:` IDs. Use `figma:api:search` for bare, qualified, or call-shaped Plugin API symbols, then use `figma:api:read` with a returned `apiId` when the complete declaration is needed. Catalog and search display limits are clamped to the ranges shown by command help and reported in `parameterAdjustments`; traversal, pagination, capture sizing, and remote inline-result boundaries remain strict. Search has no per-snippet byte cap; one 12000-byte UTF-8 budget applies across returned snippets, with any truncation reported in `snippetBudget`. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references provide the complete static intent-to-command and topic-to-query maps without duplicating generated CLI schemas.
+Prefer concise English terms as documentation-search seeds; this is a relevance recommendation, not an input-language restriction. For a non-trivial or ambiguous request, select a query from the skill's Search Query Recipes and use the known surface. If routing is uncertain, use `figma:docs:catalog`, narrow `figma:docs:search` with the selected task family and surface, and use `figma:docs:read` for returned `project:` or `canonical:` IDs. Use `figma:api:search <selector>` for bare, qualified, or call-shaped Plugin API symbols. The default output is human-readable. If a bare selector is ambiguous, search lists qualified selectors such as `BaseNonResizableTextMixin.fontName`; pass one of those selectors to `figma:api:read <selector>`. Members with overloads are read together for the selected owner. API lookup does not require or expose declaration-file paths, line numbers, or opaque IDs. Catalog and search display limits are clamped to the ranges shown by command help and reported in `parameterAdjustments`; traversal, pagination, capture sizing, and remote inline-result boundaries remain strict. The bundled [skill router](skills/figma-workspace/SKILL.md) and its references provide the complete static intent-to-command and topic-to-query maps without duplicating generated CLI schemas.
 
 Use `figma:doctor` for local packaged-doc, corpus, TypeScript, or Plugin API index diagnosis. It is a public local-only leaf command and never needs a Figma target.
 

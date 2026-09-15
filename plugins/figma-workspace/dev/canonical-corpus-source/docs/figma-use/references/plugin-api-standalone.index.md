@@ -1,7 +1,7 @@
 # Plugin API Index
 
 > Public lookup: use `figma:api:search` for exact symbols and signatures. This record is a curated orientation index, not a declaration-file entrypoint.
-> The retained `L#` values are orientation metadata from the archived upstream declaration snapshot and may drift. Never use them for exact lookup; query the symbol with `figma:api:search` instead.
+> The retained `L#` values are orientation metadata from the archived upstream declaration snapshot and may drift. They are not API lookup selectors and are not emitted by `figma:api:search` or `figma:api:read`. Never use them for exact lookup; query the symbol with `figma:api:search` instead.
 > `PluginDataMixin` remains in the current official standalone index for namespaced shared PluginData members. The current `figma:run` restriction on private `getPluginData()` and `setPluginData()` is a separate host-runtime condition; it neither removes the declaration nor establishes support for shared data in every host.
 
 ---

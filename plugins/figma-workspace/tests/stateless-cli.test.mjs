@@ -147,7 +147,7 @@ test("fixed public leaf wrappers are complete, unique, and separate from mainten
   }
 });
 
-test("release metadata keeps the 0.6.4 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
+test("release metadata keeps the 0.6.5 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
   const [manifest, packageJson, cliPackageJson, cliLockfile, authConstants] = await Promise.all([
     readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
@@ -157,7 +157,7 @@ test("release metadata keeps the 0.6.4 plugin, CLI package, lockfile, and OAuth 
   ]);
   const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
 
-  assert.equal(manifest.version, "0.6.4");
+  assert.equal(manifest.version, "0.6.5");
   assert.equal(packageJson.version, manifest.version);
   assert.equal(cliPackageJson.version, manifest.version);
   assert.equal(cliLockfile.version, manifest.version);
@@ -209,7 +209,7 @@ test("run and target help expose the stateless contract without session options"
   }
 });
 
-test("numeric help exposes exact ranges, clamp output is explicit, and API read closes the local id loop", () => {
+test("numeric help exposes exact ranges, clamp output is explicit, and API read uses a readable selector", () => {
   for (const scriptName of ["figma:docs:search", "figma:api:search"]) {
     const help = runNpm(["--silent", "run", scriptName, "--", "--help"], {
       cwd: pluginRoot,
@@ -252,33 +252,33 @@ test("numeric help exposes exact ranges, clamp output is explicit, and API read 
 
   const clamped = runNpm([
     "--silent", "run", "figma:api:search", "--",
-    "figma.createFrame", "--limit", "0", "--snippet-lines", "99",
+    "figma.createFrame", "--limit", "0", "--snippet-lines", "99", "--format", "json",
   ], {
     cwd: pluginRoot,
     encoding: "utf8",
   });
   assert.equal(clamped.status, 0, commandOutput(clamped));
-  assert.match(clamped.stdout, /^Status: succeeded$/mu);
-  assert.match(clamped.stdout, /"parameterAdjustments": \[/u);
-  assert.match(clamped.stdout, /"applied": 1/u);
-  assert.match(clamped.stdout, /"applied": 16/u);
-  assert.doesNotMatch(clamped.stdout, /^Status: observed unhealthy$/mu);
+  const clampedPayload = JSON.parse(clamped.stdout);
+  assert.equal(clampedPayload.mode, "search");
+  assert.deepEqual(clampedPayload.parameterAdjustments, [
+    { option: "--limit", requested: 0, applied: 1, range: [1, 10] },
+    { option: "--snippet-lines", requested: 99, applied: 16, range: [1, 16] },
+  ]);
 
   const search = runNpm(["--silent", "run", "figma:api:search", "--", "figma.createFrame"], {
     cwd: pluginRoot,
     encoding: "utf8",
   });
   assert.equal(search.status, 0, commandOutput(search));
-  assert.doesNotMatch(search.stdout, /"parameterAdjustments"/u);
-  const apiId = /"apiId": "([^"]+)"/u.exec(search.stdout)?.[1];
-  assert.ok(apiId, search.stdout);
-  const read = runNpm(["--silent", "run", "figma:api:read", "--", apiId], {
+  assert.match(search.stdout, /^# Figma Plugin API search: figma\.createFrame$/mu);
+  assert.match(search.stdout, /Read: figma:api:read PluginAPI\.createFrame/u);
+  assert.doesNotMatch(search.stdout, /apiId|normalizedSymbol|parameterAdjustments/u);
+  const read = runNpm(["--silent", "run", "figma:api:read", "--", "PluginAPI.createFrame"], {
     cwd: pluginRoot,
     encoding: "utf8",
   });
   assert.equal(read.status, 0, commandOutput(read));
-  assert.match(read.stdout, /"mode": "read"/u);
-  assert.match(read.stdout, /"content":/u);
+  assert.match(read.stdout, /^# Figma Plugin API: PluginAPI\.createFrame$/mu);
   assert.match(read.stdout, /createFrame/u);
 });
 
@@ -317,7 +317,9 @@ test("local docs and API lookup stay inline without a state file or remote resul
     encoding: "utf8",
   });
   assert.equal(apiSearch.status, 0, commandOutput(apiSearch));
-  assert.match(apiSearch.stdout, /"normalizedSymbol": "createFrame"/u);
+  assert.match(apiSearch.stdout, /^# Figma Plugin API search: figma\.createFrame$/mu);
+  assert.match(apiSearch.stdout, /Read: figma:api:read PluginAPI\.createFrame/u);
+  assert.doesNotMatch(apiSearch.stdout, /normalizedSymbol|apiId|outputRoot/u);
 
   const search = runNpm([
     "--silent", "run", "figma:docs:search", "--",
@@ -420,15 +422,22 @@ test("packed plugin contains every fixed leaf wrapper and can run local stateles
       encoding: "utf8",
     });
     assert.equal(api.status, 0, commandOutput(api));
-    assert.match(api.stdout, /"normalizedSymbol": "createFrame"/u);
-    const apiId = /"apiId": "([^"]+)"/u.exec(api.stdout)?.[1];
-    assert.ok(apiId, api.stdout);
-    const apiRead = runNpm(["--silent", "run", "figma:api:read", "--", apiId], {
+    assert.match(api.stdout, /^# Figma Plugin API search: figma\.createFrame$/mu);
+    assert.match(api.stdout, /Read: figma:api:read PluginAPI\.createFrame/u);
+    const apiJson = runNpm(["--silent", "run", "figma:api:search", "--", "figma.createFrame", "--format", "json"], {
+      cwd: packedRoot,
+      encoding: "utf8",
+    });
+    assert.equal(apiJson.status, 0, commandOutput(apiJson));
+    const apiPayload = JSON.parse(apiJson.stdout);
+    assert.equal(apiPayload.selector, "figma.createFrame");
+    assert.equal(apiPayload.results[0].selector, "PluginAPI.createFrame");
+    const apiRead = runNpm(["--silent", "run", "figma:api:read", "--", "PluginAPI.createFrame"], {
       cwd: packedRoot,
       encoding: "utf8",
     });
     assert.equal(apiRead.status, 0, commandOutput(apiRead));
-    assert.match(apiRead.stdout, /"mode": "read"/u);
+    assert.match(apiRead.stdout, /^# Figma Plugin API: PluginAPI\.createFrame$/mu);
     const runHelp = runNpm(["--silent", "run", "figma:run", "--", "--help"], {
       cwd: packedRoot,
       encoding: "utf8",

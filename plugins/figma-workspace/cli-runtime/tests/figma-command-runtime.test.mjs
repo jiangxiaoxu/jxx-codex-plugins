@@ -77,6 +77,10 @@ test("root and family help expose only stateless fixed leaf commands", async () 
     assert.equal(await runFigmaCommand(family, [], current.dependencies), 0);
     assert.match(current.stdout.join(""), new RegExp(`^# figma:${family}:help`, "mu"));
   }
+  const api = harness();
+  assert.equal(await runFigmaCommand("api", [], api.dependencies), 0);
+  assert.match(api.stdout.join(""), /figma:api:read <selector>/u);
+  assert.doesNotMatch(api.stdout.join(""), /api-id|--owner|--format/u);
   assert.doesNotMatch(formatRootHelp(), /figma:sessions/u);
 });
 
@@ -101,15 +105,23 @@ test("lookup and catalog help publish ranges and public parsing forwards clampab
   assert.equal(await runFigmaCommand("api:search", ["createFrame", "--limit", "-3", "--snippet-lines", "99"], search.dependencies), 0);
   assert.deepEqual(search.calls[0].input, {
     kind: "api",
-    symbol: "createFrame",
+    mode: "search",
+    selector: "createFrame",
     maxResults: -3,
     maxSnippetLines: 99,
   });
 
   const read = harness();
-  const apiId = "api:@figma/plugin-typings/plugin-api.d.ts:431:getStyleByIdAsync";
-  assert.equal(await runFigmaCommand("api:read", [apiId], read.dependencies), 0);
-  assert.deepEqual(read.calls[0].input, { kind: "api", apiId });
+  const selector = "BaseNonResizableTextMixin.fontName";
+  assert.equal(await runFigmaCommand("api:read", [selector], read.dependencies), 0);
+  assert.deepEqual(read.calls[0].input, { kind: "api", mode: "read", selector });
+
+  const json = harness();
+  assert.equal(await runFigmaCommand("api:search", ["fontName", "--format", "json"], json.dependencies), 0);
+  assert.deepEqual(json.calls[0], {
+    argv: ["lookup", "--input", "-", "--format", "json"],
+    input: { kind: "api", mode: "search", selector: "fontName" },
+  });
 
   const invalid = harness();
   assert.equal(await runFigmaCommand("api:search", ["createFrame", "--snippet-lines", "3.5"], invalid.dependencies), 2);
@@ -129,6 +141,39 @@ test("lookup and catalog help publish ranges and public parsing forwards clampab
     assert.equal(await runFigmaCommand(command, argv, malformed.dependencies), 2, command);
     assert.equal(malformed.calls.length, 0, command);
   }
+});
+
+test("API leaves accept a selector and JSON mode without retaining owner or opaque-id inputs", async () => {
+  const searchHelp = formatCommandHelp("api:search");
+  const readHelp = formatCommandHelp("api:read");
+  for (const help of [searchHelp, readHelp]) {
+    assert.match(help, /<selector>/u);
+    assert.doesNotMatch(help, /api-id|apiId|--owner|--format/u);
+  }
+  assert.match(readHelp, /bare selector succeeds only when it identifies one owner/iu);
+
+  for (const [command, argv] of [
+    ["api:search", ["fontName", "--owner", "Font"]],
+    ["api:read", ["fontName", "--owner", "Font"]],
+    ["api:search", ["fontName", "--format", "yaml"]],
+    ["docs:search", ["layout", "--format", "json"]],
+  ]) {
+    const current = harness();
+    assert.equal(await runFigmaCommand(command, argv, current.dependencies), 2, `${command} ${argv.join(" ")}`);
+    assert.equal(current.calls.length, 0, `${command} ${argv.join(" ")}`);
+  }
+
+  const jsonError = harness();
+  assert.equal(await runFigmaCommand("api:read", ["fontName", "--format", "json", "--owner", "Font"], jsonError.dependencies), 2);
+  assert.equal(jsonError.stderr.join(""), "");
+  assert.deepEqual(JSON.parse(jsonError.stdout.join("")), {
+    ok: false,
+    mode: "read",
+    error: {
+      code: "FIGMA_WORKSPACE_API_USAGE_ERROR",
+      message: "Unknown option: --owner",
+    },
+  });
 });
 
 test("run forwards one explicit file and safe TypeScript file", async () => {

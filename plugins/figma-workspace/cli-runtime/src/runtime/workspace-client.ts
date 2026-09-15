@@ -28,7 +28,7 @@ import {
   getFigmaWorkspaceLookupRuntimeInfo,
   listFigmaWorkspaceCanonicalCatalog,
   readFigmaWorkspaceCanonicalDoc,
-  readFigmaWorkspacePluginApiDeclaration,
+  readFigmaWorkspacePluginApiDeclarations,
   type FigmaWorkspacePluginApiDeclaration,
   type ReferenceSearchResult,
   type ReferenceSearchSnippetBudget,
@@ -822,6 +822,7 @@ interface FigmaWorkspaceLookupResultBase extends FigmaWorkspaceToolResultBase {
 export interface FigmaWorkspaceLookupSearchResult extends FigmaWorkspaceLookupResultBase {
   ok: true;
   mode: "search";
+  selector?: string;
   requestedScope?: "auto" | "active" | "conditional" | "router" | "examples" | "all";
   effectiveScopes?: string[];
   route?: TaskRouteResult;
@@ -834,7 +835,8 @@ export interface FigmaWorkspaceLookupSearchResult extends FigmaWorkspaceLookupRe
 export interface FigmaWorkspaceLookupReadResult extends FigmaWorkspaceLookupResultBase {
   ok: true;
   mode: "read";
-  declaration: FigmaWorkspacePluginApiDeclaration;
+  selector: string;
+  declarations: FigmaWorkspacePluginApiDeclaration[];
 }
 
 export interface FigmaWorkspaceLookupFailureResult extends FigmaWorkspaceLookupResultBase {
@@ -5216,11 +5218,13 @@ async function handleLookup(
   args: FigmaWorkspaceLookupArguments,
 ): Promise<Record<string, unknown>> {
   try {
-    if (args.kind === "api" && args.apiId !== undefined) {
+    if (args.kind === "api" && args.mode === "read") {
+      const declarations = readFigmaWorkspacePluginApiDeclarations(args.selector!);
       return makeJsonToolResult({
         ok: true,
         mode: "read",
-        declaration: readFigmaWorkspacePluginApiDeclaration(args.apiId),
+        selector: declarations[0]!.selector,
+        declarations,
         guidance: "Use the exact bundled declaration for Plugin API typing decisions, then execute changes through figma:run.",
       });
     }
@@ -5272,49 +5276,38 @@ async function handleLookup(
     if (args.kind !== "api") {
       throw new Error('Tool argument "kind" must be one of: docs, api.');
     }
-    const symbol = normalizeLookupQuery(args.symbol ?? args.query, "symbol");
+    const selector = normalizeLookupQuery(args.selector, "selector");
     const normalized = normalizeLookupParameters(args, {
       maxResults: 5,
       maxSnippetLines: 5,
     });
     const matches = await searchReferenceFiles({
-      query: symbol,
+      query: selector,
       maxResults: normalized.maxResults,
       maxSnippetLines: normalized.maxSnippetLines,
       exactSymbol: true,
       corpus: "api",
     });
-    const apiId = matches.results.find((result) => result.apiId !== undefined)?.apiId;
     const payload = {
       ok: true,
       mode: "search",
-      normalizedSymbol: matches.normalizedSymbol,
-      ownerHint: matches.ownerHint,
+      selector: matches.selector,
       results: matches.results,
       ...(matches.snippetBudget ? { snippetBudget: matches.snippetBudget } : {}),
       ...(normalized.parameterAdjustments.length > 0
         ? { parameterAdjustments: normalized.parameterAdjustments }
         : {}),
-      ...(apiId
-        ? {
-          nextActions: [{
-            commandId: "figma:api:read" as const,
-            args: { id: apiId },
-            reason: "Read the exact declaration record in full.",
-            priority: 1,
-          }],
-        }
-        : {}),
       guidance:
-        "Results are compact declarations from the generated bundled typings index. Use figma:api:read with a returned apiId for the complete declaration record.",
+        "Results are compact declarations from the generated bundled typings index. Use figma:api:read with one listed selector for the complete declaration record.",
     };
     return makeJsonToolResult(payload);
   } catch (error) {
     if (error instanceof FigmaWorkspaceLookupCorpusUnavailableError) {
-      const mode = args.kind === "api" && args.apiId !== undefined ? "read" : "search";
+      const mode = args.kind === "api" && args.mode === "read" ? "read" : "search";
       return makeJsonToolResult({
         ok: false,
         mode,
+        ...(args.kind === "api" ? { selector: args.selector } : {}),
         ...(mode === "search" ? { results: [] } : {}),
         diagnostics: diagnosticsForResponse([lookupCorpusDiagnostic(error)]),
         guidance: "A canonical docs or generated Plugin API lookup asset is unavailable in this CLI process. Rebuild the cli-runtime dist after confirming those bundled assets exist, then start a new CLI command.",

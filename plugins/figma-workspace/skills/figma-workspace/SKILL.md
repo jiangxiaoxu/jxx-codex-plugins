@@ -30,7 +30,7 @@ Use only the public commands below. Do not expose transport names, internal iden
 
 - For an obvious read-only request, select its direct command below.
 - For non-trivial, generated, or unclear work, use `figma:docs:catalog`, then narrow with `figma:docs:search` using concise English task terms as recommended search seeds and the known surface. Read exact returned `project:` or `canonical:` IDs through `figma:docs:read`.
-- Use `figma:api:search` for native Plugin API declarations. It accepts bare, qualified, and call-shaped queries such as `createFrame`, `figma.createFrame()`, and `ComponentNode.createInstance`. When a compact result is insufficient, read its exact returned `apiId` through `figma:api:read`.
+- Use `figma:api:search <selector>` for native Plugin API declarations. It accepts one bare, qualified, or call-shaped selector such as `createFrame`, `figma.createFrame()`, or `ComponentNode.createInstance`. The output is human-readable. If a bare selector is ambiguous, search prints qualified selectors such as `BaseNonResizableTextMixin.fontName`; pass one to `figma:api:read <selector>`. Overloads for the selected owner are read together. API lookup does not require or expose declaration-file paths, source line numbers, or opaque IDs.
 - Use `figma:doctor` only to diagnose packaged docs, corpus, TypeScript, or Plugin API index faults. It is local-only and requires no Figma target.
 - Read the selected leaf help for numeric ranges. Catalog/search display limits clamp safe out-of-range integers and report `parameterAdjustments`; traversal depth, pagination offset, capture dimensions, and remote inline-result bytes are strict usage boundaries.
 - If routing remains unclear, use the Search Query Recipes and catalog rather than guessing. Docs and API lookup are local-only and need no Figma target.
@@ -89,7 +89,7 @@ Prefer these English keyword patterns as search seeds. Add the known surface and
    ```
 
    To provide source on stdin, use `--source -` instead of `--script`. The two source modes are mutually exclusive.
-3. Use native Figma Plugin API for edits, `figma:api:search` for uncertain symbols, and `figma:api:read` for the complete declaration behind a returned `apiId`. Keep scripts repairable, return compact changed-node IDs and validation notes, and repair fatal preflight diagnostics before dispatch.
+3. Use native Figma Plugin API for edits, `figma:api:search` for uncertain symbols, and `figma:api:read` for the complete declaration selected by a readable selector. Keep scripts repairable, return compact changed-node IDs and validation notes, and repair fatal preflight diagnostics before dispatch.
 4. Capture visible results through queued `$.capture` or standalone `figma:capture`, then inspect every generated or edited PNG with `view_image` before reporting visual success.
 5. Prefer first-class commands for their typed safeguards. `figma:upstream:list` and `figma:upstream:read` show live schema plus local `coverage`; `figma:upstream:call` remains available for every official tool when the live schema is the required contract. Before calling, follow the selected description and schema, including its confirmation requirements.
 
