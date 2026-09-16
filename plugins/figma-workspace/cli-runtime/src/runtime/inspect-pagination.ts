@@ -196,7 +196,7 @@ export function buildInspectPaginationCode(
     "  if (__fields.indexOf('locked') !== -1 && 'locked' in __node) __result.locked = __node.locked;",
     "  if (__fields.indexOf('layoutMode') !== -1 && 'layoutMode' in __node) __result.layoutMode = __node.layoutMode;",
     "  if (__fields.indexOf('layoutPositioning') !== -1 && 'layoutPositioning' in __node) __result.layoutPositioning = __node.layoutPositioning;",
-    "  if (__fields.indexOf('characters') !== -1 && typeof __node.characters === 'string') __result.characters = __node.characters;",
+    "  if (__fields.indexOf('characters') !== -1 && 'characters' in __node && typeof __node.characters === 'string') __result.characters = __node.characters;",
     "  return __result;",
     "}",
     "const __stack = [];",

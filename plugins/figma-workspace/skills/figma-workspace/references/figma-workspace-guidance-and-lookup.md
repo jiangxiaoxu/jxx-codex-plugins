@@ -29,7 +29,7 @@ Use this static reference to route task documentation and Plugin API questions. 
 ## Read Documentation
 
 - Use `figma:docs:list` for project documents, `figma:docs:catalog` for task-family summaries and canonical records, and `figma:docs:search` to find compatible material.
-- Read only returned `project:<topic>` or `canonical:<record-id>` IDs with `figma:docs:read`. A large document can be written to a result receipt instead of inline stdout; follow its `outputFiles.resultFile` pointer and `jq.data` filter.
+- Read only returned `project:<topic>` or `canonical:<record-id>` IDs with `figma:docs:read`. A large document can be written to a result receipt instead of inline stdout; follow the `outputFiles.resultFile` path reported once and read its JSON fields directly.
 - `figma:docs:search` defaults to `--scope auto`; automatic search excludes examples. Use explicit `--scope examples` only when examples are needed, and treat every explicit scope as strict.
 - A Markdown link shaped `[label](canonical:<record-id>)` is a logical cross-record pointer, not a local path or web URL. Read it with `figma:docs:read` before following its guidance.
 - Do not read corpus JSONL, hashes, source paths, chunks, generated declarations, transport names, or internal operation names directly.

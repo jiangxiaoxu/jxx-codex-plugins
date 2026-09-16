@@ -246,6 +246,8 @@ test("an oversized CLI result reuses the runtime receipt instead of writing a se
           ok: true,
           phase: "execute",
           executionOutcome: "succeeded",
+          warnings: [{ code: "FIGMA_INSPECT_PAGE_WARNING", message: "Page requires continuation." }],
+          hasMore: true,
           upstream: { kind: "json", ok: true, result: { message: "x".repeat(2_048) } },
           outputFiles: {
             resultFile: {
@@ -265,14 +267,11 @@ test("an oversized CLI result reuses the runtime receipt instead of writing a se
     const rendered = stdout.join("");
     assert.equal(exitCode, 0);
     assert.equal(stderr.join(""), "");
-    assert.match(rendered, /^Status: succeeded$/mu);
-    assert.match(rendered, /jq '\.result\.upstream\.result' -- /u);
-    const quote = process.platform === "win32"
-      ? (value) => `'${value.replaceAll("'", "''")}'`
-      : (value) => `'${value.replaceAll("'", "'\"'\"'")}'`;
-    assert.ok(rendered.includes(`\`\`\`${process.platform === "win32" ? "powershell" : "sh"}`), rendered);
-    assert.ok(rendered.includes(`-- ${quote(receiptPath)}`), rendered);
-    assert.match(rendered, /"resultFile"/u);
+    assert.match(rendered, /^Status: observed unhealthy$/mu);
+    assert.match(rendered, new RegExp("Result file: `" + receiptPath.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&") + "`"));
+    assert.match(rendered, /Attention: warnings or diagnostics are present/u);
+    assert.match(rendered, /Attention: inspect page hasMore=true; continue with nextCursor/u);
+    assert.doesNotMatch(rendered, /\bjq\b/u);
     assert.doesNotMatch(rendered, /cliResultFile|"message": "x{128}/u);
     assert.deepEqual(await readdir(directory), ["runtime result's.json"]);
   } finally {
@@ -310,11 +309,12 @@ test("an oversized CLI fallback writes one complete versioned result receipt", a
       }),
     });
     const rendered = stdout.join("");
-    const resultPath = /"resultFile":\s*\{\s*"path": "([^"]+)"/u.exec(rendered)?.[1];
+    const resultPath = /Result file: `([^`]+)`/u.exec(rendered)?.[1];
     assert.equal(exitCode, 0);
     assert.equal(stderr.join(""), "");
     assert.ok(resultPath, rendered);
-    assert.match(rendered, /jq '\.result\.upstream\.result' -- /u);
+    assert.match(rendered, /Result file:/u);
+    assert.doesNotMatch(rendered, /\bjq\b/u);
     assert.doesNotMatch(rendered, /cliResultFile|"payload": "x{128}/u);
     const receipt = JSON.parse(await readFile(resultPath.replaceAll("\\\\", "\\"), "utf8"));
     assert.equal(receipt.kind, "figma-cli-result");

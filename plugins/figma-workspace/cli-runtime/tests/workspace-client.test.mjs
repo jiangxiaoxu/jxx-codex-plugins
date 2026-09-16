@@ -10,6 +10,7 @@ import {
 const FILE_KEY = "EctrdKKdR3c8JTPl55qn3r";
 const OTHER_FILE_KEY = "B".repeat(22);
 const FILE_URL = `https://www.figma.com/design/${FILE_KEY}/Untitled`;
+const OTHER_FILE_URL = `https://www.figma.com/design/${OTHER_FILE_KEY}/Other`;
 const NODE_URL = `${FILE_URL}?node-id=230-2&t=ignored`;
 
 function fakeUpstream(calls, responder) {
@@ -218,6 +219,21 @@ test("raw node ids require explicit file and dynamic selectors are rejected", as
   await assert.rejects(client.getDesignContext({ target: "230:2" }), /requires "file"/iu);
   await assert.rejects(client.getDesignContext({ file: FILE_URL, target: "$selection" }), /stable|no longer accepts|dynamic/iu);
   await assert.rejects(client.getDesignContext({ file: OTHER_FILE_KEY, target: NODE_URL, surface: "design" }), /conflicting file contexts/iu);
+  await client.close();
+});
+
+test("inspect rejects conflicting explicit file contexts before upstream dispatch", async () => {
+  const calls = [];
+  const client = createFigmaWorkspaceClient({ client: fakeUpstream(calls) });
+  await assert.rejects(
+    client.inspect({ file: OTHER_FILE_URL, target: NODE_URL, surface: "design" }),
+    /conflicting file contexts/iu,
+  );
+  await assert.rejects(
+    client.inspect({ file: OTHER_FILE_URL, target: NODE_URL, surface: "design", mode: "style" }),
+    /conflicting file contexts/iu,
+  );
+  assert.equal(calls.some((entry) => entry.kind === "call"), false);
   await client.close();
 });
 

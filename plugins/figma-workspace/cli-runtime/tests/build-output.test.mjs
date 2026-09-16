@@ -15,7 +15,7 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.6.6");
+  assert.equal(packageJson.version, "0.6.7");
 });
 
 test("distribution stages TypeScript declaration libs for strict preflight", () => {
@@ -186,7 +186,7 @@ test("oversized results are written beneath explicit output root", async () => {
       createClient: () => ({ close: async () => {}, getMetadata: async () => ({ ok: true, metadata: { payload: "x".repeat(1024) } }) }),
     });
     assert.equal(exit, 0);
-    const match = /"path": "([^"]+get-metadata\.result\.json)"/u.exec(output.stdout.join(""));
+    const match = /Result file: `([^`]+get-metadata\.result\.json)`/u.exec(output.stdout.join(""));
     assert.ok(match);
     assert.ok(resolve(match[1]).startsWith(resolve(directory)));
     assert.match(await readFile(match[1], "utf8"), /"payload"/u);
@@ -216,7 +216,7 @@ test("remote results default to a 2048-byte inline boundary", async () => {
       assert.equal(observedLimit, 2_048);
       const rendered = output.stdout.join("");
       if (expectsSidecar) {
-        const match = /"path": "([^"]+get-metadata\.result\.json)"/u.exec(rendered);
+        const match = /Result file: `([^`]+get-metadata\.result\.json)`/u.exec(rendered);
         assert.ok(match);
         assert.match(await readFile(match[1], "utf8"), /"payload": "x{100}/u);
       } else {
@@ -312,13 +312,8 @@ test("atomic script failure replacement preserves recovery facts and reports an 
     assert.match(rendered, /FIGMA_HOST_REJECTED: Figma host rejected the mutation\./u);
     assert.match(rendered, /failed atomically.*No file changes were applied; repair the script and retry safely/isu);
     assert.doesNotMatch(rendered, /diagnosticPayload/u);
-    assert.match(rendered, /"executionOutcome": "failed_atomic"/u);
-    assert.doesNotMatch(rendered, /"executionFailure"/u);
-    assert.match(rendered, /"retryGuidance": "Repair before retrying\."/u);
-    assert.match(rendered, /"captureProcessingSucceeded": false/u);
-    assert.match(rendered, /"postProcessing"/u);
-    assert.match(rendered, /resultFile/u);
-    const resultFile = /"resultFile":\s*\{\s*"path": "([^"]+)"/u.exec(rendered)?.[1];
+    assert.doesNotMatch(rendered, /\bjq\b/u);
+    const resultFile = /Result file: `([^`]+)`/u.exec(rendered)?.[1];
     assert.ok(resultFile);
     const receipt = JSON.parse(await readFile(resultFile, "utf8"));
     assert.equal(receipt.result.executionOutcome, "failed_atomic");
@@ -356,12 +351,9 @@ test("oversized unknown execution failures keep compact upstream errors inline",
     assert.match(rendered, /^Status: failed during execution$/mu);
     assert.match(rendered, /^## Error$/mu);
     assert.match(rendered, /Next step: Read back and reconcile before retrying\./u);
-    assert.match(rendered, /"upstreamError":\s*\{/u);
-    assert.doesNotMatch(rendered, /"error":\s*\{/u);
-    assert.match(rendered, /"code": "FIGMA_UPSTREAM_RESPONSE_LOST"/u);
-    assert.match(rendered, /"message": "Figma execution response was lost\."/u);
+    assert.doesNotMatch(rendered, /\bjq\b/u);
     assert.doesNotMatch(rendered, /diagnosticPayload/u);
-    assert.match(rendered, /resultFile/u);
+    assert.match(rendered, /Result file:/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -405,14 +397,9 @@ test("oversized local failures keep their error, recovery hint, and operation id
     assert.match(rendered, /^## Error$/mu);
     assert.match(rendered, /FIGMA_WORKSPACE_CODE_CONNECT_PLAN_INVALID: The Code Connect plan is invalid\./u);
     assert.match(rendered, /Next step: Regenerate the Code Connect plan\./u);
-    assert.match(rendered, /"error":\s*\{/u);
-    assert.match(rendered, /"primaryFix": "Regenerate the Code Connect plan\."/u);
-    assert.match(rendered, /"nodeId": "1:2"/u);
-    assert.match(rendered, /"toolName": "get_code_connect_map"/u);
-    assert.match(rendered, new RegExp(`"planDigest": "${"a".repeat(64)}"`, "u"));
-    assert.match(rendered, /"outputDir":/u);
+    assert.doesNotMatch(rendered, /\bjq\b/u);
     assert.doesNotMatch(rendered, /diagnosticPayload/u);
-    assert.match(rendered, /resultFile/u);
+    assert.match(rendered, /Result file:/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -448,11 +435,8 @@ test("oversized preflight failures keep the first actionable diagnostic in the C
     assert.match(rendered, /^Status: failed$/mu);
     assert.match(rendered, /FIGMA_WORKSPACE_PARSE_ERROR: TypeScript source could not be parsed\./u);
     assert.match(rendered, /Next step: Fix the syntax error before retrying\./u);
-    assert.match(rendered, /"error":\s*\{/u);
-    assert.match(rendered, /"code": "FIGMA_WORKSPACE_PARSE_ERROR"/u);
-    assert.match(rendered, /"recoveryHint": "Fix the syntax error before retrying\."/u);
-    assert.doesNotMatch(rendered, /"repairPlan"|"diagnostics"/u);
-    assert.match(rendered, /resultFile/u);
+    assert.doesNotMatch(rendered, /\bjq\b|repairPlan/u);
+    assert.match(rendered, /Result file:/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -491,9 +475,8 @@ test("oversized batch failures preserve nested upstream error provenance", async
     const rendered = output.stdout.join("");
     assert.equal(exit, 1);
     assert.match(rendered, /FIGMA_ASSET_UPLOAD_FAILED: Asset upload failed\./u);
-    assert.match(rendered, /"upstreamError":\s*\{/u);
-    assert.doesNotMatch(rendered, /"error":\s*\{|diagnosticPayload/u);
-    assert.match(rendered, /resultFile/u);
+    assert.doesNotMatch(rendered, /\bjq\b|diagnosticPayload/u);
+    assert.match(rendered, /Result file:/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -525,7 +508,41 @@ test("oversized successful results do not promote advisory records to errors", a
     assert.equal(exit, 0);
     assert.match(rendered, /^Status: succeeded$/mu);
     assert.doesNotMatch(rendered, /"error":\s*\{|"upstreamError":\s*\{|^## Error$/mu);
-    assert.match(rendered, /resultFile/u);
+    assert.match(rendered, /Attention: warnings or diagnostics are present/u);
+    assert.match(rendered, /Result file:/u);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("sidecar keeps inspect pagination attention visible without expanding the receipt", async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), "figma-cli-inline-inspect-page-"));
+  const input = JSON.stringify({
+    file: "https://www.figma.com/design/ExampleKey/UI",
+    nodeId: "1:2",
+    outputDir: directory,
+  });
+  const output = createIo(input, directory);
+  try {
+    const exit = await runFigmaWorkspaceCli(["inspect", "--input", "-", "--inline-result-limit", "0"], {
+      io: output.io,
+      createClient: () => ({
+        close: async () => {},
+        inspect: async () => ({
+          ok: true,
+          mode: "inspect",
+          nodes: [{ id: "1:2", type: "FRAME", parentId: null, depth: 0, childCount: 0 }],
+          hasMore: true,
+          nextCursor: "opaque-next-cursor",
+        }),
+      }),
+    });
+    const rendered = output.stdout.join("");
+    assert.equal(exit, 0);
+    assert.match(rendered, /^Status: succeeded$/mu);
+    assert.match(rendered, /Attention: inspect page hasMore=true; continue with nextCursor/u);
+    assert.match(rendered, /Result file:/u);
+    assert.doesNotMatch(rendered, /JSON structure|Full result|\bjq\b/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -542,7 +559,15 @@ test("sidecar failure after a dispatched mutation stays machine-readable and pre
       io: output.io,
       createClient: () => ({
         close: async () => {},
-        run: async () => ({ ok: true, executionOutcome: "succeeded", captureProcessingSucceeded: true, payload: "x".repeat(1_024) }),
+        run: async () => ({
+          ok: true,
+          executionOutcome: "succeeded",
+          captureProcessingSucceeded: true,
+          warnings: [{ code: "FIGMA_WARNING", severity: "warning", message: "Review this result." }],
+          diagnostics: [{ code: "FIGMA_DIAGNOSTIC", severity: "warning", message: "Review this result." }],
+          hasMore: true,
+          payload: "x".repeat(1_024),
+        }),
       }),
     });
     const rendered = output.stdout.join("");
@@ -551,6 +576,10 @@ test("sidecar failure after a dispatched mutation stays machine-readable and pre
     assert.match(rendered, /^Status: failed after execution$/mu);
     assert.match(rendered, /"executionOutcome": "succeeded"/u);
     assert.match(rendered, /"captureProcessingSucceeded": true/u);
+    assert.match(rendered, /"warningCount": 1/u);
+    assert.match(rendered, /"diagnosticCount": 1/u);
+    assert.match(rendered, /"hasMore": true/u);
+    assert.doesNotMatch(rendered, /Result file:/u);
     assert.match(rendered, /FIGMA_WORKSPACE_RESULT_PERSISTENCE_FAILED/u);
   } finally {
     await rm(directory, { recursive: true, force: true });
