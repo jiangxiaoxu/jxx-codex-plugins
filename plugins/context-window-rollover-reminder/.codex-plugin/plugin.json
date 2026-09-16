@@ -1,14 +1,14 @@
 {
   "name": "context-window-rollover-reminder",
-  "version": "0.1.12",
-  "description": "Provides staged context rollover reminders and manually configured per-thread thresholds.",
+  "version": "0.1.13",
+  "description": "Provides staged context rollover reminders and user-requested per-thread thresholds.",
   "author": {
     "name": "jiangxiaoxu"
   },
   "interface": {
     "displayName": "Context-window-rollover-reminder",
     "shortDescription": "Guide context rollover in Codex.",
-    "longDescription": "Emits staged context rollover instructions at model-specific defaults, with a manual-only skill to persist a custom starting threshold and stage interval for the current thread.",
+    "longDescription": "Emits staged context rollover instructions at model-specific defaults, with a skill that responds to user requests to inspect, customize, or reset the current thread's reminder policy.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
     "composerIcon": "./assets/context-window-rollover-reminder-icon.png",
