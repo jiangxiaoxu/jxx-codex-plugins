@@ -413,12 +413,13 @@ test("every public leaf help publishes its real argv contract", () => {
     ["docs:catalog", /--limit <1\.\.100>/u],
     ["docs:search", /--limit <1\.\.10>.*--snippet-lines <1\.\.16>/u],
     ["api:search", /--limit <1\.\.10>.*--snippet-lines <1\.\.16>/u],
-    ["inspect", /--depth <0\.\.9007199254740991>/u],
+    ["inspect", /--depth <depth>/u],
     ["libraries", /--offset <0\.\.9007199254740991>/u],
     ["capture", /--max-dimension <1\.\.65536>/u],
   ]) {
     assert.match(formatCommandHelp(leaf), expectedRange, leaf);
   }
+  assert.match(formatCommandHelp("inspect"), /depth is descendant depth.*defaults to 2.*nextCursor/isu);
   for (const leaf of leaves.filter((name) => !name.startsWith("docs:") && !name.startsWith("api:") && name !== "doctor" && name !== "upstream:list" && name !== "upstream:read")) {
     assert.match(formatCommandHelp(leaf), /--max-inline-bytes <0\.\.10000>/u, leaf);
   }
@@ -436,7 +437,7 @@ test("every public leaf help publishes its real argv contract", () => {
   const upstreamCallHelp = formatCommandHelp("upstream:call");
   assert.match(upstreamCallHelp, /Covered official tools remain callable here/u);
   assert.match(upstreamCallHelp, /outputFiles\.resultFile is the single figma-cli-result JSON receipt/u);
-  assert.match(upstreamCallHelp, /exact jq filters for its status and data/u);
+  assert.match(upstreamCallHelp, /receipt path once/u);
 });
 
 test("metadata rejects retired client hints before dispatch", async () => {

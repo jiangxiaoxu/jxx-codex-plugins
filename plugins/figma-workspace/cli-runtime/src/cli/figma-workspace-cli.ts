@@ -309,16 +309,19 @@ export function formatFigmaWorkspaceCommandMarkdown(
   if (isApiLookupInput(command, input)) {
     return formatFigmaWorkspaceApiHumanResult(result, input, presentation);
   }
+  const resultFileSummary = formatResultFileSummary(result, presentation);
   return [
     `# ${publicCommandName(command)}`,
     "",
     `Status: ${presentation.status.replaceAll("-", " ")}`,
     "",
     ...formatExecutionFailureSummary(result, presentation),
-    ...formatResultFileSummary(result),
-    "```json",
-    JSON.stringify(result, null, 2),
-    "```",
+    ...resultFileSummary,
+    ...(resultFileSummary.length > 0 ? [] : [
+      "```json",
+      JSON.stringify(result, null, 2),
+      "```",
+    ]),
   ].join("\n");
 }
 
@@ -496,48 +499,36 @@ function formatExecutionFailureSummary(
   ];
 }
 
-function formatResultFileSummary(result: unknown): string[] {
+function formatResultFileSummary(
+  result: unknown,
+  presentation: FigmaWorkspaceCliResultPresentation,
+): string[] {
   const resultFile = existingResultFilePointer(result);
   if (!resultFile) return [];
   const path = typeof resultFile.path === "string" && resultFile.path.trim() ? resultFile.path : undefined;
-  const jq = isRecord(resultFile.jq) ? resultFile.jq : undefined;
-  if (!path || !jq) return [];
-  const filters = [
-    ["full receipt", jq.full],
-    ["status", jq.status],
-    ["data", jq.data],
-    ["nodes", jq.nodes],
-    ["next cursor", jq.nextCursor],
-    ["has more", jq.hasMore],
-  ].filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].trim().length > 0);
-  if (filters.length === 0) return [];
-  const shell = resultFileShellFormatter();
-  const quotedPath = shell.quote(path);
+  if (!path) return [];
   return [
-    "## Full result",
-    "",
-    "JSON receipt: `figma-cli-result` schema version `1`.",
-    "",
-    `\`\`\`${shell.language}`,
-    ...filters.flatMap(([label, filter]) => [`# ${label}`, `jq ${shell.quote(filter)} -- ${quotedPath}`]),
-    "```",
+    `Result file: \`${path}\``,
+    ...formatResultAttentionSummary(result, presentation),
     "",
   ];
 }
 
-function resultFileShellFormatter(): { language: "powershell" | "sh"; quote(value: string): string } {
-  if (process.platform === "win32") {
-    return { language: "powershell", quote: quotePowerShellLiteral };
+function formatResultAttentionSummary(
+  result: unknown,
+  presentation: FigmaWorkspaceCliResultPresentation,
+): string[] {
+  if (!isRecord(result)) return [];
+  const warningCount = typeof result.warningCount === "number" ? result.warningCount : 0;
+  const diagnosticCount = typeof result.diagnosticCount === "number" ? result.diagnosticCount : 0;
+  const attention: string[] = [];
+  if ((warningCount > 0 || diagnosticCount > 0) && presentation.error === undefined) {
+    attention.push("Attention: warnings or diagnostics are present; inspect the result file for details.");
   }
-  return { language: "sh", quote: quotePosixShellLiteral };
-}
-
-function quotePowerShellLiteral(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-
-function quotePosixShellLiteral(value: string): string {
-  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+  if (result.hasMore === true) {
+    attention.push("Attention: inspect page hasMore=true; continue with nextCursor from the result file.");
+  }
+  return attention.length === 0 ? [] : ["", ...attention];
 }
 
 export const FIGMA_WORKSPACE_CLI_HELP = [
@@ -742,16 +733,20 @@ function existingResultFilePointer(result: unknown): Record<string, unknown> | u
 }
 
 function createResultFileSummary(result: unknown, resultFile: Record<string, unknown>): Record<string, unknown> {
-  const failure = isRecord(result) && result.ok === false ? presentationFailureForResult(result) : {};
-  const upstreamError = (isRecord(result) ? compactPresentationError(result.upstreamError) : undefined)
+  const record = isRecord(result) ? result : undefined;
+  const failure = record?.ok === false ? presentationFailureForResult(record) : {};
+  const upstreamError = (record ? compactPresentationError(record.upstreamError) : undefined)
     ?? (failure.isUpstream ? compactPresentationError(failure.error) : undefined);
   return {
     ...selectRecoveryFacts(result),
+    ...(Array.isArray(record?.warnings) && record.warnings.length > 0 ? { warningCount: record.warnings.length } : {}),
+    ...(Array.isArray(record?.diagnostics) && record.diagnostics.length > 0 ? { diagnosticCount: record.diagnostics.length } : {}),
+    ...(record?.hasMore === true ? { hasMore: true } : {}),
     error: upstreamError ? undefined : compactPresentationError(failure.error),
     recoveryHint: failure.recoveryHint,
     upstreamError,
-    ok: isRecord(result) ? result.ok !== false : true,
-    invocation: isRecord(result) ? result.invocation : undefined,
+    ok: record ? record.ok !== false : true,
+    invocation: record?.invocation,
     outputFiles: {
       resultFile,
     },
@@ -759,16 +754,20 @@ function createResultFileSummary(result: unknown, resultFile: Record<string, unk
 }
 
 function createResultPersistenceFailure(result: unknown, error: unknown): Record<string, unknown> {
-  const operationFailure = isRecord(result) && result.ok === false ? presentationFailureForResult(result) : {};
-  const upstreamError = (isRecord(result) ? compactPresentationError(result.upstreamError) : undefined)
+  const record = isRecord(result) ? result : undefined;
+  const operationFailure = record?.ok === false ? presentationFailureForResult(record) : {};
+  const upstreamError = (record ? compactPresentationError(record.upstreamError) : undefined)
     ?? (operationFailure.isUpstream ? compactPresentationError(operationFailure.error) : undefined);
   return {
     ...selectRecoveryFacts(result),
+    ...(Array.isArray(record?.warnings) && record.warnings.length > 0 ? { warningCount: record.warnings.length } : {}),
+    ...(Array.isArray(record?.diagnostics) && record.diagnostics.length > 0 ? { diagnosticCount: record.diagnostics.length } : {}),
+    ...(record?.hasMore === true ? { hasMore: true } : {}),
     operationError: upstreamError ? undefined : compactPresentationError(operationFailure.error),
     operationRecoveryHint: operationFailure.recoveryHint,
     upstreamError,
     ok: false,
-    invocation: isRecord(result) ? result.invocation : undefined,
+    invocation: record?.invocation,
     error: {
       code: "FIGMA_WORKSPACE_RESULT_PERSISTENCE_FAILED",
       message: `The oversized CLI result could not be persisted after the remote command returned: ${formatError(error)}`,

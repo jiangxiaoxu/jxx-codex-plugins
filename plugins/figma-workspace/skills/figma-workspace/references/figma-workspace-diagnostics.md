@@ -8,7 +8,7 @@ Use this reference only to choose the narrowest repair. Command results and diag
 - For TypeScript or Plugin API diagnostics, repair the reported source location, use `figma:api:search -- <selector>` to locate the declaration, and use `figma:api:read -- <selector>` when its complete record is required. If a bare selector is ambiguous, use the qualified selector printed by search. API lookup does not require source paths or line numbers.
 - For a missing or conflicting Figma target, pass a supported full node URL or an explicit file-plus-node pair. For a surface mismatch, choose the correct Design, FigJam, or Slides surface and compatible API.
 - For artifact, capture, or result-path failures, use a real non-linked permitted directory. See [local artifacts](figma-workspace-artifacts.md) and [safety](figma-workspace-safety.md).
-- For a complete oversized result, read `outputFiles.resultFile` with its `jq.full`, `jq.status`, or `jq.data` filter instead of parsing Restricted Markdown stdout. For inspect pagination errors, repair the cursor binding or range; do not reuse a cursor with another file, node, depth, or field list.
+- For a complete oversized result, read the `outputFiles.resultFile` path reported once in stdout and inspect the receipt's JSON fields directly instead of parsing Restricted Markdown stdout. For inspect pagination errors, repair the cursor binding or range; do not reuse a cursor with another file, node, depth, or field list.
 
 ## Preserve Mutation Evidence
 

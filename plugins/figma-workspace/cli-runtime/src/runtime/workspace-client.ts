@@ -3296,6 +3296,7 @@ async function handleInspect(
   const session = currentInvocationContext();
   const targetResolution = resolveRequestScopedTarget({
     target: args.target,
+    explicitFile: args.file,
     session,
     toolName: "figma:inspect",
   });
@@ -3390,6 +3391,7 @@ async function executeInspectStyle(
   const session = currentInvocationContext();
   const targetResolution = resolveRequestScopedTarget({
     target: args.target,
+    explicitFile: args.file,
     session,
     toolName: "figma:inspect",
   });

@@ -59,7 +59,7 @@ var init_constants = __esm({
     DEFAULT_CALLBACK_PATH = "/oauth/callback";
     DEFAULT_AUTH_TIMEOUT_MS = 18e4;
     DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-    DEFAULT_CLIENT_VERSION = "0.6.6";
+    DEFAULT_CLIENT_VERSION = "0.6.7";
     BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
     distDir = dirname(fileURLToPath(import.meta.url));
     PLUGIN_ROOT = resolve(distDir, "..");
@@ -22220,7 +22220,7 @@ function buildInspectPaginationCode(options) {
     "  if (__fields.indexOf('locked') !== -1 && 'locked' in __node) __result.locked = __node.locked;",
     "  if (__fields.indexOf('layoutMode') !== -1 && 'layoutMode' in __node) __result.layoutMode = __node.layoutMode;",
     "  if (__fields.indexOf('layoutPositioning') !== -1 && 'layoutPositioning' in __node) __result.layoutPositioning = __node.layoutPositioning;",
-    "  if (__fields.indexOf('characters') !== -1 && typeof __node.characters === 'string') __result.characters = __node.characters;",
+    "  if (__fields.indexOf('characters') !== -1 && 'characters' in __node && typeof __node.characters === 'string') __result.characters = __node.characters;",
     "  return __result;",
     "}",
     "const __stack = [];",
@@ -25887,6 +25887,7 @@ async function handleInspect(args, runtime) {
   const session = currentInvocationContext();
   const targetResolution = resolveRequestScopedTarget({
     target: args.target,
+    explicitFile: args.file,
     session,
     toolName: "figma:inspect"
   });
@@ -25968,6 +25969,7 @@ async function executeInspectStyle(args, runtime) {
   const session = currentInvocationContext();
   const targetResolution = resolveRequestScopedTarget({
     target: args.target,
+    explicitFile: args.file,
     session,
     toolName: "figma:inspect"
   });
@@ -30512,16 +30514,19 @@ function formatFigmaWorkspaceCommandMarkdown(command, result, input, presentatio
   if (isApiLookupInput(command, input)) {
     return formatFigmaWorkspaceApiHumanResult(result, input, presentation);
   }
+  const resultFileSummary = formatResultFileSummary(result, presentation);
   return [
     `# ${publicCommandName(command)}`,
     "",
     `Status: ${presentation.status.replaceAll("-", " ")}`,
     "",
     ...formatExecutionFailureSummary(result, presentation),
-    ...formatResultFileSummary(result),
-    "```json",
-    JSON.stringify(result, null, 2),
-    "```"
+    ...resultFileSummary,
+    ...resultFileSummary.length > 0 ? [] : [
+      "```json",
+      JSON.stringify(result, null, 2),
+      "```"
+    ]
   ].join("\n");
 }
 function formatFigmaWorkspaceApiJson(result) {
@@ -30667,45 +30672,29 @@ function formatExecutionFailureSummary(result, presentation) {
     ""
   ];
 }
-function formatResultFileSummary(result) {
+function formatResultFileSummary(result, presentation) {
   const resultFile = existingResultFilePointer(result);
   if (!resultFile) return [];
   const path = typeof resultFile.path === "string" && resultFile.path.trim() ? resultFile.path : void 0;
-  const jq = isRecord6(resultFile.jq) ? resultFile.jq : void 0;
-  if (!path || !jq) return [];
-  const filters = [
-    ["full receipt", jq.full],
-    ["status", jq.status],
-    ["data", jq.data],
-    ["nodes", jq.nodes],
-    ["next cursor", jq.nextCursor],
-    ["has more", jq.hasMore]
-  ].filter((entry) => typeof entry[1] === "string" && entry[1].trim().length > 0);
-  if (filters.length === 0) return [];
-  const shell = resultFileShellFormatter();
-  const quotedPath = shell.quote(path);
+  if (!path) return [];
   return [
-    "## Full result",
-    "",
-    "JSON receipt: `figma-cli-result` schema version `1`.",
-    "",
-    `\`\`\`${shell.language}`,
-    ...filters.flatMap(([label, filter]) => [`# ${label}`, `jq ${shell.quote(filter)} -- ${quotedPath}`]),
-    "```",
+    `Result file: \`${path}\``,
+    ...formatResultAttentionSummary(result, presentation),
     ""
   ];
 }
-function resultFileShellFormatter() {
-  if (process.platform === "win32") {
-    return { language: "powershell", quote: quotePowerShellLiteral };
+function formatResultAttentionSummary(result, presentation) {
+  if (!isRecord6(result)) return [];
+  const warningCount = typeof result.warningCount === "number" ? result.warningCount : 0;
+  const diagnosticCount = typeof result.diagnosticCount === "number" ? result.diagnosticCount : 0;
+  const attention = [];
+  if ((warningCount > 0 || diagnosticCount > 0) && presentation.error === void 0) {
+    attention.push("Attention: warnings or diagnostics are present; inspect the result file for details.");
   }
-  return { language: "sh", quote: quotePosixShellLiteral };
-}
-function quotePowerShellLiteral(value) {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-function quotePosixShellLiteral(value) {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
+  if (result.hasMore === true) {
+    attention.push("Attention: inspect page hasMore=true; continue with nextCursor from the result file.");
+  }
+  return attention.length === 0 ? [] : ["", ...attention];
 }
 var FIGMA_WORKSPACE_CLI_HELP = [
   "Stateless Figma Workspace internal runtime.",
@@ -30882,30 +30871,38 @@ function existingResultFilePointer(result) {
   return result.outputFiles.resultFile;
 }
 function createResultFileSummary(result, resultFile) {
-  const failure = isRecord6(result) && result.ok === false ? presentationFailureForResult(result) : {};
-  const upstreamError = (isRecord6(result) ? compactPresentationError(result.upstreamError) : void 0) ?? (failure.isUpstream ? compactPresentationError(failure.error) : void 0);
+  const record3 = isRecord6(result) ? result : void 0;
+  const failure = record3?.ok === false ? presentationFailureForResult(record3) : {};
+  const upstreamError = (record3 ? compactPresentationError(record3.upstreamError) : void 0) ?? (failure.isUpstream ? compactPresentationError(failure.error) : void 0);
   return {
     ...selectRecoveryFacts(result),
+    ...Array.isArray(record3?.warnings) && record3.warnings.length > 0 ? { warningCount: record3.warnings.length } : {},
+    ...Array.isArray(record3?.diagnostics) && record3.diagnostics.length > 0 ? { diagnosticCount: record3.diagnostics.length } : {},
+    ...record3?.hasMore === true ? { hasMore: true } : {},
     error: upstreamError ? void 0 : compactPresentationError(failure.error),
     recoveryHint: failure.recoveryHint,
     upstreamError,
-    ok: isRecord6(result) ? result.ok !== false : true,
-    invocation: isRecord6(result) ? result.invocation : void 0,
+    ok: record3 ? record3.ok !== false : true,
+    invocation: record3?.invocation,
     outputFiles: {
       resultFile
     }
   };
 }
 function createResultPersistenceFailure(result, error2) {
-  const operationFailure = isRecord6(result) && result.ok === false ? presentationFailureForResult(result) : {};
-  const upstreamError = (isRecord6(result) ? compactPresentationError(result.upstreamError) : void 0) ?? (operationFailure.isUpstream ? compactPresentationError(operationFailure.error) : void 0);
+  const record3 = isRecord6(result) ? result : void 0;
+  const operationFailure = record3?.ok === false ? presentationFailureForResult(record3) : {};
+  const upstreamError = (record3 ? compactPresentationError(record3.upstreamError) : void 0) ?? (operationFailure.isUpstream ? compactPresentationError(operationFailure.error) : void 0);
   return {
     ...selectRecoveryFacts(result),
+    ...Array.isArray(record3?.warnings) && record3.warnings.length > 0 ? { warningCount: record3.warnings.length } : {},
+    ...Array.isArray(record3?.diagnostics) && record3.diagnostics.length > 0 ? { diagnosticCount: record3.diagnostics.length } : {},
+    ...record3?.hasMore === true ? { hasMore: true } : {},
     operationError: upstreamError ? void 0 : compactPresentationError(operationFailure.error),
     operationRecoveryHint: operationFailure.recoveryHint,
     upstreamError,
     ok: false,
-    invocation: isRecord6(result) ? result.invocation : void 0,
+    invocation: record3?.invocation,
     error: {
       code: "FIGMA_WORKSPACE_RESULT_PERSISTENCE_FAILED",
       message: `The oversized CLI result could not be persisted after the remote command returned: ${formatError2(error2)}`

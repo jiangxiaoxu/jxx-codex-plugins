@@ -1,6 +1,6 @@
 # Figma Workspace
 
-Figma Workspace 0.6.6 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
+Figma Workspace 0.6.7 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
 
 ## Quick Start
 
@@ -20,7 +20,7 @@ npm --silent run figma:inspect -- --file FILE_KEY --node 230:2 --surface design 
 npm --silent run figma:run -- --file "https://www.figma.com/design/FILE_KEY/File" --script C:/work/project/change.figma.ts
 ```
 
-Use generated `--help` for each exact input schema, option, limit, and JSON stdin/file contract. Typed results are Restricted Markdown. If a result names `outputFiles.resultFile`, use the directly executable commands in its `Full result` section with the `jq.full`, `jq.status`, or `jq.data` filter; do not parse stdout as JSON.
+Use generated `--help` for each exact input schema, option, limit, and JSON stdin/file contract. Typed results are Restricted Markdown. If a result names `outputFiles.resultFile`, stdout reports the receipt path once; read that receipt directly and do not parse stdout as JSON.
 
 Every command that requires a Figma file or node target supplies it in that invocation. `figma:upstream:list` and `figma:upstream:read` are targetless; `figma:upstream:call` follows the selected live schema instead of inheriting a target. Use a full file or node URL whenever possible. A node URL's `node-id=230-2` converts to Plugin API ID `230:2`; a bare node ID is invalid without an explicit file. URLs infer Design, FigJam, or Slides; a raw fileKey needs `--surface` when the selected command needs a surface.
 
@@ -41,7 +41,7 @@ For `failed_atomic`, stdout directly shows a compact remote error code/message a
 
 ## Local Artifacts And Login
 
-The CLI does not create a persistent workspace record. Shells own `.figma.ts` creation and repeat a Figma target only for operations that require one. Pure inline reads do not create local files. When a command needs a persisted result (for omitted inline output, a remote error, or unrendered non-text content), the CLI writes one complete `outputFiles.resultFile` receipt; use its `jq.full`, `jq.status`, and `jq.data` filters to read the receipt, status, or business data. A direct call over the upstream response budget returns a bounded resource-limit diagnostic without persisting the payload. Direct and typed protocol receipts retain sanitized `content`, `structuredContent`, `isError`, and standard ContentBlock `annotations`; `figma:run` keeps normalized execution data in `result`. Receipts strip protocol `_meta`, never expose tool-definition annotations, and leave business `_meta` inside `structuredContent` unchanged. When a command needs to write an oversized result, diagnostic, capture, or download and no explicit path is supplied, it returns an absolute path under an invocation-specific OS temp directory. Use `--output-dir`, `--image-file`, or a download output option when a later shell step needs a durable location.
+The CLI does not create a persistent workspace record. Shells own `.figma.ts` creation and repeat a Figma target only for operations that require one. Pure inline reads do not create local files. When a command needs a persisted result (for omitted inline output, a remote error, or unrendered non-text content), the CLI writes one complete `outputFiles.resultFile` receipt; stdout reports its path once. A direct call over the upstream response budget returns a bounded resource-limit diagnostic without persisting the payload. Direct and typed protocol receipts retain sanitized `content`, `structuredContent`, `isError`, and standard ContentBlock `annotations`; `figma:run` keeps normalized execution data in `result`. Receipts strip protocol `_meta`, never expose tool-definition annotations, and leave business `_meta` inside `structuredContent` unchanged. When a command needs to write an oversized result, diagnostic, capture, or download, pass an absolute `--output-dir` inside the current user workspace; for file-only options pass an absolute path inside that workspace. If omitted, the CLI falls back to an invocation-specific OS temp directory, which agents must not rely on.
 
 The OS-temp fileKey lock covers `figma:run`, `figma:assets:apply`, `figma:code-connect:apply`, and `figma:upstream:call` only when that call resolves a fileKey; it does not serialize every mutation. Managed outputs reject links and reparse points and are written atomically. The lock is not distributed durability.
 

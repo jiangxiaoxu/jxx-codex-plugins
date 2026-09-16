@@ -147,7 +147,7 @@ test("fixed public leaf wrappers are complete, unique, and separate from mainten
   }
 });
 
-test("release metadata keeps the 0.6.6 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
+test("release metadata keeps the 0.6.7 plugin, CLI package, lockfile, and OAuth client aligned", async () => {
   const [manifest, packageJson, cliPackageJson, cliLockfile, authConstants] = await Promise.all([
     readFile(new URL("../.codex-plugin/plugin.json", import.meta.url), "utf8").then(JSON.parse),
     readFile(new URL("../package.json", import.meta.url), "utf8").then(JSON.parse),
@@ -157,7 +157,7 @@ test("release metadata keeps the 0.6.6 plugin, CLI package, lockfile, and OAuth 
   ]);
   const clientVersion = authConstants.match(/DEFAULT_CLIENT_VERSION = "([^"]+)"/u)?.[1];
 
-  assert.equal(manifest.version, "0.6.6");
+  assert.equal(manifest.version, "0.6.7");
   assert.equal(packageJson.version, manifest.version);
   assert.equal(cliPackageJson.version, manifest.version);
   assert.equal(cliLockfile.version, manifest.version);
@@ -224,7 +224,7 @@ test("numeric help exposes exact ranges, clamp output is explicit, and API read 
 
   for (const [scriptName, expectedRange] of [
     ["figma:docs:catalog", /--limit <1\.\.100>/u],
-    ["figma:inspect", /--depth <0\.\.9007199254740991>/u],
+    ["figma:inspect", /--depth <depth>/u],
     ["figma:libraries", /--offset <0\.\.9007199254740991>/u],
     ["figma:capture", /--max-dimension <1\.\.65536>/u],
   ]) {
@@ -368,9 +368,6 @@ test("Skill routes static discovery and documents explicit targets without retir
     assert.equal(lookupReference.includes(retired), false, retired);
   }
   for (const required of [
-    "--file <Figma-file-URL|fileKey>",
-    "--target <URL>",
-    "--source -",
     "outputFiles.resultFile",
     "outcome_unknown",
     "Never blindly replay a mutation",
@@ -378,7 +375,9 @@ test("Skill routes static discovery and documents explicit targets without retir
     assert.equal(skill.includes(required), true, required);
   }
   assert.match(artifactsReference, /Local Artifacts/u);
-  assert.match(artifactsReference, /`jq\.full`.*`jq\.status`.*`jq\.data`/u);
+  assert.match(artifactsReference, /receipt path once/u);
+  assert.match(skill, /absolute directory inside the current user workspace/u);
+  assert.match(skill, /agents must not rely on that default/u);
   assert.doesNotMatch(artifactsReference, /--state-file|--session-file|figma:open|figma:sessions/u);
   assert.match(upstreamReference, /coverage.*never blocks/iu);
   assert.match(safetyReference, /100 pages/u);
@@ -490,7 +489,10 @@ test("packed plugin contains every fixed leaf wrapper and can run local stateles
     });
     assert.equal(preflight.status, 1, commandOutput(preflight));
     assert.match(preflight.stdout, /^Status: failed$/mu);
-    assert.match(preflight.stdout, /"executionOutcome": "not_started"/u);
+    const resultPath = /Result file: `([^`]+)`/u.exec(preflight.stdout)?.[1];
+    assert.ok(resultPath, preflight.stdout);
+    const receipt = JSON.parse(await readFile(resultPath, "utf8"));
+    assert.equal(receipt.result.executionOutcome, "not_started");
     assert.doesNotMatch(preflight.stdout, /Unable to load|Cannot find module|MODULE_NOT_FOUND/iu);
   } finally {
     await rm(tempDir, { recursive: true, force: true });

@@ -229378,7 +229378,7 @@ var DEFAULT_CALLBACK_PORT = 18765;
 var DEFAULT_CALLBACK_PATH = "/oauth/callback";
 var DEFAULT_AUTH_TIMEOUT_MS = 18e4;
 var DEFAULT_CLIENT_NAME = "jxx-codex-figma-workspace";
-var DEFAULT_CLIENT_VERSION = "0.6.6";
+var DEFAULT_CLIENT_VERSION = "0.6.7";
 var BRIDGE_OAUTH_CACHE_FILENAME = ".figma-workspace-oauth.json";
 var distDir = dirname(fileURLToPath(import.meta.url));
 var PLUGIN_ROOT = resolve(distDir, "..");
@@ -232968,7 +232968,7 @@ function buildInspectPaginationCode(options) {
     "  if (__fields.indexOf('locked') !== -1 && 'locked' in __node) __result.locked = __node.locked;",
     "  if (__fields.indexOf('layoutMode') !== -1 && 'layoutMode' in __node) __result.layoutMode = __node.layoutMode;",
     "  if (__fields.indexOf('layoutPositioning') !== -1 && 'layoutPositioning' in __node) __result.layoutPositioning = __node.layoutPositioning;",
-    "  if (__fields.indexOf('characters') !== -1 && typeof __node.characters === 'string') __result.characters = __node.characters;",
+    "  if (__fields.indexOf('characters') !== -1 && 'characters' in __node && typeof __node.characters === 'string') __result.characters = __node.characters;",
     "  return __result;",
     "}",
     "const __stack = [];",
@@ -237102,6 +237102,7 @@ async function handleInspect(args, runtime) {
   const session = currentInvocationContext();
   const targetResolution = resolveRequestScopedTarget({
     target: args.target,
+    explicitFile: args.file,
     session,
     toolName: "figma:inspect"
   });
@@ -237183,6 +237184,7 @@ async function executeInspectStyle(args, runtime) {
   const session = currentInvocationContext();
   const targetResolution = resolveRequestScopedTarget({
     target: args.target,
+    explicitFile: args.file,
     session,
     toolName: "figma:inspect"
   });
@@ -241510,16 +241512,19 @@ function formatFigmaWorkspaceCommandMarkdown(command, result, input, presentatio
   if (isApiLookupInput(command, input)) {
     return formatFigmaWorkspaceApiHumanResult(result, input, presentation);
   }
+  const resultFileSummary = formatResultFileSummary(result, presentation);
   return [
     `# ${publicCommandName(command)}`,
     "",
     `Status: ${presentation.status.replaceAll("-", " ")}`,
     "",
     ...formatExecutionFailureSummary(result, presentation),
-    ...formatResultFileSummary(result),
-    "```json",
-    JSON.stringify(result, null, 2),
-    "```"
+    ...resultFileSummary,
+    ...resultFileSummary.length > 0 ? [] : [
+      "```json",
+      JSON.stringify(result, null, 2),
+      "```"
+    ]
   ].join("\n");
 }
 function formatFigmaWorkspaceApiJson(result) {
@@ -241665,45 +241670,29 @@ function formatExecutionFailureSummary(result, presentation) {
     ""
   ];
 }
-function formatResultFileSummary(result) {
+function formatResultFileSummary(result, presentation) {
   const resultFile = existingResultFilePointer(result);
   if (!resultFile) return [];
   const path = typeof resultFile.path === "string" && resultFile.path.trim() ? resultFile.path : void 0;
-  const jq = isRecord7(resultFile.jq) ? resultFile.jq : void 0;
-  if (!path || !jq) return [];
-  const filters = [
-    ["full receipt", jq.full],
-    ["status", jq.status],
-    ["data", jq.data],
-    ["nodes", jq.nodes],
-    ["next cursor", jq.nextCursor],
-    ["has more", jq.hasMore]
-  ].filter((entry) => typeof entry[1] === "string" && entry[1].trim().length > 0);
-  if (filters.length === 0) return [];
-  const shell = resultFileShellFormatter();
-  const quotedPath = shell.quote(path);
+  if (!path) return [];
   return [
-    "## Full result",
-    "",
-    "JSON receipt: `figma-cli-result` schema version `1`.",
-    "",
-    `\`\`\`${shell.language}`,
-    ...filters.flatMap(([label, filter]) => [`# ${label}`, `jq ${shell.quote(filter)} -- ${quotedPath}`]),
-    "```",
+    `Result file: \`${path}\``,
+    ...formatResultAttentionSummary(result, presentation),
     ""
   ];
 }
-function resultFileShellFormatter() {
-  if (process.platform === "win32") {
-    return { language: "powershell", quote: quotePowerShellLiteral };
+function formatResultAttentionSummary(result, presentation) {
+  if (!isRecord7(result)) return [];
+  const warningCount = typeof result.warningCount === "number" ? result.warningCount : 0;
+  const diagnosticCount = typeof result.diagnosticCount === "number" ? result.diagnosticCount : 0;
+  const attention = [];
+  if ((warningCount > 0 || diagnosticCount > 0) && presentation.error === void 0) {
+    attention.push("Attention: warnings or diagnostics are present; inspect the result file for details.");
   }
-  return { language: "sh", quote: quotePosixShellLiteral };
-}
-function quotePowerShellLiteral(value) {
-  return `'${value.replaceAll("'", "''")}'`;
-}
-function quotePosixShellLiteral(value) {
-  return `'${value.replaceAll("'", `'"'"'`)}'`;
+  if (result.hasMore === true) {
+    attention.push("Attention: inspect page hasMore=true; continue with nextCursor from the result file.");
+  }
+  return attention.length === 0 ? [] : ["", ...attention];
 }
 var FIGMA_WORKSPACE_CLI_HELP = [
   "Stateless Figma Workspace internal runtime.",
@@ -241877,30 +241866,38 @@ function existingResultFilePointer(result) {
   return result.outputFiles.resultFile;
 }
 function createResultFileSummary(result, resultFile) {
-  const failure = isRecord7(result) && result.ok === false ? presentationFailureForResult(result) : {};
-  const upstreamError = (isRecord7(result) ? compactPresentationError(result.upstreamError) : void 0) ?? (failure.isUpstream ? compactPresentationError(failure.error) : void 0);
+  const record3 = isRecord7(result) ? result : void 0;
+  const failure = record3?.ok === false ? presentationFailureForResult(record3) : {};
+  const upstreamError = (record3 ? compactPresentationError(record3.upstreamError) : void 0) ?? (failure.isUpstream ? compactPresentationError(failure.error) : void 0);
   return {
     ...selectRecoveryFacts(result),
+    ...Array.isArray(record3?.warnings) && record3.warnings.length > 0 ? { warningCount: record3.warnings.length } : {},
+    ...Array.isArray(record3?.diagnostics) && record3.diagnostics.length > 0 ? { diagnosticCount: record3.diagnostics.length } : {},
+    ...record3?.hasMore === true ? { hasMore: true } : {},
     error: upstreamError ? void 0 : compactPresentationError(failure.error),
     recoveryHint: failure.recoveryHint,
     upstreamError,
-    ok: isRecord7(result) ? result.ok !== false : true,
-    invocation: isRecord7(result) ? result.invocation : void 0,
+    ok: record3 ? record3.ok !== false : true,
+    invocation: record3?.invocation,
     outputFiles: {
       resultFile
     }
   };
 }
 function createResultPersistenceFailure(result, error2) {
-  const operationFailure = isRecord7(result) && result.ok === false ? presentationFailureForResult(result) : {};
-  const upstreamError = (isRecord7(result) ? compactPresentationError(result.upstreamError) : void 0) ?? (operationFailure.isUpstream ? compactPresentationError(operationFailure.error) : void 0);
+  const record3 = isRecord7(result) ? result : void 0;
+  const operationFailure = record3?.ok === false ? presentationFailureForResult(record3) : {};
+  const upstreamError = (record3 ? compactPresentationError(record3.upstreamError) : void 0) ?? (operationFailure.isUpstream ? compactPresentationError(operationFailure.error) : void 0);
   return {
     ...selectRecoveryFacts(result),
+    ...Array.isArray(record3?.warnings) && record3.warnings.length > 0 ? { warningCount: record3.warnings.length } : {},
+    ...Array.isArray(record3?.diagnostics) && record3.diagnostics.length > 0 ? { diagnosticCount: record3.diagnostics.length } : {},
+    ...record3?.hasMore === true ? { hasMore: true } : {},
     operationError: upstreamError ? void 0 : compactPresentationError(operationFailure.error),
     operationRecoveryHint: operationFailure.recoveryHint,
     upstreamError,
     ok: false,
-    invocation: isRecord7(result) ? result.invocation : void 0,
+    invocation: record3?.invocation,
     error: {
       code: "FIGMA_WORKSPACE_RESULT_PERSISTENCE_FAILED",
       message: `The oversized CLI result could not be persisted after the remote command returned: ${formatError2(error2)}`
@@ -242684,8 +242681,8 @@ function formatCommandHelp(command) {
 Unknown public leaf. Use figma:help for the complete stateless command inventory.
 `;
   const inspectDetails = command === "inspect" ? `
-Inspect returns one live, depth-first page of flat nodes. Pass nextCursor with the same explicit file and node to read the next page; changes between pages can repeat or omit nodes. By default it returns ${FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.join(", ")}; use --fields with a non-empty comma-separated subset to reduce a large node. Structural id, type, parentId, depth, and childCount are always returned. --cursor and --fields apply only to --mode inspect; style keeps its existing aggregation behavior.` : "";
-  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded." : command === "upstream:call" ? "\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. When a complete result is persisted, outputFiles.resultFile is the single figma-cli-result JSON receipt; stdout prints exact jq filters for its status and data. An over-budget upstream response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry." : command === "code-connect:apply" ? "\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write." : command === "code-connect:plan" ? "\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback." : command === "code-connect:verify" ? "\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : command === "docs:catalog" ? "\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments." : command === "api:read" ? "\nPass a bare or qualified Plugin API selector, such as fontName, BaseNonResizableTextMixin.fontName, or figma.createFrame(). A bare selector succeeds only when it identifies one owner; otherwise the result lists qualified selectors to copy. Default output is readable TypeScript." : command === "api:search" ? "\nPass a bare, qualified, or call-shaped Plugin API selector. Results show copyable qualified selectors for figma:api:read. Out-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "docs:search" ? "\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "design-system" ? "\nInput JSON must contain an ordered non-empty queries array. Each query item has an entity (component, variable, or style) and one search intent; one upstream batch call is made for the complete array." : command === "assets:apply" ? "\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow." : command === "assets:download" ? "\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg." : "";
+Inspect returns one live, depth-first page of flat nodes. --depth is descendant depth: 0 reads only the target and inspect mode defaults to 2. Pass nextCursor with the same explicit file and node to continue pagination; changes between pages can repeat or omit nodes. By default it returns ${FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.join(", ")}; use --fields with a non-empty comma-separated subset to reduce a large node. Structural id, type, parentId, depth, and childCount are always returned. --cursor and --fields apply only to --mode inspect; style requires a positive depth and keeps its existing aggregation behavior.` : "";
+  const details = command === "run" ? "\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded." : command === "upstream:call" ? "\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. When a complete result is persisted, outputFiles.resultFile is the single figma-cli-result JSON receipt; stdout identifies the receipt path once. An over-budget upstream response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry." : command === "code-connect:apply" ? "\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write." : command === "code-connect:plan" ? "\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback." : command === "code-connect:verify" ? "\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping." : command === "doctor" ? "\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required." : command === "docs:catalog" ? "\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments." : command === "api:read" ? "\nPass a bare or qualified Plugin API selector, such as fontName, BaseNonResizableTextMixin.fontName, or figma.createFrame(). A bare selector succeeds only when it identifies one owner; otherwise the result lists qualified selectors to copy. Default output is readable TypeScript." : command === "api:search" ? "\nPass a bare, qualified, or call-shaped Plugin API selector. Results show copyable qualified selectors for figma:api:read. Out-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "docs:search" ? "\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget." : command === "design-system" ? "\nInput JSON must contain an ordered non-empty queries array. Each query item has an entity (component, variable, or style) and one search intent; one upstream batch call is made for the complete array." : command === "assets:apply" ? "\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow." : command === "assets:download" ? "\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg." : "";
   return `# figma:${command}
 
 Usage: ${PUBLIC_COMMAND_USAGE[command]}${details}${inspectDetails}
@@ -242700,7 +242697,7 @@ var PUBLIC_COMMAND_USAGE = {
   "api:search": `figma:api:search <selector> [--limit <${LOOKUP_RESULTS_MIN}..${LOOKUP_RESULTS_MAX}>] [--snippet-lines <${LOOKUP_SNIPPET_LINES_MIN}..${LOOKUP_SNIPPET_LINES_MAX}>]`,
   doctor: "figma:doctor",
   metadata: `figma:metadata (--target <Design-node-url> | --file <Design-url|key> [--node <node-id>]) [--surface design] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
-  inspect: `figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <${INSPECT_DEPTH_MIN}..${INSPECT_DEPTH_MAX}>] [--fields <field[,field...]>] [--cursor <opaque>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  inspect: `figma:inspect (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--mode inspect|style] [--depth <depth>] [--fields <field[,field...]>] [--cursor <opaque>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "design-context": `figma:design-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--force-code] [--no-code-connect] [--exclude-screenshot] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "motion-context": `figma:motion-context (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--client-languages <list>] [--client-frameworks <list>] [--recursive] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   variables: `figma:variables (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--refresh] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,

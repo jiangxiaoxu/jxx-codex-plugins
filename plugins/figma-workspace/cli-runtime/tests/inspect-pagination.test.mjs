@@ -83,6 +83,25 @@ test("inspect pagination executes the generated code as bounded full envelopes w
   );
 });
 
+test("default characters access skips unsupported non-text node properties", async () => {
+  const frame = new Proxy({ id: NODE_ID, type: "FRAME", name: "Frame", children: [] }, {
+    get(target, property, receiver) {
+      if (property === "characters") throw new Error("FRAME does not expose characters");
+      return Reflect.get(target, property, receiver);
+    },
+  });
+  const text = { id: "1:2", type: "TEXT", name: "Text", characters: "visible text", children: [] };
+  const textCapable = { id: "1:3", type: "STICKY", name: "Sticky", characters: "sticky text", children: [] };
+  frame.children = [text, textCapable];
+  const page = pagination.resolveInspectPagination({ fileKey: FILE_KEY, nodeId: NODE_ID, depth: 1 });
+  const envelope = await executeGeneratedPage(page, frame);
+  const result = pagination.finalizeInspectPaginationResult(envelope.result, page);
+  assert.equal(result.ok, true);
+  assert.equal("characters" in result.nodes[0], false);
+  assert.equal(result.nodes[1].characters, "visible text");
+  assert.equal(result.nodes[2].characters, "sticky text");
+});
+
 test("a selected node larger than the budget produces a compact error envelope and does not shorten its text", async () => {
   const sentinel = "FULL_TEXT_MUST_NOT_BE_EMITTED";
   const root = {
