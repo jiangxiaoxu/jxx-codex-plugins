@@ -17,7 +17,14 @@ def record(kind, ordinal, payload):
     return {"ordinal": ordinal, "type": kind, "payload": payload}
 
 
-def write_rollout(path, session_id, thread_id, usage=None, compacted=None):
+def write_rollout(
+    path,
+    session_id,
+    thread_id,
+    usage=None,
+    compacted=None,
+    capacity=500_000,
+):
     rows = [
         record("session_meta", 0, {"id": thread_id, "session_id": session_id}),
         record(
@@ -26,7 +33,7 @@ def write_rollout(path, session_id, thread_id, usage=None, compacted=None):
             {
                 "type": "task_started",
                 "turn_id": "turn-1",
-                "model_context_window": 500_000,
+                "model_context_window": capacity,
             },
         ),
     ]
@@ -61,6 +68,23 @@ def append_usage(path, ordinal, usage):
         )
 
 
+def append_record(path, row):
+    with path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(row) + "\n")
+
+
+def write_codex_index(path, rows=None, create_table=True):
+    connection = sqlite3.connect(path)
+    if create_table:
+        connection.execute(
+            "CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT)"
+        )
+        if rows:
+            connection.executemany("INSERT INTO threads VALUES (?, ?)", rows)
+    connection.commit()
+    connection.close()
+
+
 class ContextWindowPolicyTests(unittest.TestCase):
     def invoke_policy(self, state, command, thread_id="thread-a", extra_env=None):
         environment = os.environ.copy()
@@ -90,6 +114,40 @@ class ContextWindowPolicyTests(unittest.TestCase):
             input=json.dumps(request),
             text=True,
             capture_output=True,
+            check=False,
+        )
+
+    def invoke_usage(
+        self,
+        codex_state,
+        thread_id="thread-a",
+        session_id="session-a",
+        extra_args=None,
+        codex_home=None,
+    ):
+        environment = os.environ.copy()
+        environment.pop("CODEX_THREAD_ID", None)
+        environment.pop("CODEX_SESSION_ID", None)
+        if thread_id is not None:
+            environment["CODEX_THREAD_ID"] = thread_id
+        if session_id is not None:
+            environment["CODEX_SESSION_ID"] = session_id
+        if codex_home is not None:
+            environment["CODEX_HOME"] = str(codex_home)
+        command = [
+            sys.executable,
+            str(POLICY_SCRIPT),
+            "usage",
+            "--codex-state-db",
+            str(codex_state),
+        ]
+        if extra_args:
+            command.extend(extra_args)
+        return subprocess.run(
+            command,
+            text=True,
+            capture_output=True,
+            env=environment,
             check=False,
         )
 
@@ -260,6 +318,145 @@ class ContextWindowPolicyTests(unittest.TestCase):
             self.assertIn("Context Window Usage: 150K", after_compaction.stdout)
             persisted = self.invoke_policy(state, ["show"])
             self.assertEqual(json.loads(persisted.stdout)["mode"], "custom")
+
+    def test_usage_reports_effective_window_without_policy_or_index_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            codex_state = root / "state_5.sqlite"
+            codex_home = root / "codex-home"
+            write_rollout(
+                transcript,
+                "session-a",
+                "thread-a",
+                usage=73_000,
+                capacity=800_000,
+            )
+            write_codex_index(codex_state, [("thread-a", str(transcript))])
+            before = codex_state.read_bytes()
+
+            result = self.invoke_usage(
+                codex_state,
+                codex_home=codex_home,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout),
+                {
+                    "thread_id": "thread-a",
+                    "used_tokens": 73_000,
+                    "model_context_window": 800_000,
+                    "effective_window_tokens": 680_000,
+                    "used_percent": 11,
+                    "display": "73K/680K (11% used)",
+                },
+            )
+            self.assertEqual(codex_state.read_bytes(), before)
+            self.assertFalse(
+                (codex_home / "state" / "context-window-rollover-reminder-v2.sqlite3").exists()
+            )
+
+            # Percentages remain above 100 rather than being clamped.
+            write_rollout(
+                transcript,
+                "session-a",
+                "thread-a",
+                usage=900_000,
+                capacity=800_000,
+            )
+            over_window = self.invoke_usage(codex_state, codex_home=codex_home)
+            self.assertEqual(over_window.returncode, 0, over_window.stderr)
+            self.assertEqual(json.loads(over_window.stdout)["used_percent"], 132)
+            self.assertEqual(
+                json.loads(over_window.stdout)["display"], "900K/680K (132% used)"
+            )
+
+    def test_usage_requires_both_identities_and_rejects_policy_state_db(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            codex_state = root / "state_5.sqlite"
+            missing_thread = self.invoke_usage(codex_state, thread_id=None)
+            self.assertEqual(missing_thread.returncode, 3)
+            self.assertIn("CODEX_THREAD_ID", missing_thread.stderr)
+            missing_session = self.invoke_usage(codex_state, session_id=None)
+            self.assertEqual(missing_session.returncode, 3)
+            self.assertIn("CODEX_SESSION_ID", missing_session.stderr)
+
+            policy_state = root / "policy.sqlite3"
+            rejected = self.invoke_usage(
+                codex_state,
+                extra_args=["--state-db", str(policy_state)],
+            )
+            self.assertEqual(rejected.returncode, 3)
+            self.assertIn("only for policy state", rejected.stderr)
+            self.assertFalse(policy_state.exists())
+
+    def test_usage_identity_compaction_and_capacity_failures_are_explicit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            codex_state = root / "state_5.sqlite"
+            write_rollout(
+                transcript,
+                "session-a",
+                "thread-a",
+                usage=73_000,
+                capacity=800_000,
+            )
+            write_codex_index(codex_state, [("thread-a", str(transcript))])
+
+            wrong_session = self.invoke_usage(codex_state, session_id="session-b")
+            self.assertEqual(wrong_session.returncode, 6)
+            self.assertIn("identity-error", wrong_session.stderr)
+            wrong_thread = self.invoke_usage(codex_state, thread_id="thread-b")
+            self.assertEqual(wrong_thread.returncode, 7)
+            self.assertIn("state-error", wrong_thread.stderr)
+
+            append_record(transcript, record("compacted", 3, {}))
+            stale = self.invoke_usage(codex_state)
+            self.assertEqual(stale.returncode, 5)
+            self.assertIn("transcript-error", stale.stderr)
+            self.assertIn("no current token usage", stale.stderr)
+
+            no_capacity = root / "no-capacity.jsonl"
+            write_rollout(
+                no_capacity,
+                "session-a",
+                "thread-a",
+                usage=73_000,
+                capacity=None,
+            )
+            connection = sqlite3.connect(codex_state)
+            connection.execute(
+                "UPDATE threads SET rollout_path = ? WHERE id = ?",
+                (str(no_capacity), "thread-a"),
+            )
+            connection.commit()
+            connection.close()
+            missing_capacity = self.invoke_usage(codex_state)
+            self.assertEqual(missing_capacity.returncode, 5)
+            self.assertIn("model context window", missing_capacity.stderr)
+
+    def test_usage_locator_requires_readable_index_table_row_and_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            no_table = root / "no-table.sqlite"
+            write_codex_index(no_table, create_table=False)
+            missing_table = self.invoke_usage(no_table)
+            self.assertEqual(missing_table.returncode, 7)
+            self.assertIn("threads index", missing_table.stderr)
+
+            no_row = root / "no-row.sqlite"
+            write_codex_index(no_row, [])
+            missing_row = self.invoke_usage(no_row)
+            self.assertEqual(missing_row.returncode, 7)
+            self.assertIn("no thread record", missing_row.stderr)
+
+            no_path = root / "no-path.sqlite"
+            write_codex_index(no_path, [("thread-a", None)])
+            missing_path = self.invoke_usage(no_path)
+            self.assertEqual(missing_path.returncode, 7)
+            self.assertIn("rollout_path", missing_path.stderr)
 
     def test_malformed_schema_and_invalid_policy_fail_without_fallback(self):
         with tempfile.TemporaryDirectory() as directory:

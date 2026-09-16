@@ -102,6 +102,7 @@ and restoring model defaults. Its companion script is `scripts/context_window_po
 
 ```powershell
 python "<plugin-root>/scripts/context_window_policy.py" show
+python "<plugin-root>/scripts/context_window_policy.py" usage
 python "<plugin-root>/scripts/context_window_policy.py" set --start-k 150 --interval-k 50
 python "<plugin-root>/scripts/context_window_policy.py" reset
 ```
@@ -127,6 +128,31 @@ Creating this table does not alter existing `session_state` rows. Policy records
 by reminder-history eviction; only an explicit reset removes the selected thread's override.
 The CLI writes and the hook reads policies under SQLite transaction locking. Invalid stored
 policies or table schemas fail with a state diagnostic rather than silently reverting to defaults.
+
+### Context usage query
+
+Version 0.1.15 adds the read-only `usage` command to the policy script. It returns JSON containing
+`thread_id`, `used_tokens`, `model_context_window`, `effective_window_tokens`, `used_percent`, and
+`display`. For example, 73,000 tokens used with an 800,000-token model window produces
+`73K/680K (11% used)`.
+
+The effective denominator is `model_context_window * 85 // 100`. Displayed K counts are rounded down
+to whole thousands; the percentage is rounded to the nearest integer using the unrounded token
+counts, with halves rounded up. Values above 100% are retained. This display does not change the
+hook's reminder thresholds or messages.
+
+The command uses `CODEX_THREAD_ID` to read `threads.rollout_path` from
+`%CODEX_HOME%/state_5.sqlite` (or `~/.codex/state_5.sqlite` when unset), opened read-only.
+This is a Codex internal schema dependency; a missing database, incompatible schema, missing row,
+or invalid path produces a diagnostic. The command does not search other databases or guess the
+latest transcript. `usage --codex-state-db <path>` supports tests or explicitly managed
+installations. The policy database option `--state-db` is not applicable to usage queries.
+
+Both `CODEX_THREAD_ID` and `CODEX_SESSION_ID` are required to validate the located transcript.
+The reported values come from its latest usage record and that record's corresponding turn
+capacity, not a live count including the query itself. A compacted window with no fresh usage,
+missing capacity, or mismatched identity fails explicitly. Querying usage does not create or
+modify the plugin policy database or Codex index.
 
 ### Reminder history
 
