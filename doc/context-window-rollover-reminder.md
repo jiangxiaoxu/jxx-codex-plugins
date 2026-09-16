@@ -72,12 +72,22 @@ independently of the three reminder thresholds.
 
 ## Runtime state and behavior
 
-### Manual thread policy
+### User-requested thread policy
 
 Version 0.1.12 adds manual thread policies while retaining the existing v2 state database.
 
-Explicitly invoke `$context-window-policy` to configure the current thread. The skill sets
-`policy.allow_implicit_invocation: false` in `agents/openai.yaml`, so it is not selected implicitly.
+Version 0.1.13 enables `policy.allow_implicit_invocation: true` in `agents/openai.yaml`.
+Invoke `$context-window-policy` or ask in natural language to inspect, configure, or reset the
+current thread's reminder policy. A parent agent can also explicitly instruct a subagent to
+load the skill and configure that subagent's own policy. The description limits selection to
+these user or delegated requests;
+high context usage or a hook reminder alone is not a reason to activate it. The skill requires
+an explicit user or parent-agent request before `set` or `reset`, and inspection, explanation,
+or ordinary work delegation does not authorize a write. The receiving subagent executes the
+script with its own `CODEX_THREAD_ID`, asks its parent for missing parameters, and reports its
+thread ID and thresholds back. The parent does not impersonate the subagent's identity.
+It includes the model defaults and exact stage messages, and shows both model groups when the
+active model slug is unknown rather than guessing which default applies.
 It offers a starting threshold and a stage interval, both positive whole K tokens (1K = 1,000 tokens).
 Examples:
 
@@ -158,7 +168,7 @@ Run the focused tests from the repository root:
 python -m unittest discover -s plugins/context-window-rollover-reminder/tests -p "test_*.py"
 ```
 
-Validate the manual skill with the installed skill-creator validator:
+Validate the policy skill with the installed skill-creator validator:
 
 ```text
 python <skill-creator>/scripts/quick_validate.py plugins/context-window-rollover-reminder/skills/context-window-policy
