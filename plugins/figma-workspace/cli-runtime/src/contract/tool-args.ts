@@ -1,5 +1,21 @@
 import type { FigmaWorkspaceSurface } from "../runtime/script-runner.js";
 import { isCompositeCapableFigmaNodeId, isFigmaFileKey, isSimpleFigmaNodeId } from "./figma-target.js";
+import {
+  FIGMA_WORKSPACE_IMAGE_SCALE_MODES,
+  FIGMA_WORKSPACE_IMAGE_SCALE_MODE_PATTERN,
+  INLINE_RESULT_LIMIT_MAX,
+  INLINE_RESULT_LIMIT_MIN,
+  MAX_MANIFEST_ITEMS,
+} from "./json-command-primitives.js";
+import { assertValidFigmaJsonCommand, assertValidFigmaJsonSchema } from "./json-command-validator.js";
+import { schemaCodeConnectPlanArguments } from "./json-command-contracts.js";
+export {
+  FIGMA_WORKSPACE_IMAGE_SCALE_MODES,
+  FIGMA_WORKSPACE_IMAGE_SCALE_MODE_PATTERN,
+  INLINE_RESULT_LIMIT_MAX,
+  INLINE_RESULT_LIMIT_MIN,
+  MAX_MANIFEST_ITEMS,
+} from "./json-command-primitives.js";
 
 export class FigmaWorkspaceToolArgumentError extends Error {
   override readonly name = "FigmaWorkspaceToolArgumentError";
@@ -33,8 +49,6 @@ export const DEFAULT_FIGMA_WORKSPACE_INSPECT_FIELDS: readonly FigmaWorkspaceInsp
 ];
 export const LIBRARIES_OFFSET_MIN = 0;
 export const LIBRARIES_OFFSET_MAX = Number.MAX_SAFE_INTEGER;
-export const INLINE_RESULT_LIMIT_MIN = 0;
-export const INLINE_RESULT_LIMIT_MAX = 10_000;
 
 export interface FigmaWorkspaceExplicitNodeTarget {
   fileKey: string;
@@ -62,27 +76,22 @@ export interface FigmaWorkspaceAssetManifestAsset {
   [key: string]: unknown;
   path?: string;
   target?: FigmaWorkspaceNodeTarget;
+  nodeUrl?: string;
+  url?: string;
+  scaleMode?: string;
   name?: string;
   metadata?: Record<string, unknown>;
 }
 
 export interface FigmaWorkspaceApplyAssetManifestArguments extends InvocationArguments {
   assets?: FigmaWorkspaceAssetManifestAsset[];
-  manifestPath?: string;
   validateTargets?: boolean;
 }
 
-export interface FigmaWorkspaceDownloadAssetsTarget {
-  [key: string]: unknown;
+export interface FigmaWorkspaceDownloadAssetsArguments extends InvocationArguments {
   target?: FigmaWorkspaceNodeTarget;
-  name?: string;
   defaultFormat?: "png" | "jpg" | "svg" | "pdf";
   defaultScale?: number;
-}
-
-export interface FigmaWorkspaceDownloadAssetsArguments extends InvocationArguments {
-  targets?: FigmaWorkspaceDownloadAssetsTarget[];
-  manifestPath?: string;
 }
 
 export interface FigmaWorkspaceCaptureNodeArguments extends InvocationArguments {
@@ -225,7 +234,6 @@ export interface FigmaWorkspaceDoctorArguments { [key: string]: unknown }
 const SURFACES = ["design", "figjam", "slides"] as const;
 const DOC_SCOPES = ["auto", "active", "conditional", "router", "examples", "all"] as const;
 const TASK_FAMILIES = ["code-connect", "create-file", "design-to-code", "design-generation", "diagram", "library-generation", "motion-implementation", "swiftui", "figjam", "motion", "slides", "design-editing"] as const;
-const MAX_MANIFEST_ITEMS = 64;
 
 export function asRunArgs(value: unknown): FigmaWorkspaceRunArguments {
   const args = parse<FigmaWorkspaceRunArguments>(value);
@@ -241,23 +249,23 @@ export function asRunArgs(value: unknown): FigmaWorkspaceRunArguments {
 
 export function asApplyAssetManifestArgs(value: unknown): FigmaWorkspaceApplyAssetManifestArguments {
   const args = parse<FigmaWorkspaceApplyAssetManifestArguments>(value);
-  strings(args, ["title", "file", "outputDir", "manifestPath"]);
-  invocation(args);
-  booleans(args, ["validateTargets"]);
-  validateAssets(args.assets);
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "assets", "manifestPath", "validateTargets"]);
+  assertJsonContract("assets:apply", args);
   requiredFile(args, "figma:assets:apply");
-  if (Boolean(args.assets) === Boolean(args.manifestPath)) throw new FigmaWorkspaceToolArgumentError('Exactly one of "assets" or "manifestPath" is required.');
   return args;
 }
 
 export function asDownloadAssetsArgs(value: unknown): FigmaWorkspaceDownloadAssetsArguments {
   const args = parse<FigmaWorkspaceDownloadAssetsArguments>(value);
-  strings(args, ["title", "file", "outputDir", "manifestPath"]);
+  strings(args, ["title", "file", "outputDir"]);
   invocation(args);
-  validateDownloadTargets(args.targets);
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "targets", "manifestPath"]);
-  if (Boolean(args.targets) === Boolean(args.manifestPath)) throw new FigmaWorkspaceToolArgumentError('Exactly one of "targets" or "manifestPath" is required.');
+  target(args.target, "target");
+  enumeration(args, "defaultFormat", ["png", "jpg", "svg", "pdf"]);
+  const scale = args.defaultScale;
+  if (scale !== undefined && (typeof scale !== "number" || !Number.isFinite(scale) || scale < 0.01 || scale > 4)) {
+    throw new FigmaWorkspaceToolArgumentError('Tool argument "defaultScale" must be from 0.01 to 4.');
+  }
+  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "target", "defaultFormat", "defaultScale"]);
+  if (args.target === undefined) throw new FigmaWorkspaceToolArgumentError('figma:assets:download requires "target".');
   return args;
 }
 
@@ -321,11 +329,7 @@ export function normalizeFigmaWorkspaceInspectFields(value: unknown): FigmaWorks
 
 export function asCallUpstreamToolArgs(value: unknown): FigmaWorkspaceCallUpstreamToolArguments {
   const args = parse<FigmaWorkspaceCallUpstreamToolArguments>(value);
-  strings(args, ["title", "file", "outputDir", "toolName"]);
-  invocation(args);
-  record(args, "arguments");
-  booleans(args, ["refresh"]);
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "toolName", "arguments", "refresh"]);
+  assertJsonContract("upstream:call", args);
   if (!args.toolName?.trim()) throw new FigmaWorkspaceToolArgumentError('Tool argument "toolName" is required.');
   return args;
 }
@@ -371,12 +375,13 @@ export function asGetVariableDefsArgs(value: unknown): FigmaWorkspaceGetVariable
 
 export function asSearchDesignSystemArgs(value: unknown): FigmaWorkspaceSearchDesignSystemArguments {
   const args = parse<FigmaWorkspaceSearchDesignSystemArguments>(value);
-  strings(args, ["title", "file", "outputDir"]);
-  invocation(args);
-  booleans(args, ["disableCodeConnect", "refresh"]);
-  stringArray(args, "includeLibraryKeys");
-  validateDesignSystemQueries(args.queries);
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "queries", "disableCodeConnect", "includeLibraryKeys", "refresh"]);
+  assertJsonContract("design-system", args);
+  for (const query of args.queries) {
+    query.query = query.query.trim();
+    if (query.query.length === 0) {
+      throw new FigmaWorkspaceToolArgumentError('Tool argument "queries[].query" must be a non-empty string.');
+    }
+  }
   requiredFile(args, "figma:design-system");
   return args;
 }
@@ -459,10 +464,8 @@ export function asCodeConnectInspectArgs(value: unknown): FigmaWorkspaceCodeConn
 
 export function asCodeConnectPlanArgs(value: unknown): FigmaWorkspaceCodeConnectPlanArguments {
   const args = parse<FigmaWorkspaceCodeConnectPlanArguments>(value);
-  strings(args, ["title", "file", "outputDir", "outputPlanPath"]);
-  invocation(args);
+  assertJsonSchemaContract("code-connect:plan", schemaCodeConnectPlanArguments(), normalizeCodeConnectPlanArgumentsForSchema(args));
   validateCodeConnectManifest(args.manifest);
-  allowed(args, ["title", "file", "surface", "outputDir", "inlineResultLimit", "manifest", "outputPlanPath"]);
   requireCodeConnectDesignFile(args, "figma:code-connect:plan");
   return args;
 }
@@ -614,65 +617,25 @@ function fileReference(value: string | undefined, name: string, allowCompositeNo
   }
 }
 
-function validateAssets(value: unknown): void {
+export function validateAssets(value: unknown): void {
   if (value === undefined) return;
-  if (!Array.isArray(value) || value.length > MAX_MANIFEST_ITEMS) throw new FigmaWorkspaceToolArgumentError(`Tool argument "assets" must be an array of at most ${MAX_MANIFEST_ITEMS} items.`);
-  value.forEach((item, index) => { const asset = parse<Record<string, unknown>>(item); strings(asset, ["path", "name"]); target(asset.target, `assets[${index}].target`); record(asset, "metadata"); allowed(asset, ["path", "target", "name", "metadata"], `assets[${index}]`); });
-}
-
-function validateDownloadTargets(value: unknown): void {
-  if (value === undefined) return;
-  if (!Array.isArray(value) || value.length > MAX_MANIFEST_ITEMS) throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets" must be an array of at most ${MAX_MANIFEST_ITEMS} items.`);
-  value.forEach((item, index) => { const entry = parse<Record<string, unknown>>(item); strings(entry, ["name"]); target(entry.target, `targets[${index}].target`); enumeration(entry, "defaultFormat", ["png", "jpg", "svg", "pdf"]); const scale=entry.defaultScale; if (scale !== undefined && (typeof scale !== "number" || scale < 0.01 || scale > 4)) throw new FigmaWorkspaceToolArgumentError(`Tool argument "targets[${index}].defaultScale" must be from 0.01 to 4.`); allowed(entry, ["target", "name", "defaultFormat", "defaultScale"], `targets[${index}]`); });
-}
-
-function validateDesignSystemQueries(value: unknown): asserts value is FigmaWorkspaceDesignSystemQuery[] {
-  if (!Array.isArray(value) || value.length === 0) {
-    throw new FigmaWorkspaceToolArgumentError('Tool argument "queries" must be a non-empty array.');
-  }
-  value.forEach((item, index) => {
-    const entry = parse<Record<string, unknown>>(item);
-    if (entry.entity === undefined) {
-      throw new FigmaWorkspaceToolArgumentError(`Tool argument "queries[${index}].entity" is required.`);
-    }
-    enumeration(entry, "entity", ["component", "variable", "style"]);
-    if (entry.query === undefined) {
-      throw new FigmaWorkspaceToolArgumentError(`Tool argument "queries[${index}].query" is required.`);
-    }
-    strings(entry, ["query"]);
-    allowed(entry, ["entity", "query"], `queries[${index}]`);
-    if (typeof entry.query !== "string" || entry.query.trim().length === 0) {
-      throw new FigmaWorkspaceToolArgumentError(`Tool argument "queries[${index}].query" must be a non-empty string.`);
-    }
-    entry.query = entry.query.trim();
-  });
+  assertJsonContract("assets:apply", { assets: value });
 }
 
 function validateCodeConnectManifest(value: unknown): asserts value is FigmaWorkspaceCodeConnectManifest {
   const manifest = parse<Record<string, unknown>>(value);
-  integer(manifest, "schemaVersion", 1, 1);
-  if (manifest.schemaVersion !== 1) throw new FigmaWorkspaceToolArgumentError('Code Connect manifest "schemaVersion" must be 1.');
   const scope = parse<Record<string, unknown>>(manifest.scope);
-  strings(scope, ["nodeId"]);
   scope.nodeId = normalizeCodeConnectNodeId(scope.nodeId, "scope.nodeId");
-  allowed(scope, ["nodeId"], "scope");
   if (manifest.client !== undefined) {
     const client = parse<Record<string, unknown>>(manifest.client);
-    strings(client, ["languages", "frameworks"]);
-    allowed(client, ["languages", "frameworks"], "client");
     if (client.languages !== undefined && (typeof client.languages !== "string" || !client.languages.trim())) throw new FigmaWorkspaceToolArgumentError('Tool argument "client.languages" must be non-empty when provided.');
     if (client.frameworks !== undefined && (typeof client.frameworks !== "string" || !client.frameworks.trim())) throw new FigmaWorkspaceToolArgumentError('Tool argument "client.frameworks" must be non-empty when provided.');
   }
-  if (!Array.isArray(manifest.mappings) || manifest.mappings.length === 0 || manifest.mappings.length > MAX_MANIFEST_ITEMS) {
-    throw new FigmaWorkspaceToolArgumentError(`Code Connect manifest "mappings" must contain 1 to ${MAX_MANIFEST_ITEMS} items.`);
-  }
   const seen = new Set<string>();
-  manifest.mappings.forEach((value, index) => {
+  const mappings = manifest.mappings as Array<Record<string, unknown>>;
+  mappings.forEach((value, index) => {
     const mapping = parse<Record<string, unknown>>(value);
-    strings(mapping, ["nodeId", "componentName", "source", "label"]);
     mapping.nodeId = normalizeCodeConnectNodeId(mapping.nodeId, `mappings[${index}].nodeId`);
-    enumeration(mapping, "conflictPolicy", ["fail", "replace"]);
-    allowed(mapping, ["nodeId", "componentName", "source", "label", "conflictPolicy"], `mappings[${index}]`);
     for (const key of ["nodeId", "componentName", "source", "label"] as const) {
       if (typeof mapping[key] !== "string" || !mapping[key].trim()) {
         throw new FigmaWorkspaceToolArgumentError(`Tool argument "mappings[${index}].${key}" must be a non-empty string.`);
@@ -685,7 +648,29 @@ function validateCodeConnectManifest(value: unknown): asserts value is FigmaWork
     if (seen.has(identity)) throw new FigmaWorkspaceToolArgumentError(`Code Connect manifest contains duplicate mapping identity for nodeId ${mapping.nodeId} and label ${mapping.label}.`);
     seen.add(identity);
   });
-  allowed(manifest, ["schemaVersion", "scope", "client", "mappings"], "Code Connect manifest");
+}
+
+function normalizeCodeConnectPlanArgumentsForSchema(
+  args: FigmaWorkspaceCodeConnectPlanArguments,
+): Record<string, unknown> {
+  return { ...args, manifest: normalizeCodeConnectManifestForSchema(args.manifest) };
+}
+
+function normalizeCodeConnectManifestForSchema(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  const normalized: Record<string, unknown> = { ...value };
+  const scope = isRecord(value.scope) ? { ...value.scope } : undefined;
+  if (scope && typeof scope.nodeId === "string") scope.nodeId = scope.nodeId.trim().replace(/-/gu, ":");
+  if (scope) normalized.scope = scope;
+  if (Array.isArray(value.mappings)) {
+    normalized.mappings = value.mappings.map((entry) => {
+      if (!isRecord(entry)) return entry;
+      const mapping = { ...entry };
+      if (typeof mapping.nodeId === "string") mapping.nodeId = mapping.nodeId.trim().replace(/-/gu, ":");
+      return mapping;
+    });
+  }
+  return normalized;
 }
 
 function normalizeCodeConnectNodeId(value: unknown, name: string): string {
@@ -718,6 +703,30 @@ function parse<T extends Record<string, unknown>>(value: unknown): T {
   if (value === undefined) return {} as T;
   if (!isRecord(value)) throw new FigmaWorkspaceToolArgumentError("Tool arguments must be an object.");
   return { ...value } as T;
+}
+
+function assertJsonContract(command: "design-system" | "assets:apply" | "upstream:call", value: unknown): void {
+  try {
+    assertValidFigmaJsonCommand(command, value);
+  } catch (error) {
+    let message = error instanceof Error ? error.message : String(error);
+    if (command === "design-system" && message.includes("$.includeLibraryKeys[")) {
+      message += ' includeLibraryKeys must be a string array.';
+    }
+    if (command === "assets:apply" && message.includes(`$.assets must NOT have more than ${MAX_MANIFEST_ITEMS} items`)) {
+      message += ` Tool argument "assets" must be an array of 1 to ${MAX_MANIFEST_ITEMS} items.`;
+    }
+    throw new FigmaWorkspaceToolArgumentError(message);
+  }
+}
+
+function assertJsonSchemaContract(command: string, schema: Record<string, unknown>, value: unknown): void {
+  try {
+    assertValidFigmaJsonSchema(command, schema, value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new FigmaWorkspaceToolArgumentError(command === "code-connect:plan" ? `Code Connect manifest validation failed: ${message}` : message);
+  }
 }
 
 function strings(record: Record<string, unknown>, keys: readonly string[]): void { for (const key of keys) if (record[key] !== undefined && typeof record[key] !== "string") throw new FigmaWorkspaceToolArgumentError(`Tool argument "${key}" must be a string.`); }

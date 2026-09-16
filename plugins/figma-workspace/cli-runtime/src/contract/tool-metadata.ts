@@ -1,5 +1,4 @@
 import { LOCAL_WORKSPACE_TOOL_NAMES, type LocalWorkspaceToolName } from "./tool-registry.js";
-import { COMPOSITE_CAPABLE_NODE_ID_PATTERN, FIGMA_FILE_KEY_PATTERN, SIMPLE_NODE_ID_PATTERN } from "./figma-target.js";
 import {
   CAPTURE_MAX_DIMENSION_MAX,
   CAPTURE_MAX_DIMENSION_MIN,
@@ -16,7 +15,26 @@ import {
   LOOKUP_RESULTS_MIN,
   LOOKUP_SNIPPET_LINES_MAX,
   LOOKUP_SNIPPET_LINES_MIN,
+  MAX_MANIFEST_ITEMS,
 } from "./tool-args.js";
+import {
+  schemaAssetManifestAsset,
+  schemaBoolean,
+  schemaClampedInteger,
+  schemaDesignFileReference,
+  schemaDesignNodeTarget,
+  schemaDesignSurface,
+  schemaFileKey,
+  schemaInteger,
+  schemaInvocation,
+  schemaNodeId,
+  schemaNodeTarget,
+  schemaObject,
+  schemaString,
+  schemaSurface,
+  schemaDesignSystemQueries,
+} from "./json-command-contracts.js";
+import type { JsonSchema } from "./json-command-contracts.js";
 
 export interface ReplToolDescriptionOptions {
   taskWorkspaceRootEnv: string;
@@ -27,66 +45,20 @@ export interface ReplToolDescriptionOptions {
   maxLookupQueryLength: number;
 }
 
-type JsonSchema = Record<string, unknown>;
-
-const string = (description: string): JsonSchema => ({ type: "string", description });
-const fileKey = (description: string): JsonSchema => ({ type: "string", pattern: FIGMA_FILE_KEY_PATTERN, description });
-const nodeId = (description: string, allowComposite = false): JsonSchema => ({ type: "string", pattern: allowComposite ? COMPOSITE_CAPABLE_NODE_ID_PATTERN : SIMPLE_NODE_ID_PATTERN, description });
-const boolean = (description: string): JsonSchema => ({ type: "boolean", description });
-const integer = (description: string, minimum = 0, maximum?: number): JsonSchema => ({ type: "integer", minimum, ...(maximum === undefined ? {} : { maximum }), description });
-const clampedInteger = (description: string, minimum: number, maximum: number): JsonSchema => ({
-  type: "integer",
-  minimum: Number.MIN_SAFE_INTEGER,
-  maximum: Number.MAX_SAFE_INTEGER,
-  description: `${description} Safe integers are accepted. Supported range ${minimum}..${maximum}; out-of-range safe integers are clamped and reported in parameterAdjustments.`,
-});
-const surface = (): JsonSchema => ({ type: "string", enum: ["design", "figjam", "slides"], description: "Explicit surface. Required with a raw file key for Plugin API execution." });
-const designSurface = (): JsonSchema => ({ type: "string", enum: ["design"], description: "Design surface only. Required with a raw file key or structured target for metadata." });
-const nodeTarget = (allowComposite = false): JsonSchema => ({
-  description: "Stable node target: raw node id (with file), Figma node URL, or exact { fileKey, nodeId }.",
-  oneOf: [
-    nodeId("Raw Figma node id.", allowComposite),
-    { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file|figjam|board|slides)/" },
-    { type: "object", properties: { fileKey: fileKey("Figma file key."), nodeId: nodeId("Figma node id.", allowComposite) }, required: ["fileKey", "nodeId"], additionalProperties: false },
-  ],
-});
-const invocation = (): Record<string, JsonSchema> => ({
-  title: string("Optional display label."),
-  file: { oneOf: [fileKey("Raw Figma file key."), { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file|figjam|board|slides)/", description: "Figma file URL." }], description: "Figma file URL or raw file key." },
-  surface: surface(),
-  outputDir: string("Optional absolute local output root; omitted outputs use one invocation temp directory."),
-  inlineResultLimit: integer(`Maximum inline result bytes from ${INLINE_RESULT_LIMIT_MIN} to ${INLINE_RESULT_LIMIT_MAX}.`, INLINE_RESULT_LIMIT_MIN, INLINE_RESULT_LIMIT_MAX),
-});
-const designFileReference = (description: string): JsonSchema => ({
-  oneOf: [
-    fileKey("Raw Design file key."),
-    { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file)/", description: "Design file URL." },
-  ],
-  description,
-});
-const designNodeTarget = (): JsonSchema => ({
-  description: "Design-only stable node target: Design node URL, raw node id paired with a Design file, or exact { fileKey, nodeId } with surface design.",
-  oneOf: [
-    nodeId("Raw Figma node id.", true),
-    { type: "string", format: "uri", pattern: "^https://(?:[^/]+\\.)*figma\\.com/(?:design|file)/" },
-    { type: "object", properties: { fileKey: fileKey("Design file key."), nodeId: nodeId("Figma node id.", true) }, required: ["fileKey", "nodeId"], additionalProperties: false },
-  ],
-});
-const designSystemQueries = (): JsonSchema => ({
-  type: "array",
-  minItems: 1,
-  items: {
-    type: "object",
-    properties: {
-      entity: { type: "string", enum: ["component", "variable", "style"], description: "Design-system asset entity." },
-      query: string("One search intent for this entity."),
-    },
-    required: ["entity", "query"],
-    additionalProperties: false,
-  },
-  description: "Ordered design-system search intents; each item is dispatched in one batch request.",
-});
-const objectSchema = (properties: Record<string, JsonSchema>, required: readonly string[] = [], anyOf?: readonly JsonSchema[]): JsonSchema => ({ type: "object", properties, required: [...required], ...(anyOf ? { anyOf } : {}), additionalProperties: false });
+const string = schemaString;
+const fileKey = (description: string): JsonSchema => schemaFileKey(description);
+const nodeId = schemaNodeId;
+const boolean = schemaBoolean;
+const integer = schemaInteger;
+const clampedInteger = schemaClampedInteger;
+const surface = schemaSurface;
+const designSurface = schemaDesignSurface;
+const nodeTarget = schemaNodeTarget;
+const invocation = schemaInvocation;
+const designFileReference = schemaDesignFileReference;
+const designNodeTarget = schemaDesignNodeTarget;
+const designSystemQueries = schemaDesignSystemQueries;
+const objectSchema = schemaObject;
 const resultOutputFilesSchema: JsonSchema = {
   type: "object",
   properties: {
@@ -94,10 +66,19 @@ const resultOutputFilesSchema: JsonSchema = {
       type: "object",
       description: "The single complete JSON result file, created when inline output is insufficient or diagnostics require persistence. Business artifacts have their own pointers.",
       properties: {
-        path: string("Absolute path to the JSON result file."),
-        bytes: integer("UTF-8 file size."),
-        lineCount: integer("Formatted JSON line count."),
-        jq: { type: "object", properties: { full: string("jq filter for the complete file."), data: string("jq filter for this command's result data."), status: string("jq filter for execution status and diagnostics.") }, required: ["full", "data", "status"], additionalProperties: { type: "string" } },
+        path: schemaString("Absolute path to the JSON result file."),
+        bytes: schemaInteger("UTF-8 file size."),
+        lineCount: schemaInteger("Formatted JSON line count."),
+        jq: {
+          type: "object",
+          properties: {
+            full: schemaString("jq filter for the complete file."),
+            data: schemaString("jq filter for this command's result data."),
+            status: schemaString("jq filter for execution status and diagnostics."),
+          },
+          required: ["full", "data", "status"],
+          additionalProperties: { type: "string" },
+        },
       },
       required: ["path", "bytes", "lineCount", "jq"],
       additionalProperties: false,
@@ -105,7 +86,21 @@ const resultOutputFilesSchema: JsonSchema = {
   },
   additionalProperties: true,
 };
-const resultSchema = (properties: Record<string, JsonSchema> = {}): JsonSchema => ({ type: "object", properties: { ok: boolean("Whether the operation completed successfully."), invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." }, error: { type: "object", description: "Compact command-level error details for a local or nested batch failure." }, upstreamError: { type: "object", description: "Compact top-level upstream error details when Figma cannot complete the request." }, primaryFix: string("Primary recovery action for the reported error."), outputFiles: resultOutputFilesSchema, ...properties }, required: ["ok"], additionalProperties: true });
+
+const resultSchema = (properties: Record<string, JsonSchema> = {}): JsonSchema => ({
+  type: "object",
+  properties: {
+    ok: schemaBoolean("Whether the operation completed successfully."),
+    invocation: { type: "object", description: "Request-scoped invocation identity, Figma target, surface, and output root." },
+    error: { type: "object", description: "Compact command-level error details for a local or nested batch failure." },
+    upstreamError: { type: "object", description: "Compact top-level upstream error details when Figma cannot complete the request." },
+    primaryFix: schemaString("Primary recovery action for the reported error."),
+    outputFiles: resultOutputFilesSchema,
+    ...properties,
+  },
+  required: ["ok"],
+  additionalProperties: true,
+});
 
 export function createReplToolDescriptions(_options: ReplToolDescriptionOptions): Record<string, unknown>[] {
   const descriptions = new Map<LocalWorkspaceToolName, Record<string, unknown>>([
@@ -117,11 +112,11 @@ export function createReplToolDescriptions(_options: ReplToolDescriptionOptions)
     }],
     ["figma_workspace_apply_asset_manifest", {
       name: "figma_workspace_apply_asset_manifest", description: "Apply local raster image assets as fills on explicit Figma node targets. SVG input is not accepted because SVG upload placement has different semantics.",
-      inputSchema: objectSchema({ ...invocation(), assets: { type: "array", maxItems: 64 }, manifestPath: string("Asset manifest path."), validateTargets: boolean("Validate target fills after upload.") }, ["file"], [{ required: ["assets"] }, { required: ["manifestPath"] }]), outputSchema: resultSchema({ assets: { type: "array" }, failures: { type: "array" } }),
+      inputSchema: objectSchema({ ...invocation(), assets: { type: "array", minItems: 1, maxItems: MAX_MANIFEST_ITEMS, items: schemaAssetManifestAsset(), description: "Raster asset entries." }, validateTargets: boolean("Validate target fills after upload.") }, ["file", "assets"]), outputSchema: resultSchema({ assets: { type: "array" }, failures: { type: "array" } }),
     }],
     ["figma_workspace_download_assets", {
       name: "figma_workspace_download_assets", description: "Download the official whole-node export, original raster source images, and vector-layer SVG assets to an explicit or invocation temp output directory.",
-      inputSchema: objectSchema({ ...invocation(), targets: { type: "array", maxItems: 64 }, manifestPath: string("Download manifest path.") }, [], [{ required: ["targets"] }, { required: ["manifestPath"] }]), outputSchema: resultSchema({ targets: { type: "array" }, outputDir: string("Absolute download directory.") }),
+      inputSchema: objectSchema({ ...invocation(), target: nodeTarget(), defaultFormat: { type: "string", enum: ["png", "jpg", "svg", "pdf"], description: "Preferred whole-node export format." }, defaultScale: { type: "number", minimum: 0.01, maximum: 4, description: "Preferred whole-node export scale." } }, ["target"]), outputSchema: resultSchema({ targetNodeId: string("Downloaded node id."), outputDir: string("Absolute download directory."), downloadedFiles: { type: "array" }, upstreamError: { type: "object" }, downloadError: { type: "object" } }),
     }],
     ["figma_workspace_capture_node", {
       name: "figma_workspace_capture_node", description: "Capture one stable Figma node target as PNG.",
@@ -153,7 +148,7 @@ export function createReplToolDescriptions(_options: ReplToolDescriptionOptions)
       name: "figma_workspace_get_libraries", description: "List libraries for one explicit Figma file.", inputSchema: objectSchema({ ...invocation(), offset: integer("Pagination offset.", LIBRARIES_OFFSET_MIN, LIBRARIES_OFFSET_MAX), refresh: boolean("Refresh upstream discovery.") }, ["file"]), outputSchema: resultSchema({ upstream: { type: "object" } }),
     }],
     ["figma_workspace_call_upstream_tool", {
-      name: "figma_workspace_call_upstream_tool", description: "Call any official Figma MCP capability through its live schema. Covered first-class commands add local validation and result handling but do not block direct calls.", inputSchema: objectSchema({ ...invocation(), toolName: string("Exact official tool name."), arguments: { type: "object" }, refresh: boolean("Refresh upstream discovery.") }, ["toolName"]), outputSchema: resultSchema({ toolName: string("Called official tool name."), phase: { type: "string", enum: ["preflight", "execute"] }, executionOutcome: { type: "string", enum: ["not_started", "failed_atomic", "succeeded", "outcome_unknown"] }, retryGuidance: string("Safe recovery direction when execution completion is not confirmed."), upstream: { type: "object" }, outputFiles: resultOutputFilesSchema }),
+      name: "figma_workspace_call_upstream_tool", description: "Call any official Figma MCP capability through its live schema. Covered first-class commands add local validation and result handling but do not block direct calls.", inputSchema: objectSchema({ ...invocation(), toolName: string("Exact official tool name."), arguments: { type: "object", additionalProperties: true, description: "Arguments for the selected live upstream schema." }, refresh: boolean("Refresh upstream discovery.") }, ["toolName"]), outputSchema: resultSchema({ toolName: string("Called official tool name."), phase: { type: "string", enum: ["preflight", "execute"] }, executionOutcome: { type: "string", enum: ["not_started", "failed_atomic", "succeeded", "outcome_unknown"] }, retryGuidance: string("Safe recovery direction when execution completion is not confirmed."), upstream: { type: "object" }, outputFiles: resultOutputFilesSchema }),
     }],
     ["figma_workspace_lookup", {
       name: "figma_workspace_lookup", description: "Search canonical workflow docs, search generated Plugin API declarations, or read declarations selected by a readable Plugin API selector locally.", inputSchema: objectSchema({ kind: { type: "string", enum: ["docs", "api"] }, mode: { type: "string", enum: ["search", "read"], description: "Required for API lookup. Docs lookup does not accept mode." }, scope: { type: "string", enum: ["auto", "active", "conditional", "router", "examples", "all"] }, surface: surface(), taskFamily: string("Canonical task family."), query: string("Docs query."), symbol: string("Docs query alias."), selector: string("One bare, qualified, or call-shaped Plugin API selector. API read requires a unique owner; use a qualified selector when a bare symbol is ambiguous."), maxResults: clampedInteger("Maximum results for API or docs search.", LOOKUP_RESULTS_MIN, LOOKUP_RESULTS_MAX), maxSnippetLines: clampedInteger("Maximum snippet lines for API or docs search.", LOOKUP_SNIPPET_LINES_MIN, LOOKUP_SNIPPET_LINES_MAX) }, ["kind"]), outputSchema: resultSchema({ mode: { type: "string", enum: ["search", "read"] }, results: { type: "array" }, declarations: { type: "array", description: "Complete declarations for the selected API owner, including all overloads." }, parameterAdjustments: { type: "array" }, snippetBudget: { type: "object" } }),

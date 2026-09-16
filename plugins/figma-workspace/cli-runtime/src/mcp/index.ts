@@ -76,8 +76,6 @@ export {
   type FigmaWorkspaceDownloadedAssetFile,
   type FigmaWorkspaceDownloadAssetsArguments,
   type FigmaWorkspaceDownloadAssetsResult,
-  type FigmaWorkspaceDownloadAssetsTarget,
-  type FigmaWorkspaceDownloadAssetsTargetResult,
   type FigmaWorkspaceFilePointer,
   type FigmaWorkspaceFileDiagnostic,
   type FigmaWorkspaceGetLibrariesArguments,

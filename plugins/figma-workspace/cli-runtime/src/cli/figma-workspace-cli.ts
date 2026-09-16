@@ -804,7 +804,7 @@ function presentationFailureForResult(result: Record<string, unknown>): {
   const overallRecoveryHint = firstRecoveryHint(result);
   const upstreamError = normalizeError(result.upstreamError);
   if (upstreamError) return { error: upstreamError, recoveryHint: overallRecoveryHint, isUpstream: true };
-  const direct = normalizeError(result.error);
+  const direct = normalizeError(result.error) ?? normalizeError(result.downloadError);
   if (direct) return { error: direct, recoveryHint: overallRecoveryHint };
   const diagnostics = Array.isArray(result.diagnostics) ? result.diagnostics : [];
   for (const value of diagnostics) {
@@ -962,7 +962,7 @@ function extractUpstreamArgumentsFileKey(input: Record<string, unknown>): string
 function validateFigmaReferencesBeforeLock(command: FigmaWorkspaceCliCommand, input: Record<string, unknown>): void {
   const explicitFileKey = extractFileKey(input.file);
   extractTargetFileKey(input.target);
-  for (const collection of [input.assets, input.targets]) {
+  for (const collection of [input.assets]) {
     if (!Array.isArray(collection)) continue;
     for (const entry of collection) {
       if (!isRecord(entry)) continue;

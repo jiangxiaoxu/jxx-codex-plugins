@@ -12,6 +12,8 @@ Use this reference for an end-to-end Figma task. Command-specific help and runti
 6. Prefer first-class design, motion, library, variable, asset, and capture commands for typed safeguards. Use `figma:upstream:list` to `figma:upstream:read` to `figma:upstream:call` when the live official schema is required; local `coverage` guidance does not block the direct path.
 7. Capture visible changes and inspect the saved PNG with `view_image` before reporting visual success.
 
+Asset uploads take their business array directly in the `--input` JSON document: `figma:assets:apply` uses `{ "assets": [...] }`. `figma:assets:download` addresses one node with `--target <node-url>` or `--file <url|key> --node <node-id>`, and accepts optional default format and scale. Relative upload paths are resolved from the JSON file's directory (or the invocation cwd for stdin); use the generated command help for the nested entry contract.
+
 ## Code Connect
 
 For a simple component-to-code mapping, run the stateless Design-only sequence with one explicit file target:

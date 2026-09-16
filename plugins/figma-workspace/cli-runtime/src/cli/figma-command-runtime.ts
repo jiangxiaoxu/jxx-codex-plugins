@@ -22,6 +22,16 @@ import {
   normalizeFigmaWorkspaceInspectFields,
 } from "../contract/tool-args.js";
 import { isCompositeCapableFigmaNodeId, isFigmaFileKey, isSimpleFigmaNodeId } from "../contract/figma-target.js";
+import {
+  getFigmaJsonCommandContract,
+} from "../contract/json-command-contracts.js";
+import { assertValidFigmaJsonCommand } from "../contract/json-command-validator.js";
+import {
+  FIGMA_PUBLIC_COMMAND_SPECS,
+  getFigmaPublicCommandTokenSets,
+  type FigmaPublicCommandName,
+  type FigmaPublicCommandTokenSets,
+} from "../runtime/public-command-registry.js";
 
 const EXIT_SUCCESS = 0;
 const EXIT_USAGE = 2;
@@ -43,24 +53,17 @@ export interface FigmaCommandRuntimeDependencies {
 
 export const FIGMA_TASK_FAMILIES = ["code-connect", "create-file", "design-to-code", "design-generation", "diagram", "library-generation", "motion-implementation", "swiftui", "figjam", "motion", "slides", "design-editing"] as const;
 
-const PUBLIC_COMMANDS = [
-  "docs:list", "docs:catalog", "docs:read", "docs:search", "api:read", "api:search",
-  "doctor",
-  "metadata", "inspect", "design-context", "motion-context", "variables", "design-system", "libraries",
-  "run", "capture", "assets:apply", "assets:download",
-  "code-connect:inspect", "code-connect:plan", "code-connect:apply", "code-connect:verify",
-  "upstream:list", "upstream:read", "upstream:call",
-] as const;
+const PUBLIC_COMMANDS = FIGMA_PUBLIC_COMMAND_SPECS.map(({ name }) => name) as readonly FigmaPublicCommandName[];
 
-export type FigmaConcreteCommandName = typeof PUBLIC_COMMANDS[number];
+export type FigmaConcreteCommandName = FigmaPublicCommandName;
 export type FigmaCommandFamily = "docs" | "api" | "upstream" | "code-connect";
 export type FigmaCommandName = FigmaConcreteCommandName | FigmaCommandFamily;
 
 const FAMILY_COMMANDS: Record<FigmaCommandFamily, readonly FigmaConcreteCommandName[]> = {
-  docs: ["docs:list", "docs:catalog", "docs:read", "docs:search"],
-  api: ["api:read", "api:search"],
-  upstream: ["upstream:list", "upstream:read", "upstream:call"],
-  "code-connect": ["code-connect:inspect", "code-connect:plan", "code-connect:apply", "code-connect:verify"],
+  docs: PUBLIC_COMMANDS.filter((name): name is FigmaConcreteCommandName => name.startsWith("docs:")),
+  api: PUBLIC_COMMANDS.filter((name): name is FigmaConcreteCommandName => name.startsWith("api:")),
+  upstream: PUBLIC_COMMANDS.filter((name): name is FigmaConcreteCommandName => name.startsWith("upstream:")),
+  "code-connect": PUBLIC_COMMANDS.filter((name): name is FigmaConcreteCommandName => name.startsWith("code-connect:")),
 };
 
 export async function runFigmaCommandCli(argv: readonly string[], dependencies: FigmaCommandRuntimeDependencies = {}): Promise<number> {
@@ -116,16 +119,16 @@ async function parsePublicArguments(
   if (command === "docs:list") return noArgs("docs", { mode: "list" }, argv);
   if (command === "doctor") return noArgs("doctor", {}, argv);
   if (command === "docs:catalog") {
-    const { positionals, options } = parseTokens(argv, optionSet("task-family", "surface", "classification", "limit"));
+    const { positionals, options } = parseTokensFrom(command, argv);
     assertNoPositionals(positionals);
     return { internalCommand: "docs", input: clean({ mode: "catalog", taskFamily: options["task-family"], surface: options.surface, classification: options.classification, limit: clampableInteger(options.limit, "--limit") }) };
   }
   if (command === "docs:read") {
-    const { positionals } = parseTokens(argv, optionSet()); requirePositionals(positionals, 1, "doc-id");
+    const { positionals } = parseTokensFrom(command, argv); requirePositionals(positionals, 1, "doc-id");
     return { internalCommand: "docs", input: { mode: "read", id: positionals[0] } };
   }
   if (command === "api:read") {
-    const { positionals, options } = parseTokens(argv, optionSet("format")); requirePositionals(positionals, 1, "selector");
+    const { positionals, options } = parseTokensFrom(command, argv); requirePositionals(positionals, 1, "selector");
     return {
       internalCommand: "lookup",
       input: { kind: "api", mode: "read", selector: positionals[0] },
@@ -133,11 +136,11 @@ async function parsePublicArguments(
     };
   }
   if (command === "docs:search") {
-    const { positionals, options } = parseTokens(argv, optionSet("scope", "surface", "task-family", "limit", "snippet-lines")); requirePositionals(positionals, 1, "query");
+    const { positionals, options } = parseTokensFrom(command, argv); requirePositionals(positionals, 1, "query");
     return { internalCommand: "lookup", input: clean({ kind: "docs", query: positionals[0], scope: options.scope, surface: options.surface, taskFamily: options["task-family"], maxResults: clampableInteger(options.limit, "--limit"), maxSnippetLines: clampableInteger(options["snippet-lines"], "--snippet-lines") }) };
   }
   if (command === "api:search") {
-    const { positionals, options } = parseTokens(argv, optionSet("limit", "snippet-lines", "format")); requirePositionals(positionals, 1, "selector");
+    const { positionals, options } = parseTokensFrom(command, argv); requirePositionals(positionals, 1, "selector");
     return {
       internalCommand: "lookup",
       input: clean({ kind: "api", mode: "search", selector: positionals[0], maxResults: clampableInteger(options.limit, "--limit"), maxSnippetLines: clampableInteger(options["snippet-lines"], "--snippet-lines") }),
@@ -147,14 +150,15 @@ async function parsePublicArguments(
   if (command === "run") return parseRun(argv, dependencies);
   if (command === "capture") return parseCapture(argv);
   if (command === "design-system") return parseDesignSystem(argv, dependencies);
+  if (command === "assets:download") return parseDownloadAssets(argv);
   if (command.startsWith("code-connect:")) return parseCodeConnect(command as Extract<FigmaConcreteCommandName, `code-connect:${string}`>, argv, dependencies);
-  if (command === "assets:apply" || command === "assets:download" || command === "upstream:call") return parseJsonLeaf(command, argv, dependencies);
+  if (command === "assets:apply" || command === "upstream:call") return parseJsonLeaf(command, argv, dependencies);
   if (command === "upstream:list") {
-    const { positionals, flags } = parseTokens(argv, optionSet(), flagSet("refresh")); assertNoPositionals(positionals);
+    const { positionals, flags } = parseTokensFrom(command, argv); assertNoPositionals(positionals);
     return { internalCommand: "upstream-tools", input: clean({ refresh: flags.has("refresh") ? true : undefined }) };
   }
   if (command === "upstream:read") {
-    const { positionals, flags } = parseTokens(argv, optionSet(), flagSet("refresh")); requirePositionals(positionals, 1, "name");
+    const { positionals, flags } = parseTokensFrom(command, argv); requirePositionals(positionals, 1, "name");
     return { internalCommand: "upstream-tools", input: clean({ name: positionals[0], refresh: flags.has("refresh") ? true : undefined }) };
   }
   return parseReadLeaf(command as Exclude<FigmaConcreteCommandName, "docs:list" | "docs:catalog" | "docs:read" | "docs:search" | "api:read" | "api:search" | "doctor" | "run" | "capture" | "design-system" | "assets:apply" | "assets:download" | `code-connect:${string}` | "upstream:list" | "upstream:read" | "upstream:call">, argv);
@@ -165,17 +169,21 @@ async function parseCodeConnect(
   argv: readonly string[],
   dependencies: FigmaCommandRuntimeDependencies,
 ): Promise<ParsedPublicCommand> {
-  const common = optionSet("file", "surface", "output-dir", "max-inline-bytes");
   if (command === "code-connect:inspect") {
-    const { positionals, options } = parseTokens(argv, common);
+    const { positionals, options } = parseTokensFrom(command, argv);
     assertNoPositionals(positionals);
     return codeConnectDirect("code-connect-inspect", requireCodeConnectFile(options, command), options);
   }
   if (command === "code-connect:plan") {
-    const { positionals, options } = parseTokens(argv, optionSet("file", "surface", "input", "output-plan", "output-dir", "max-inline-bytes"));
+    const { positionals, options } = parseTokensFrom(command, argv);
     assertNoPositionals(positionals);
     if (!options.input) throw new Error("--input <manifest.json|-> is required.");
     const manifest = await readJsonObjectInput(options.input, dependencies, "--input");
+    // Code Connect keeps its existing trim-and-hyphen normalization in the
+    // business validator. Validate the normalized shape here so Ajv does not
+    // narrow that accepted input while still rejecting unknown fields before
+    // any upstream work is dispatched.
+    assertValidFigmaJsonCommand("code-connect:plan", normalizeCodeConnectManifestForSchema(manifest));
     const outputPlanPath = options["output-plan"];
     return codeConnectDirect("code-connect-plan", {
       ...requireCodeConnectFile(options, command),
@@ -185,7 +193,7 @@ async function parseCodeConnect(
     }, options);
   }
   if (command === "code-connect:apply") {
-    const { positionals, options } = parseTokens(argv, optionSet("file", "surface", "plan", "confirm-plan", "output-dir", "max-inline-bytes"));
+    const { positionals, options } = parseTokensFrom(command, argv);
     assertNoPositionals(positionals);
     if (!options.plan) throw new Error("--plan <path> is required.");
     return codeConnectDirect("code-connect-apply", {
@@ -194,7 +202,7 @@ async function parseCodeConnect(
       confirmPlan: options["confirm-plan"],
     }, options);
   }
-  const { positionals, options } = parseTokens(argv, optionSet("file", "surface", "plan", "output-dir", "max-inline-bytes"));
+  const { positionals, options } = parseTokensFrom(command, argv);
   assertNoPositionals(positionals);
   if (!options.plan) throw new Error("--plan <path> is required.");
   return codeConnectDirect("code-connect-verify", {
@@ -236,7 +244,7 @@ async function readJsonObjectInput(
 }
 
 async function parseRun(argv: readonly string[], dependencies: FigmaCommandRuntimeDependencies): Promise<ParsedPublicCommand> {
-  const { positionals, options } = parseTokens(argv, optionSet("file", "surface", "script", "source", "target-page", "output-dir", "max-inline-bytes"));
+  const { positionals, options } = parseTokensFrom("run", argv);
   assertNoPositionals(positionals);
   const script = options.script;
   const sourceOption = options.source;
@@ -256,39 +264,76 @@ async function parseRun(argv: readonly string[], dependencies: FigmaCommandRunti
 }
 
 function parseCapture(argv: readonly string[]): ParsedPublicCommand {
-  const { positionals, options, flags } = parseTokens(argv, optionSet("file", "node", "target", "surface", "image-file", "output-dir", "max-dimension", "max-inline-bytes"), flagSet("contents-only"));
+  const { positionals, options, flags } = parseTokensFrom("capture", argv);
   assertNoPositionals(positionals);
   if (options.target && (options.file || options.node)) throw new Error("--target is mutually exclusive with --file/--node.");
   if (!options.target && (!options.file || !options.node)) throw new Error("Pass --target <node-url>, or both --file and --node.");
   return direct("capture-node", clean({ file: options.file, target: options.target ?? options.node, surface: options.surface, imageFile: options["image-file"], outputDir: options["output-dir"], maxDimension: integer(options["max-dimension"], "--max-dimension"), contentsOnly: flags.has("contents-only") ? true : undefined }), options);
 }
 
-async function parseJsonLeaf(command: "assets:apply" | "assets:download" | "upstream:call", argv: readonly string[], dependencies: FigmaCommandRuntimeDependencies): Promise<ParsedPublicCommand> {
-  const { positionals, options } = parseTokens(argv, optionSet("input", "file", "surface", "output-dir", "max-inline-bytes")); assertNoPositionals(positionals);
+async function parseJsonLeaf(command: "assets:apply" | "upstream:call", argv: readonly string[], dependencies: FigmaCommandRuntimeDependencies): Promise<ParsedPublicCommand> {
+  const { positionals, options } = parseTokensFrom(command, argv); assertNoPositionals(positionals);
   if (!options.input) throw new Error("--input <json-file|-> is required.");
-  const source = options.input === "-"
-    ? await readRawStdin(dependencies, MAX_INPUT_BYTES)
-    : await readBoundedText(
-      (dependencies.readFile ?? defaultReadFile)(resolve(dependencies.cwd?.() ?? process.cwd(), options.input), MAX_INPUT_BYTES),
-      MAX_INPUT_BYTES,
-    );
-  let input: unknown; try { input=JSON.parse(source); } catch (error) { throw new Error(`--input must contain valid JSON: ${formatError(error)}`); }
-  if (!isRecord(input)) throw new Error("--input JSON must be an object.");
+  const input = await readJsonObjectInput(options.input, dependencies, "--input");
+  const inputBaseDir = options.input === "-"
+    ? dependencies.cwd?.() ?? process.cwd()
+    : dirname(resolve(dependencies.cwd?.() ?? process.cwd(), options.input));
+  if (command === "assets:apply") resolveAssetInputPaths(input, inputBaseDir);
   for (const [key, value] of Object.entries({ file: options.file, surface: options.surface, outputDir: options["output-dir"] })) if (value !== undefined) { if (input[key] !== undefined && input[key] !== value) throw new Error(`Conflicting ${key} in --input and CLI option.`); input[key]=value; }
-  if (command === "assets:apply") {
-    if (typeof input.file !== "string" || !input.file.trim()) throw new Error("figma:assets:apply requires --file <url|key> or a file field in --input JSON.");
-    if (!isFigmaUrl(input.file) && typeof input.surface !== "string") throw new Error("figma:assets:apply with a raw file key requires --surface design|figjam|slides.");
+  assertValidFigmaJsonCommand(command, input);
+  return direct(command === "assets:apply" ? "apply-asset-manifest" : "call-upstream-tool", input, options);
+}
+
+function resolveAssetInputPaths(input: CommandInput, baseDir: string): void {
+  if (!Array.isArray(input.assets)) return;
+  input.assets = input.assets.map((value) => {
+    if (!isRecord(value) || typeof value.path !== "string" || !value.path.trim() || isAbsolute(value.path)) return value;
+    return { ...value, path: resolve(baseDir, value.path) };
+  });
+}
+
+function parseDownloadAssets(argv: readonly string[]): ParsedPublicCommand {
+  const { positionals, options } = parseTokensFrom("assets:download", argv);
+  assertNoPositionals(positionals);
+  if (options.target && (options.file || options.node)) throw new Error("--target is mutually exclusive with --file/--node.");
+  if (!options.target && (!options.file || !options.node)) throw new Error("Pass --target <node-url>, or both --file and --node.");
+  const target = options.target ?? options.node;
+  const defaultFormat = options["default-format"];
+  if (defaultFormat !== undefined && !["png", "jpg", "svg", "pdf"].includes(defaultFormat)) {
+    throw new Error("--default-format must be one of: png, jpg, svg, pdf.");
   }
-  return direct(command === "assets:apply" ? "apply-asset-manifest" : command === "assets:download" ? "download-assets" : "call-upstream-tool", input, options);
+  const defaultScale = decimal(options["default-scale"], "--default-scale");
+  if (defaultScale !== undefined && (defaultScale < 0.01 || defaultScale > 4)) {
+    throw new Error("--default-scale must be from 0.01 to 4.");
+  }
+  return direct("download-assets", clean({
+    file: options.file,
+    target,
+    surface: options.surface,
+    defaultFormat,
+    defaultScale,
+    outputDir: options["output-dir"],
+  }), options);
+}
+
+function normalizeCodeConnectManifestForSchema(input: CommandInput): CommandInput {
+  const normalized: CommandInput = { ...input };
+  const scope = isRecord(input.scope) ? { ...input.scope } : undefined;
+  if (scope && typeof scope.nodeId === "string") scope.nodeId = scope.nodeId.trim().replace(/-/gu, ":");
+  if (scope) normalized.scope = scope;
+  if (Array.isArray(input.mappings)) {
+    normalized.mappings = input.mappings.map((entry) => {
+      if (!isRecord(entry)) return entry;
+      const mapping = { ...entry };
+      if (typeof mapping.nodeId === "string") mapping.nodeId = mapping.nodeId.trim().replace(/-/gu, ":");
+      return mapping;
+    });
+  }
+  return normalized;
 }
 
 async function parseDesignSystem(argv: readonly string[], dependencies: FigmaCommandRuntimeDependencies): Promise<ParsedPublicCommand> {
-  const { positionals, options, flags, repeats } = parseTokens(
-    argv,
-    optionSet("input", "file", "surface", "output-dir", "max-inline-bytes"),
-    flagSet("no-code-connect", "refresh"),
-    repeatSet("library"),
-  );
+  const { positionals, options, flags, repeats } = parseTokensFrom("design-system", argv);
   assertNoPositionals(positionals);
   if (!options.input) throw new Error("--input <json-file|-> is required.");
   const input = await readJsonObjectInput(options.input, dependencies, "--input");
@@ -298,20 +343,21 @@ async function parseDesignSystem(argv: readonly string[], dependencies: FigmaCom
   if (flags.has("no-code-connect")) mergeCliInputField(input, "disableCodeConnect", true);
   if (flags.has("refresh")) mergeCliInputField(input, "refresh", true);
   if ((repeats.library?.length ?? 0) > 0) mergeCliInputField(input, "includeLibraryKeys", repeats.library);
+  assertValidFigmaJsonCommand("design-system", input);
   return direct("search-design-system", input, options);
 }
 
 function parseReadLeaf(command: Exclude<FigmaConcreteCommandName, "docs:list" | "docs:catalog" | "docs:read" | "docs:search" | "api:read" | "api:search" | "doctor" | "run" | "capture" | "design-system" | "assets:apply" | "assets:download" | `code-connect:${string}` | "upstream:list" | "upstream:read" | "upstream:call">, argv: readonly string[]): ParsedPublicCommand {
   if (command === "libraries") {
-    const { positionals, options, flags } = parseTokens(argv, optionSet("file", "surface", "output-dir", "offset", "max-inline-bytes"), flagSet("refresh")); assertNoPositionals(positionals);
+    const { positionals, options, flags } = parseTokensFrom("libraries", argv); assertNoPositionals(positionals);
     return direct("get-libraries", clean({ file: options.file, surface: options.surface, outputDir: options["output-dir"], offset: integer(options.offset, "--offset"), refresh: flags.has("refresh") ? true : undefined }), options);
   }
   const readOptions = command === "metadata"
-    ? optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "max-inline-bytes")
+    ? parseTokenSets("metadata")
     : command === "inspect"
-      ? optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "cursor", "fields", "max-inline-bytes")
-      : optionSet("file", "node", "target", "surface", "output-dir", "mode", "depth", "client-languages", "client-frameworks", "max-inline-bytes");
-  const { positionals, options, flags } = parseTokens(argv, readOptions, flagSet("refresh", "force-code", "no-code-connect", "exclude-screenshot", "recursive"));
+      ? parseTokenSets("inspect")
+      : parseTokenSets(command);
+  const { positionals, options, flags } = parseTokens(argv, readOptions.options, readOptions.flags, readOptions.repeats);
   assertNoPositionals(positionals);
   if (options.target && options.node) throw new Error("Use either --target or --node, not both.");
   const depth = integer(options.depth, "--depth");
@@ -356,18 +402,27 @@ function mappedIo(input: CommandInput, dependencies: FigmaCommandRuntimeDependen
 }
 
 interface ParsedTokens { positionals: string[]; options: Record<string, string | undefined>; flags: Set<string>; repeats: Record<string, string[]> }
+function parseTokensFrom(command: string, argv: readonly string[], profile?: string): ParsedTokens {
+  const tokens = parseTokenSets(command, profile);
+  return parseTokens(argv, tokens.options, tokens.flags, tokens.repeats);
+}
+function parseTokenSets(command: string, profile?: string): FigmaPublicCommandTokenSets {
+  const tokens = getFigmaPublicCommandTokenSets(command, profile);
+  if (!tokens) throw new Error(`Missing public parser token specification for ${command}${profile === undefined ? "" : ` (${profile})`}.`);
+  return tokens;
+}
 function parseTokens(argv: readonly string[], optionNames: Set<string>, flagNames=new Set<string>(), repeatNames=new Set<string>()): ParsedTokens {
   const positionals:string[]=[]; const options:Record<string,string|undefined>={}; const flags=new Set<string>(); const repeats:Record<string,string[]>={};
   for(let i=0;i<argv.length;i+=1){const token=argv[i]!; if(!token.startsWith("--")){positionals.push(token);continue;} const name=token.slice(2); if(flagNames.has(name)){if(flags.has(name))throw new Error(`Option --${name} may be specified only once.`);flags.add(name);continue;} if(!optionNames.has(name)&&!repeatNames.has(name))throw new Error(`Unknown option: --${name}`); const value=argv[++i];if(!value||value.startsWith("--"))throw new Error(`Option --${name} requires a value.`);if(repeatNames.has(name)){(repeats[name]??=[]).push(value);continue;}if(options[name]!==undefined)throw new Error(`Option --${name} may be specified only once.`);options[name]=value;}
   return {positionals,options,flags,repeats};
 }
-function optionSet(...names:string[]):Set<string>{return new Set(names);} function flagSet(...names:string[]):Set<string>{return new Set(names);} function repeatSet(...names:string[]):Set<string>{return new Set(names);}
 function direct(internalCommand:InternalCommand,input:CommandInput,options:Record<string,string|undefined>):ParsedPublicCommand{return{internalCommand,input,inlineResultLimit:integer(options["max-inline-bytes"],"--max-inline-bytes")};}
 function codeConnectDirect(internalCommand: InternalCommand, input: CommandInput, options: Record<string, string | undefined>): ParsedPublicCommand {
   return direct(internalCommand, input, options);
 }
 function noArgs(internalCommand:InternalCommand,input:CommandInput,argv:readonly string[]):ParsedPublicCommand{if(argv.length)throw new Error("This command accepts no arguments.");return{internalCommand,input};}
 function integer(value:string|undefined,label:string):number|undefined{if(value===undefined)return undefined;const parsed=parseSafeIntegerToken(value,label);if(parsed<0)throw new Error(`${label} must be a non-negative safe integer.`);return parsed;}
+function decimal(value:string|undefined,label:string):number|undefined{if(value===undefined)return undefined;if(!/^-?(?:\d+(?:\.\d*)?|\.\d+)$/u.test(value))throw new Error(`${label} must be a finite decimal number.`);const parsed=Number(value);if(!Number.isFinite(parsed))throw new Error(`${label} must be a finite decimal number.`);return parsed;}
 function clampableInteger(value:string|undefined,label:string):number|undefined{if(value===undefined)return undefined;return parseSafeIntegerToken(value,label,"must be a safe integer; out-of-range integers are clamped.");}
 function parseInspectFields(value: string | undefined): string[] | undefined {
   if (value === undefined) return undefined;
@@ -396,7 +451,7 @@ async function defaultReadFile(path:string,maxBytes=MAX_INPUT_BYTES):Promise<str
 async function defaultReadStdin(maxBytes=MAX_INPUT_BYTES):Promise<string>{const chunks:Buffer[]=[];let bytes=0;for await(const chunk of process.stdin){const value=Buffer.from(chunk);bytes+=value.byteLength;if(bytes>maxBytes)throw new Error(`Input exceeds ${maxBytes} bytes.`);chunks.push(value);}return Buffer.concat(chunks).toString("utf8");}
 
 function normalizeExplicitPaths(command: FigmaConcreteCommandName, input: CommandInput, cwd: string): void {
-  for (const field of ["outputDir", "imageFile", "manifestPath", "outputPlanPath", "planPath"] as const) {
+  for (const field of ["outputDir", "imageFile", "outputPlanPath", "planPath"] as const) {
     if (typeof input[field] === "string" && input[field].trim()) input[field] = resolve(cwd, input[field]);
   }
   if (command !== "assets:apply" || !Array.isArray(input.assets)) return;
@@ -410,7 +465,7 @@ function assertStrictFigmaReferences(command: FigmaConcreteCommandName, input: C
   const allowCompositeNodeId = command === "metadata" || command === "design-context";
   assertFileReference(input.file, 'Tool argument "file"', allowCompositeNodeId);
   assertNodeTargetReference(input.target, 'Tool argument "target"', allowCompositeNodeId);
-  for (const [collection, label] of [[input.assets, "assets"], [input.targets, "targets"]] as const) {
+  for (const [collection, label] of [[input.assets, "assets"]] as const) {
     if (!Array.isArray(collection)) continue;
     collection.forEach((entry, index) => {
       if (isRecord(entry)) assertNodeTargetReference(entry.target, `Tool argument "${label}[${index}].target"`);
@@ -500,8 +555,64 @@ export function formatFamilyHelp(family:FigmaCommandFamily):string{
 export function formatCommandHelp(command:string):string{
   if(!isPublicCommand(command))return `# figma:${command}\n\nUnknown public leaf. Use figma:help for the complete stateless command inventory.\n`;
   const inspectDetails=command==="inspect"?`\nInspect returns one live, depth-first page of flat nodes. --depth is descendant depth: 0 reads only the target and inspect mode defaults to 2. Pass nextCursor with the same explicit file and node to continue pagination; changes between pages can repeat or omit nodes. By default it returns ${FIGMA_WORKSPACE_INSPECT_DETAIL_FIELDS.join(", ")}; use --fields with a non-empty comma-separated subset to reduce a large node. Structural id, type, parentId, depth, and childCount are always returned. --cursor and --fields apply only to --mode inspect; style requires a positive depth and keeps its existing aggregation behavior.`:"";
-  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss; Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded.":command==="upstream:call"?"\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. When a complete result is persisted, outputFiles.resultFile is the single figma-cli-result JSON receipt; stdout identifies the receipt path once. An over-budget upstream response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry.":command==="code-connect:apply"?"\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write.":command==="code-connect:plan"?"\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback.":command==="code-connect:verify"?"\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":command==="docs:catalog"?"\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments.":command==="api:read"?"\nPass a bare or qualified Plugin API selector, such as fontName, BaseNonResizableTextMixin.fontName, or figma.createFrame(). A bare selector succeeds only when it identifies one owner; otherwise the result lists qualified selectors to copy. Default output is readable TypeScript.":command==="api:search"?"\nPass a bare, qualified, or call-shaped Plugin API selector. Results show copyable qualified selectors for figma:api:read. Out-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="docs:search"?"\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="design-system"?"\nInput JSON must contain an ordered non-empty queries array. Each query item has an entity (component, variable, or style) and one search intent; one upstream batch call is made for the complete array.":command==="assets:apply"?"\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow.":command==="assets:download"?"\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg.":"";
-  return `# figma:${command}\n\nUsage: ${PUBLIC_COMMAND_USAGE[command]}${details}${inspectDetails}\n`;
+  const details=command==="run"?"\n--script resolves relative to cwd and must be a regular non-symlink .figma.ts file. --source accepts only '-' and reads TypeScript from stdin. Raw file keys require --surface. A direct returned use_figma script error reports executionOutcome: failed_atomic: Figma confirmed the script made no changes, so repair and retry safely. Status: failed during execution is reserved for an outcome_unknown response loss. Status: failed after execution is reserved for local post-processing failure after executionOutcome: succeeded.":command==="upstream:call"?"\nRead the exact live schema through figma:upstream:read before calling. Covered official tools remain callable here; their first-class figma:* commands add local validation and result handling. When a complete result is persisted, outputFiles.resultFile is the single figma-cli-result JSON receipt; stdout identifies the receipt path once. An over-budget upstream response returns a resource diagnostic without writing its payload. A direct use_figma script error is failed_atomic; any other dispatched error is outcome_unknown and requires read-back before retry.":command==="code-connect:apply"?"\nThis is the only Code Connect write command. It requires the exact planDigest from figma:code-connect:plan and blocks stale snapshots before dispatch. A post-dispatch error is outcome_unknown: run figma:code-connect:verify rather than replaying the write.":command==="code-connect:plan"?"\nValidates a simple-mapping manifest and writes an immutable plan artifact. Templates are rejected. The plan is unavailable when Figma cannot return mappings in a format safe for full readback.":command==="code-connect:verify"?"\nSafe to repeat. Reports matched, missing, mismatch, or unavailable for every planned mapping.":command==="doctor"?"\nRuns local corpus, Plugin API index, and TypeScript runtime diagnostics. No Figma target is required.":command==="docs:catalog"?"\nOut-of-range safe --limit integers are clamped to the nearest endpoint and reported in parameterAdjustments.":command==="api:read"?"\nPass a bare or qualified Plugin API selector, such as fontName, BaseNonResizableTextMixin.fontName, or figma.createFrame(). A bare selector succeeds only when it identifies one owner; otherwise the result lists qualified selectors to copy. Default output is readable TypeScript.":command==="api:search"?"\nPass a bare, qualified, or call-shaped Plugin API selector. Results show copyable qualified selectors for figma:api:read. Out-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="docs:search"?"\nOut-of-range safe integer limits are clamped to the nearest endpoint and reported in parameterAdjustments. Search applies one 12000-byte UTF-8 budget across returned snippets and reports truncation in snippetBudget.":command==="design-system"?"\nInput JSON must contain an ordered non-empty queries array. Each query item has an entity (component, variable, or style) and one search intent; one upstream batch call is made for the complete array.":command==="assets:apply"?"\nManifest assets must be PNG, JPG/JPEG, GIF, or WebP raster files applied as fills to explicit targets. SVG input is rejected because official SVG uploads create editable vector node trees; use figma:run for that workflow.":command==="assets:download"?"\nDownloads the whole-node export, original raster source images, and returned vector-layer SVG assets. downloadedFiles.kind is exported, raw, or svg.":"";
+  const jsonInputHelp = formatJsonInputHelp(command);
+  return `# figma:${command}\n\nUsage: ${PUBLIC_COMMAND_USAGE[command]}${details}${inspectDetails}${jsonInputHelp}\n`;
+}
+
+/**
+ * Render the exact document accepted by a public leaf's --input option.
+ *
+ * Invocation fields are included when a command accepts them in its JSON
+ * object. The equivalent CLI options may supply or merge those fields before
+ * dispatch; conflicting values fail closed. Code Connect's plan input is the
+ * manifest itself and therefore intentionally has no invocation wrapper.
+ */
+export function formatJsonInputHelp(command: string): string {
+  const contract = getFigmaJsonCommandContract(command);
+  if (!contract) return "";
+  const examples = [contract.example, ...(contract.examples ?? [])];
+  const schemaSummary = formatJsonSchemaSummary(contract.inputSchema);
+  return [
+    "",
+    "## --input JSON",
+    "The JSON document itself must follow this schema. Supported CLI options can merge file, surface, and outputDir before the command validator; upstream business arguments keep their live upstream validation:",
+    ...(schemaSummary.length > 0 ? ["", ...schemaSummary] : []),
+    "",
+    "```json",
+    JSON.stringify(contract.inputSchema, null, 2),
+    "```",
+    "",
+    "Minimal copyable example:",
+    "",
+    "```json",
+    JSON.stringify(examples[0], null, 2),
+    "```",
+    ...(examples.length > 1
+      ? ["", "Alternative copyable example:", "", "```json", JSON.stringify(examples[1], null, 2), "```"]
+      : []),
+    "",
+    ...contract.notes.map((note) => `- ${note}`),
+    "",
+  ].join("\n");
+}
+
+function formatJsonSchemaSummary(schema: Record<string, unknown>): string[] {
+  const lines: string[] = [];
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((value): value is string => typeof value === "string")
+    : [];
+  if (required.length > 0) lines.push(`Required fields: ${required.join(", ")}.`);
+  const exclusive = Array.isArray(schema.oneOf)
+    ? schema.oneOf
+      .map((branch) => isRecord(branch) && Array.isArray(branch.required)
+        ? branch.required.filter((value): value is string => typeof value === "string")
+        : [])
+      .filter((fields) => fields.length > 0)
+    : [];
+  if (exclusive.length > 0) lines.push(`Exactly one of: ${exclusive.map((fields) => fields.join(" + ")).join("; ")}.`);
+  if (schema.additionalProperties === false) lines.push("Unknown top-level fields are rejected; nested objects declare their own additionalProperties policy below.");
+  return lines;
 }
 
 const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
@@ -522,7 +633,7 @@ const PUBLIC_COMMAND_USAGE: Record<FigmaConcreteCommandName,string> = {
   run:`figma:run --file <url|key> (--script <path.figma.ts> | --source -) [--surface design|figjam|slides] [--target-page <node-id>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   capture:`figma:capture (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--image-file <path>] [--output-dir <path>] [--max-dimension <${CAPTURE_MAX_DIMENSION_MIN}..${CAPTURE_MAX_DIMENSION_MAX}>] [--contents-only] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "assets:apply":`figma:assets:apply --input <json-file|-> --file <url|key> [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
-  "assets:download":`figma:assets:download --input <json-file|-> [--file <url|key>] [--surface design|figjam|slides] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
+  "assets:download":`figma:assets:download (--target <node-url> | --file <url|key> --node <node-id>) [--surface design|figjam|slides] [--default-format png|jpg|svg|pdf] [--default-scale <0.01..4>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "code-connect:inspect":`figma:code-connect:inspect --file <Design-url|key> [--surface design] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "code-connect:plan":`figma:code-connect:plan --file <Design-url|key> --input <manifest.json|-> [--surface design] [--output-plan <path-inside-output-dir>] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,
   "code-connect:apply":`figma:code-connect:apply --file <Design-url|key> --plan <path> --confirm-plan <digest> [--surface design] [--output-dir <path>] [--max-inline-bytes <${INLINE_RESULT_LIMIT_MIN}..${INLINE_RESULT_LIMIT_MAX}>]`,

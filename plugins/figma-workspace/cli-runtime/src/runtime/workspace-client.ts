@@ -81,10 +81,13 @@ import {
   asUpstreamToolsArgs,
   DOCS_CATALOG_LIMIT_MAX,
   DOCS_CATALOG_LIMIT_MIN,
+  FIGMA_WORKSPACE_IMAGE_SCALE_MODES,
+  FIGMA_WORKSPACE_IMAGE_SCALE_MODE_PATTERN,
   INLINE_RESULT_LIMIT_MAX,
   INLINE_RESULT_LIMIT_MIN,
   LOOKUP_RESULTS_MIN,
   LOOKUP_SNIPPET_LINES_MIN,
+  MAX_MANIFEST_ITEMS,
   withDefaultTitle,
 } from "../contract/tool-args.js";
 import { isCompositeCapableFigmaNodeId, isFigmaFileKey, isSimpleFigmaNodeId } from "../contract/figma-target.js";
@@ -99,7 +102,6 @@ import type {
   FigmaWorkspaceCodeConnectVerifyArguments,
   FigmaWorkspaceCaptureNodeArguments,
   FigmaWorkspaceDownloadAssetsArguments,
-  FigmaWorkspaceDownloadAssetsTarget,
   FigmaWorkspaceDocsArguments,
   FigmaWorkspaceDoctorArguments,
   FigmaWorkspaceGetDesignContextArguments,
@@ -179,7 +181,6 @@ export type {
   FigmaWorkspaceCodeConnectVerifyArguments,
   FigmaWorkspaceCaptureNodeArguments,
   FigmaWorkspaceDownloadAssetsArguments,
-  FigmaWorkspaceDownloadAssetsTarget,
   FigmaWorkspaceGetDesignContextArguments,
   FigmaWorkspaceGetLibrariesArguments,
   FigmaWorkspaceGetMetadataArguments,
@@ -197,8 +198,6 @@ const DEFAULT_EVAL_ARGUMENT_NAME = requireWrapperUpstreamProperty(DEFAULT_EVAL_C
 const DEFAULT_EVAL_DESCRIPTION = "Figma Workspace Plugin API execution";
 const DEFAULT_INLINE_RESULT_LIMIT = 2_048;
 const MAX_QUEUED_CAPTURE_REQUESTS = 8;
-const MAX_MANIFEST_ITEMS = 64;
-const MAX_MANIFEST_FILE_BYTES = 256 * 1024;
 const MAX_CODE_CONNECT_PLAN_BYTES = 1024 * 1024;
 const MAX_SINGLE_ASSET_BYTES = 16 * 1024 * 1024;
 const MAX_UPLOAD_ASSET_BYTES = 10_000_000;
@@ -644,21 +643,14 @@ export interface FigmaWorkspaceDownloadedAssetFile extends FigmaWorkspaceFilePoi
   format?: string;
 }
 
-export interface FigmaWorkspaceDownloadAssetsTargetResult {
-  [key: string]: unknown;
-  ok: boolean;
+export interface FigmaWorkspaceDownloadAssetsResult extends FigmaWorkspaceToolResultBase {
   targetNodeId: string;
   name?: string;
   outputDir: string;
   downloadedFiles: FigmaWorkspaceDownloadedAssetFile[];
   upstreamError?: FigmaWorkspacePublicUpstreamError;
   downloadError?: FigmaWorkspacePublicUpstreamError;
-}
-
-export interface FigmaWorkspaceDownloadAssetsResult extends FigmaWorkspaceToolResultBase {
-  outputDir: string;
-  targets: FigmaWorkspaceDownloadAssetsTargetResult[];
-  failures?: Array<Record<string, unknown>>;
+  diagnostics?: FigmaWorkspaceDiagnostic[];
   outputFiles?: FigmaWorkspaceOutputFiles;
 }
 
@@ -1043,10 +1035,6 @@ interface OpenedAssetInput {
   asset: NormalizedAssetManifestAsset;
   handle: FileHandle;
   stats: Stats;
-}
-
-interface NormalizedDownloadAssetsManifest {
-  targets: NormalizedDownloadAssetsTarget[];
 }
 
 interface NormalizedDownloadAssetsTarget {
@@ -1758,26 +1746,8 @@ async function executeApplyAssetManifest(
   const resourceBudget = commandResourceBudget();
   let manifest: NormalizedAssetManifest;
   let assetInputs: OpenedAssetInput[];
-  try {
-    manifest = await loadAssetManifest(args, session, resourceBudget);
-    assetInputs = await openAssetInputs(manifest.assets, session, resourceBudget);
-  } catch (error) {
-    if (error instanceof AssetManifestLoadError) {
-      const diagnostics = [assetManifestLoadDiagnostic(error)];
-      session.lastDiagnostics = diagnostics;
-      return {
-        ok: false,
-        assets: [],
-        diagnostics: diagnosticsForResponse(diagnostics),
-        failures: [{
-          reason: "manifest-load-failed",
-          manifestPath: error.manifestPath,
-          message: error.message,
-        }],
-      };
-    }
-    throw error;
-  }
+  manifest = normalizeAssetManifest(args, session);
+  assetInputs = await openAssetInputs(manifest.assets, session, resourceBudget);
   try {
   const tools = await runtime.upstreamToolCache.list(false);
   const uploadKind = requireWrapperUpstreamKind(APPLY_ASSET_MANIFEST_CONTRACT);
@@ -1967,145 +1937,109 @@ async function executeDownloadAssets(
 ): Promise<Record<string, unknown>> {
   const session = currentInvocationContext();
   const resourceBudget = commandResourceBudget();
-  const manifest = await loadDownloadAssetsManifest(args, session, resourceBudget);
+  const target = normalizeDownloadAssetTarget(args, session);
   const paths = resolveDownloadAssetsOutputPaths(args, session);
   const tools = await runtime.upstreamToolCache.list(false);
   const downloadKind = requireWrapperUpstreamKind(DOWNLOAD_ASSETS_CONTRACT);
   const tool = selectRequiredUpstreamTool(tools, DOWNLOAD_ASSETS_TOOL_NAME, downloadKind);
   assertUpstreamToolHasProperties(tool, [...(DOWNLOAD_ASSETS_CONTRACT.requiredUpstreamProperties ?? [])], downloadKind);
-  const targetResults: Array<Record<string, unknown>> = [];
-  const targetDetails: Array<Record<string, unknown>> = [];
-  const failures: Array<Record<string, unknown>> = [];
   const diagnostics: FigmaWorkspaceDiagnostic[] = [];
-  const usedSlugs = new Set<string>();
+  const targetOutputDir = resolve(paths.outputDir, downloadTargetSlug(target));
   await connectUpstream(runtime.client, "Download Figma assets");
-
-  for (const [index, target] of manifest.targets.entries()) {
-    const startedAt = new Date().toISOString();
-    const targetSlug = uniqueDownloadTargetSlug(target, index, usedSlugs);
-    const targetOutputDir = resolve(paths.outputDir, targetSlug);
-    const passthrough = collectContractPassthroughArguments({
-      args: target,
-      contract: DOWNLOAD_ASSETS_CONTRACT,
-    });
-    const filtered = filterAdvertisedUpstreamArguments({
-      upstreamArguments: buildDownloadAssetsUpstreamArguments(target, passthrough),
-      contract: DOWNLOAD_ASSETS_CONTRACT,
-      tool,
-      upstreamKind: downloadKind,
-    });
-    diagnostics.push(...filtered.diagnostics);
-    const upstreamArguments = filtered.arguments;
-    try {
-      const upstream = await callUpstreamToolWithLimits(runtime.client, tool.name, upstreamArguments);
-      const parsed = parseUpstreamToolResult(upstream);
-      const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined;
-      const collected = parsed.upstreamError
-        ? { links: [], unsupportedSvgAssetCount: 0 }
-        : collectDownloadAssetLinks(parsed.json);
-      const links = collected.links;
-      const downloadedFiles = parsed.upstreamError
-        ? []
-        : await downloadAssetLinks(links, targetOutputDir, resourceBudget);
-      const downloadFailures = downloadedFiles.filter((file) => file.ok === false);
-      const unsupportedSvgAssetError = collected.unsupportedSvgAssetCount > 0
-        ? {
-            message: `Upstream download_assets returned ${collected.unsupportedSvgAssetCount} svgAssets ${collected.unsupportedSvgAssetCount === 1 ? "entry" : "entries"} without a supported downloadable URL. The response shape was not guessed or silently ignored.`,
-          }
-        : undefined;
-      if (unsupportedSvgAssetError) {
-        diagnostics.push({
-          code: "FIGMA_WORKSPACE_DOWNLOAD_SVG_ASSET_SHAPE_UNSUPPORTED",
-          severity: "fatal",
-          message: unsupportedSvgAssetError.message,
-          suggestion: "Inspect outputFiles.resultFile and the live download_assets description before adapting the parser to a new response shape.",
-          docsHint: "Figma Workspace CLI: figma:upstream:read download_assets",
-        });
-      }
-      const ok = !parsed.upstreamError
-        && links.length > 0
-        && downloadFailures.length === 0
-        && !unsupportedSvgAssetError;
-      const downloadError = downloadFailures[0]?.error
-        ? responseUpstreamError(normalizeCaughtUpstreamError(downloadFailures[0].error))
-        : unsupportedSvgAssetError
-          ? unsupportedSvgAssetError
-          : links.length === 0 && !parsed.upstreamError
-            ? { message: "Upstream download_assets returned no downloadable URLs." }
-            : undefined;
-      const entry = removeUndefined({
-        ok,
-        targetNodeId: target.targetNodeId,
-        name: target.name,
-        outputDir: targetOutputDir,
-        downloadedFiles: compactDownloadedFiles(downloadedFiles),
-        upstreamError,
-        downloadError,
-      }) as Record<string, unknown>;
-      const detail = removeUndefined({
-        ...entry,
-        toolName: tool.name,
-        arguments: upstreamArguments,
-        links,
-        downloadedFiles,
-        upstream: upstreamEnvelope(parsed),
-        upstreamError,
-        primaryFix: parsed.primaryFix,
-        startedAt,
-        finishedAt: new Date().toISOString(),
-      }) as Record<string, unknown>;
-      targetResults.push(entry);
-      targetDetails.push(detail);
-      if (!ok) {
-        failures.push(removeUndefined({
-          targetNodeId: target.targetNodeId,
-          name: target.name,
-          outputDir: targetOutputDir,
-          upstreamError,
-          downloadError: downloadError ?? {
-            message: "One or more asset downloads failed.",
-          },
-        }) as Record<string, unknown>);
-      }
-    } catch (error) {
-      const upstreamError = normalizeCaughtUpstreamError(error);
-      const responseError = responseUpstreamError(upstreamError);
-      const entry = removeUndefined({
-        ok: false,
-        targetNodeId: target.targetNodeId,
-        name: target.name,
-        outputDir: targetOutputDir,
-        downloadedFiles: [],
-        upstreamError: responseError,
-      }) as Record<string, unknown>;
-      const detail = removeUndefined({
-        ...entry,
-        toolName: tool.name,
-        arguments: upstreamArguments,
-        upstreamError: responseError,
-        primaryFix: primaryFixForUpstreamError(upstreamError),
-        startedAt,
-        finishedAt: new Date().toISOString(),
-      }) as Record<string, unknown>;
-      targetResults.push(entry);
-      targetDetails.push(detail);
-      failures.push(removeUndefined({
-        targetNodeId: target.targetNodeId,
-        name: target.name,
-        outputDir: targetOutputDir,
-        upstreamError: responseError,
-      }) as Record<string, unknown>);
+  const startedAt = new Date().toISOString();
+  const passthrough = collectContractPassthroughArguments({ args, contract: DOWNLOAD_ASSETS_CONTRACT });
+  const filtered = filterAdvertisedUpstreamArguments({
+    upstreamArguments: buildDownloadAssetsUpstreamArguments(target, passthrough),
+    contract: DOWNLOAD_ASSETS_CONTRACT,
+    tool,
+    upstreamKind: downloadKind,
+  });
+  diagnostics.push(...filtered.diagnostics);
+  const upstreamArguments = filtered.arguments;
+  let payload: Record<string, unknown>;
+  let detail: Record<string, unknown>;
+  try {
+    const upstream = await callUpstreamToolWithLimits(runtime.client, tool.name, upstreamArguments);
+    const parsed = parseUpstreamToolResult(upstream);
+    const upstreamError = parsed.upstreamError ? responseUpstreamError(parsed.upstreamError) : undefined;
+    const collected = parsed.upstreamError
+      ? { links: [], unsupportedSvgAssetCount: 0 }
+      : collectDownloadAssetLinks(parsed.json);
+    const links = collected.links;
+    const downloadedFiles = parsed.upstreamError
+      ? []
+      : await downloadAssetLinks(links, targetOutputDir, resourceBudget);
+    const downloadFailures = downloadedFiles.filter((file) => file.ok === false);
+    const unsupportedSvgAssetError = collected.unsupportedSvgAssetCount > 0
+      ? {
+          message: `Upstream download_assets returned ${collected.unsupportedSvgAssetCount} svgAssets ${collected.unsupportedSvgAssetCount === 1 ? "entry" : "entries"} without a supported downloadable URL. The response shape was not guessed or silently ignored.`,
+        }
+      : undefined;
+    if (unsupportedSvgAssetError) {
+      diagnostics.push({
+        code: "FIGMA_WORKSPACE_DOWNLOAD_SVG_ASSET_SHAPE_UNSUPPORTED",
+        severity: "fatal",
+        message: unsupportedSvgAssetError.message,
+        suggestion: "Inspect outputFiles.resultFile and the live download_assets description before adapting the parser to a new response shape.",
+        docsHint: "Figma Workspace CLI: figma:upstream:read download_assets",
+      });
     }
+    const ok = !parsed.upstreamError
+      && links.length > 0
+      && downloadFailures.length === 0
+      && !unsupportedSvgAssetError;
+    const downloadError = downloadFailures[0]?.error
+      ? responseUpstreamError(normalizeCaughtUpstreamError(downloadFailures[0].error))
+      : unsupportedSvgAssetError
+        ? unsupportedSvgAssetError
+        : links.length === 0 && !parsed.upstreamError
+          ? { message: "Upstream download_assets returned no downloadable URLs." }
+          : undefined;
+    payload = removeUndefined({
+      ok,
+      targetNodeId: target.targetNodeId,
+      name: target.name,
+      outputDir: targetOutputDir,
+      downloadedFiles: compactDownloadedFiles(downloadedFiles),
+      upstreamError,
+      downloadError,
+      diagnostics: diagnostics.length > 0 ? diagnosticsForResponse(dedupeDiagnostics(diagnostics)) : undefined,
+    }) as Record<string, unknown>;
+    detail = removeUndefined({
+      ...payload,
+      toolName: tool.name,
+      arguments: upstreamArguments,
+      links,
+      downloadedFiles,
+      upstream: upstreamEnvelope(parsed),
+      upstreamError,
+      primaryFix: parsed.primaryFix,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    }) as Record<string, unknown>;
+  } catch (error) {
+    const upstreamError = normalizeCaughtUpstreamError(error);
+    const responseError = responseUpstreamError(upstreamError);
+    payload = removeUndefined({
+      ok: false,
+      targetNodeId: target.targetNodeId,
+      name: target.name,
+      outputDir: targetOutputDir,
+      downloadedFiles: [],
+      upstreamError: responseError,
+      diagnostics: diagnostics.length > 0 ? diagnosticsForResponse(dedupeDiagnostics(diagnostics)) : undefined,
+    }) as Record<string, unknown>;
+    detail = removeUndefined({
+      ...payload,
+      toolName: tool.name,
+      arguments: upstreamArguments,
+      upstreamError: responseError,
+      primaryFix: primaryFixForUpstreamError(upstreamError),
+      startedAt,
+      finishedAt: new Date().toISOString(),
+    }) as Record<string, unknown>;
   }
-
-  const ok = failures.length === 0;
-  const payload = removeUndefined({
-    ok,
-    outputDir: paths.outputDir,
-    targets: targetResults,
-    diagnostics: diagnostics.length > 0 ? diagnosticsForResponse(dedupeDiagnostics(diagnostics)) : undefined,
-    failures: failures.length > 0 ? failures : undefined,
-  }) as Record<string, unknown>;
+  const ok = payload.ok === true;
   if (!ok) {
     return attachPostExecutionOutputFiles({
       resultPayload: payload,
@@ -2115,7 +2049,7 @@ async function executeDownloadAssets(
           path: paths.resultFile,
           tool: "figma:assets:download",
           session,
-          result: { ...payload, targetDetails },
+          result: detail,
         }),
       }),
     });
@@ -2123,76 +2057,31 @@ async function executeDownloadAssets(
   return payload;
 }
 
-async function loadDownloadAssetsManifest(
+function normalizeDownloadAssetTarget(
   args: FigmaWorkspaceDownloadAssetsArguments,
   session: FigmaWorkspaceInvocationContext,
-  resourceBudget: DataPlaneResourceBudget,
-): Promise<NormalizedDownloadAssetsManifest> {
-  const inlineTargets = Array.isArray(args.targets) ? args.targets : undefined;
-  const manifestPath = resolveInvocationAwareFile(args.manifestPath, session, "manifestPath");
-  if (inlineTargets && manifestPath) {
-    throw new Error('Pass either "targets" or "manifestPath", not both.');
-  }
-  const manifestValue = manifestPath
-    ? JSON.parse((await readManagedWorkspaceFile({
-      path: manifestPath,
-      session,
-      limitBytes: MAX_MANIFEST_FILE_BYTES,
-      resourceBudget,
-      label: "Download manifest",
-    })).toString("utf8"))
-    : undefined;
-  const manifestRecord = asRecord(manifestValue);
-  if (manifestRecord.assets !== undefined) {
-    throw new Error('Download manifest field "assets" is not supported. Use "targets".');
-  }
-  const rawTargets = inlineTargets ?? (Array.isArray(manifestRecord.targets) ? manifestRecord.targets : undefined);
-  if (!rawTargets || rawTargets.length === 0) {
-    throw new Error('Tool argument "targets" or "manifestPath" with targets is required.');
-  }
-  assertManifestItemCount(rawTargets.length, "Download manifest");
-  return {
-    targets: rawTargets.map((target, index) => normalizeDownloadAssetTarget(target, index, session)),
-  };
-}
-
-function normalizeDownloadAssetTarget(
-  value: FigmaWorkspaceDownloadAssetsTarget | unknown,
-  index: number,
-  session: FigmaWorkspaceInvocationContext,
 ): NormalizedDownloadAssetsTarget {
-  const record = asRecord(value);
   const targetResolution = resolveRequestScopedTarget({
-    target: record.target,
+    target: args.target,
+    explicitFile: args.file,
     session,
     toolName: "figma:assets:download",
   });
   const targetNodeId = targetResolution.nodeId;
   if (!targetNodeId) {
-    throw new Error(`Download target ${index} requires target.`);
+    throw new Error('Tool argument "target" is required.');
   }
   const fileKey = targetResolution.fileKey;
   if (!fileKey) {
-    throw new Error(`Download target ${index} requires a Figma file key. Pass --file or include fileKey in the structured target.`);
+    throw new Error('Tool argument "target" requires a Figma file key. Pass --file with a raw node id, or use a full node URL/structured target.');
   }
-  const defaultFormat = asOptionalDownloadAssetFormat(record.defaultFormat);
-  const defaultScale = typeof record.defaultScale === "number" && Number.isFinite(record.defaultScale)
-    ? record.defaultScale
-    : undefined;
   return {
     targetNodeId,
     fileKey,
-    name: asOptionalString(record.name),
-    defaultFormat,
-    defaultScale,
+    name: asOptionalString(args.title),
+    defaultFormat: args.defaultFormat,
+    defaultScale: args.defaultScale,
   };
-}
-
-function asOptionalDownloadAssetFormat(value: unknown): NormalizedDownloadAssetsTarget["defaultFormat"] {
-  if (value === "png" || value === "jpg" || value === "svg" || value === "pdf") {
-    return value;
-  }
-  return undefined;
 }
 
 function resolveDownloadAssetsOutputPaths(
@@ -2228,20 +2117,8 @@ function buildDownloadAssetsUpstreamArguments(
   }) as Record<string, unknown>;
 }
 
-function uniqueDownloadTargetSlug(
-  target: NormalizedDownloadAssetsTarget,
-  index: number,
-  used: Set<string>,
-): string {
-  const base = slugifyTaskName(target.name || target.targetNodeId || `target-${index + 1}`);
-  let candidate = base || `target-${index + 1}`;
-  let suffix = 2;
-  while (used.has(candidate)) {
-    candidate = `${base}-${suffix}`;
-    suffix += 1;
-  }
-  used.add(candidate);
-  return candidate;
+function downloadTargetSlug(target: NormalizedDownloadAssetsTarget): string {
+  return slugifyTaskName(target.name || target.targetNodeId) || "target";
 }
 
 function collectDownloadAssetLinks(value: unknown): DownloadAssetLinkCollection {
@@ -2481,45 +2358,6 @@ async function* boundedResponseBodyChunks(options: {
     }
     reader.releaseLock();
   }
-}
-
-async function readBoundedLocalFile(
-  path: string,
-  limitBytes: number,
-  resourceBudget: DataPlaneResourceBudget,
-  label: string,
-): Promise<Buffer> {
-  const fileStats = await stat(path);
-  assertSingleItemLimit(fileStats.size, limitBytes, label);
-  resourceBudget.assertCanConsume(fileStats.size, label);
-  const chunks: Buffer[] = [];
-  let bytes = 0;
-  for await (const rawChunk of createReadStream(path)) {
-    const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
-    bytes += chunk.byteLength;
-    assertSingleItemLimit(bytes, limitBytes, label);
-    resourceBudget.consume(chunk.byteLength, label);
-    chunks.push(chunk);
-  }
-  return Buffer.concat(chunks, bytes);
-}
-
-async function readManagedWorkspaceFile(options: {
-  path: string;
-  session: FigmaWorkspaceInvocationContext;
-  limitBytes: number;
-  resourceBudget: DataPlaneResourceBudget;
-  label: string;
-}): Promise<Buffer> {
-  await assertInvocationManagedInputFile(options.path, options.session);
-  const result = await readBoundedLocalFile(
-    options.path,
-    options.limitBytes,
-    options.resourceBudget,
-    options.label,
-  );
-  await assertInvocationManagedInputFile(options.path, options.session);
-  return result;
 }
 
 async function openAssetInputs(
@@ -2784,12 +2622,6 @@ function parseContentLength(value: string | null): number | undefined {
 function assertSingleItemLimit(bytes: number, limitBytes: number, label: string): void {
   if (!Number.isSafeInteger(bytes) || bytes < 0 || bytes > limitBytes) {
     throw resourceLimitError(`${label} exceeds the ${formatDataPlaneLimit(limitBytes)} per-item limit.`);
-  }
-}
-
-function assertManifestItemCount(count: number, label: string): void {
-  if (count > MAX_MANIFEST_ITEMS) {
-    throw resourceLimitError(`${label} contains ${count} items; at most ${MAX_MANIFEST_ITEMS} are allowed.`);
   }
 }
 
@@ -5855,80 +5687,14 @@ const $ = Object.freeze({
   capture: __figmaWorkspaceCapture,
 });`;
 }
-async function loadAssetManifest(
+function normalizeAssetManifest(
   args: FigmaWorkspaceApplyAssetManifestArguments,
   session: FigmaWorkspaceInvocationContext,
-  resourceBudget: DataPlaneResourceBudget,
-): Promise<NormalizedAssetManifest> {
-  const manifestPath = resolveInvocationAwareFile(args.manifestPath, session, "manifestPath");
-  const manifestValue = manifestPath ? await readAssetManifestValue(manifestPath, resourceBudget, session) : undefined;
-  const manifestRecord = asRecord(manifestValue);
-  const manifestAssets = Array.isArray(manifestValue)
-    ? manifestValue
-    : Array.isArray(manifestRecord.assets)
-      ? manifestRecord.assets
-      : undefined;
-  const inlineAssets = Array.isArray(args.assets) ? args.assets : undefined;
-  const rawAssets = inlineAssets ?? manifestAssets;
-  if (!rawAssets || rawAssets.length === 0) {
-    throw new Error('Tool argument "assets" or "manifestPath" with assets is required.');
-  }
-  assertManifestItemCount(rawAssets.length, "Asset manifest");
-  const baseDir = manifestPath ? dirname(manifestPath) : session.cwd;
-  if (manifestRecord.argumentsTemplate !== undefined) {
-    throw new Error('Asset manifest field "argumentsTemplate" was removed. Use figma:upstream:call only for explicit upstream capabilities.');
-  }
-  if (manifestRecord.toolName !== undefined || manifestRecord.arguments !== undefined || manifestRecord.refresh !== undefined) {
-    throw new Error('Asset manifest fields "toolName/arguments/refresh" were removed. Use figma:upstream:call only for explicit upstream capabilities.');
-  }
+): NormalizedAssetManifest {
+  const rawAssets = args.assets;
+  if (!rawAssets || rawAssets.length === 0) throw new Error('Tool argument "assets" with assets is required.');
   return {
-    assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, baseDir, session)),
-  };
-}
-
-class AssetManifestLoadError extends Error {
-  readonly manifestPath: string;
-
-  constructor(manifestPath: string, cause: unknown) {
-    super(`Unable to read asset manifest "${manifestPath}": ${errorMessage(cause)}`);
-    this.name = "AssetManifestLoadError";
-    this.manifestPath = manifestPath;
-  }
-}
-
-async function readAssetManifestValue(
-  manifestPath: string,
-  resourceBudget: DataPlaneResourceBudget,
-  session?: FigmaWorkspaceInvocationContext,
-): Promise<unknown> {
-  try {
-    const bytes = session
-      ? await readManagedWorkspaceFile({
-        path: manifestPath,
-        session,
-        limitBytes: MAX_MANIFEST_FILE_BYTES,
-        resourceBudget,
-        label: "Asset manifest",
-      })
-      : await readBoundedLocalFile(
-        manifestPath,
-        MAX_MANIFEST_FILE_BYTES,
-        resourceBudget,
-        "Asset manifest",
-      );
-    return JSON.parse(bytes.toString("utf8")) as unknown;
-  } catch (error) {
-    throw new AssetManifestLoadError(manifestPath, error);
-  }
-}
-
-function assetManifestLoadDiagnostic(error: AssetManifestLoadError): FigmaWorkspaceDiagnostic {
-  return {
-    code: "FIGMA_WORKSPACE_ASSET_MANIFEST_LOAD_FAILED",
-    severity: "fatal",
-    message: error.message,
-    suggestion: "Create the manifest file at the reported path or pass inline assets for one-off uploads; relative manifestPath values are resolved inside the initialized workspace.",
-    docsHint: "Figma Workspace CLI: figma:assets:apply --help",
+    assets: rawAssets.map((asset, index) => normalizeManifestAsset(asset, index, session.cwd, session)),
   };
 }
 
@@ -5939,19 +5705,15 @@ function errorMessage(error: unknown): string {
 function normalizeManifestAsset(
   value: unknown,
   index: number,
-  baseDir: string | undefined,
+  baseDir: string,
   session: FigmaWorkspaceInvocationContext,
 ): NormalizedAssetManifestAsset {
   const record = asRecord(value);
-  assertRemovedManifestAssetFields(record, index);
   const rawPath = asOptionalString(record.path);
   if (!rawPath) {
-    throw new Error(`Asset manifest entry ${index} requires path.`);
+    throw new Error(`Asset input entry ${index} requires path.`);
   }
-  const path = resolveManifestAssetPath(rawPath, index, baseDir);
-  if (!path) {
-    throw new Error(`Asset manifest entry ${index} path must be absolute unless manifestPath is used.`);
-  }
+  const path = resolveAssetInputPath(rawPath, baseDir);
   const targetResolution = resolveRequestScopedTarget({
     target: record.target,
     session,
@@ -5959,7 +5721,7 @@ function normalizeManifestAsset(
   });
   const resolvedTargetNodeId = targetResolution.nodeId;
   if (!resolvedTargetNodeId) {
-    throw new Error(`Asset manifest entry ${index} requires target.`);
+    throw new Error(`Asset input entry ${index} requires target.`);
   }
   return {
     path,
@@ -5973,33 +5735,11 @@ function normalizeManifestAsset(
   };
 }
 
-function resolveManifestAssetPath(rawPath: string, index: number, baseDir: string | undefined): string | undefined {
+function resolveAssetInputPath(rawPath: string, baseDir: string): string {
   if (isAbsolute(rawPath)) {
     return rawPath;
   }
-  if (!baseDir) {
-    return undefined;
-  }
-  const path = resolve(baseDir, rawPath);
-  const relativePath = relative(baseDir, path);
-  if (relativePath === ".." || relativePath.startsWith("../") || relativePath.startsWith("..\\") || isAbsolute(relativePath)) {
-    throw new Error(`Asset manifest entry ${index} path must stay inside manifest directory.`);
-  }
-  return path;
-}
-
-function assertRemovedManifestAssetFields(record: Record<string, unknown>, index: number): void {
-  const pathAliases = ["filePath", "localPath"].filter((field) => record[field] !== undefined);
-  if (pathAliases.length > 0) {
-    throw new Error(`Asset manifest entry ${index} field "${pathAliases.join("/")}" was removed. Use "path".`);
-  }
-  const targetAliases = ["targetNodeId", "nodeId", "targetHandle", "targetId"].filter((field) => record[field] !== undefined);
-  if (targetAliases.length > 0) {
-    throw new Error(`Asset manifest entry ${index} field "${targetAliases.join("/")}" was removed. Use "target".`);
-  }
-  if (record.toolName !== undefined || record.arguments !== undefined || record.refresh !== undefined) {
-    throw new Error(`Asset manifest entry ${index} fields "toolName/arguments/refresh" were removed. Use figma:upstream:call only for explicit upstream capabilities.`);
-  }
+  return resolve(baseDir, rawPath);
 }
 
 function selectRequiredUpstreamTool(
@@ -6825,13 +6565,15 @@ function mimeTypeForRasterAssetPath(path: string): RasterAssetMimeType {
     return "image/png";
   }
   throw new Error(
-    `Asset manifest path must reference a raster PNG, JPG, JPEG, GIF, or WebP file. SVG is not supported by figma:assets:apply because official SVG uploads create editable vector node trees instead of filling the explicit target; use figma:run for that workflow: ${path}`,
+    `Asset input path must reference a raster PNG, JPG, JPEG, GIF, or WebP file. SVG is not supported by figma:assets:apply because official SVG uploads create editable vector node trees instead of filling the explicit target; use figma:run for that workflow: ${path}`,
   );
 }
 
 function normalizeImageScaleMode(value: string, name: string): string {
-  const normalized = String(value || "FILL").toUpperCase();
-  if (!["FILL", "FIT", "CROP", "TILE"].includes(normalized)) {
+  const raw = String(value || "FILL");
+  const normalized = raw.toUpperCase();
+  if (!new RegExp(FIGMA_WORKSPACE_IMAGE_SCALE_MODE_PATTERN, "u").test(raw)
+    || !(FIGMA_WORKSPACE_IMAGE_SCALE_MODES as readonly string[]).includes(normalized)) {
     throw new Error(`${name} must be FILL, FIT, CROP, or TILE.`);
   }
   return normalized;

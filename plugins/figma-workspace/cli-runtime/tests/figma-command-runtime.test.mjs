@@ -239,6 +239,38 @@ test("capture supports file+node or one full node URL", async () => {
   assert.equal(await runFigmaCommand("capture", ["--target", url, "--file", OTHER_FILE_KEY, "--node", "1:2"], conflict.dependencies), 2);
 });
 
+test("assets download is a single-node URL or file/node invocation", async () => {
+  const nodeUrl = `https://www.figma.com/design/${FILE_KEY}/UI?node-id=1-2`;
+  const url = harness();
+  assert.equal(await runFigmaCommand("assets:download", [
+    "--target", nodeUrl, "--default-format", "svg", "--default-scale", "2",
+  ], url.dependencies), 0);
+  assert.deepEqual(url.calls[0].input, {
+    target: nodeUrl,
+    defaultFormat: "svg",
+    defaultScale: 2,
+  });
+
+  const pair = harness();
+  assert.equal(await runFigmaCommand("assets:download", [
+    "--file", FILE_KEY, "--node", "3:4", "--surface", "design",
+  ], pair.dependencies), 0);
+  assert.deepEqual(pair.calls[0].input, {
+    file: FILE_KEY,
+    target: "3:4",
+    surface: "design",
+  });
+
+  for (const argv of [
+    ["--input", "-"],
+    ["--target", nodeUrl, "--file", FILE_KEY, "--node", "3:4"],
+  ]) {
+    const invalid = harness();
+    assert.equal(await runFigmaCommand("assets:download", argv, invalid.dependencies), 2, argv.join(" "));
+    assert.equal(invalid.calls.length, 0, argv.join(" "));
+  }
+});
+
 test("inspect forwards explicit pagination arguments and rejects fields that cannot apply to style mode", async () => {
   const page = harness();
   assert.equal(await runFigmaCommand("inspect", [
@@ -440,6 +472,23 @@ test("every public leaf help publishes its real argv contract", () => {
   assert.match(upstreamCallHelp, /receipt path once/u);
 });
 
+test("JSON leaves publish their payload schema and copyable examples", () => {
+  for (const leaf of ["design-system", "assets:apply", "code-connect:plan", "upstream:call"]) {
+    const help = formatCommandHelp(leaf);
+    assert.match(help, /## --input JSON/u, leaf);
+    assert.match(help, /Minimal copyable example:/u, leaf);
+    assert.doesNotMatch(help, /<fileKey>|<nodeId>|YOUR_FILE|PLACEHOLDER/u, leaf);
+  }
+  const download = formatCommandHelp("assets:download");
+  assert.doesNotMatch(download, /## --input JSON/u);
+  assert.match(download, /--target <node-url>.*--file <url\|key> --node <node-id>/u);
+  assert.match(download, /--default-format png\|jpg\|svg\|pdf/u);
+  assert.match(download, /--default-scale <0\.01\.\.4>/u);
+  const upstream = formatCommandHelp("upstream:call");
+  assert.match(upstream, /arguments.*live upstream schema/isu);
+  assert.match(upstream, /"additionalProperties": true/u);
+});
+
 test("metadata rejects retired client hints before dispatch", async () => {
   for (const option of ["--client-languages", "--client-frameworks"]) {
     const current = harness();
@@ -576,20 +625,28 @@ test("public target boundary enforces official file-key and node-id contracts", 
   }
 });
 
-test("explicit public paths resolve from invocation cwd instead of outputDir", async () => {
+test("asset input paths resolve from the JSON file directory or stdin cwd", async () => {
   const cwd = resolve(tmpdir(), "figma-public-path-base");
-  const manifest = JSON.stringify({
-    file: FILE_KEY,
-    surface: "design",
+  const inputFile = resolve(cwd, "manifests/assets.json");
+  const fileInput = JSON.stringify({
     outputDir: "artifacts",
-    manifestPath: "manifests/assets.json",
     assets: [{ path: "images/a.png", target: "1:2" }],
   });
-  const current = harness({ cwd, stdin: manifest });
-  assert.equal(await runFigmaCommand("assets:apply", ["--input", "-"], current.dependencies), 0);
+  const current = harness({ cwd, readFile: async (path) => {
+    assert.equal(path, inputFile);
+    return fileInput;
+  }});
+  assert.equal(await runFigmaCommand("assets:apply", ["--input", "manifests/assets.json", "--file", FILE_KEY, "--surface", "design"], current.dependencies), 0);
   assert.equal(current.calls[0].input.outputDir, resolve(cwd, "artifacts"));
-  assert.equal(current.calls[0].input.manifestPath, resolve(cwd, "manifests/assets.json"));
-  assert.equal(current.calls[0].input.assets[0].path, resolve(cwd, "images/a.png"));
+  assert.equal(current.calls[0].input.assets[0].path, resolve(cwd, "manifests/images/a.png"));
+
+  const stdinInput = harness({ cwd, stdin: JSON.stringify({ assets: [{ path: "images/a.png", target: "1:2" }] }) });
+  assert.equal(await runFigmaCommand("assets:apply", ["--input", "-", "--file", FILE_KEY, "--surface", "design"], stdinInput.dependencies), 0);
+  assert.equal(stdinInput.calls[0].input.assets[0].path, resolve(cwd, "images/a.png"));
+
+  const legacy = harness({ cwd, stdin: JSON.stringify({ assets: [{ path: "images/a.png", target: "1:2" }] }) });
+  assert.equal(await runFigmaCommand("assets:apply", ["--input", "-", "--file", FILE_KEY, "--surface", "design", "--manifest-path", "manifests/assets.json"], legacy.dependencies), 2);
+  assert.equal(legacy.calls.length, 0);
 });
 
 test("public stdin, JSON files, and mapped input honor the 256 KiB boundary", async () => {

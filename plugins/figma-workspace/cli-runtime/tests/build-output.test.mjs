@@ -15,7 +15,7 @@ import {
 
 test("distribution keeps the public runtime and executable entrypoints", () => {
   assert.equal(packageJson.bin["figma-workspace"], "./dist/cli/figma-workspace-cli.js");
-  assert.equal(packageJson.version, "0.6.7");
+  assert.equal(packageJson.version, "0.6.8");
 });
 
 test("distribution stages TypeScript declaration libs for strict preflight", () => {
