@@ -4,7 +4,7 @@
 active model and transcript path from standard input, checks usage in the Codex rollout transcript,
 and emits one `additionalContext` message when a higher reminder stage applies.
 
-The hook selects three reminder thresholds from the active model slug supplied in hook input:
+Without a thread override, the hook selects three reminder thresholds from the active model slug supplied in hook input:
 
 | Model | Stage 1 | Stage 2 | Stage 3 |
 | --- | --- | --- | --- |
@@ -72,6 +72,53 @@ independently of the three reminder thresholds.
 
 ## Runtime state and behavior
 
+### Manual thread policy
+
+Version 0.1.12 adds manual thread policies while retaining the existing v2 state database.
+
+Explicitly invoke `$context-window-policy` to configure the current thread. The skill sets
+`policy.allow_implicit_invocation: false` in `agents/openai.yaml`, so it is not selected implicitly.
+It offers a starting threshold and a stage interval, both positive whole K tokens (1K = 1,000 tokens).
+Examples:
+
+| Start | Interval | Stage thresholds |
+| --- | --- | --- |
+| 150K | 50K | 150K / 200K / 250K |
+| 150K | 100K | 150K / 250K / 350K |
+
+The skill asks for missing values and supports custom whole K values, inspecting the policy,
+and restoring model defaults. Its companion script is `scripts/context_window_policy.py`:
+
+```powershell
+python "<plugin-root>/scripts/context_window_policy.py" show
+python "<plugin-root>/scripts/context_window_policy.py" set --start-k 150 --interval-k 50
+python "<plugin-root>/scripts/context_window_policy.py" reset
+```
+
+The script requires `CODEX_THREAD_ID` from the current Codex execution environment. Missing or
+invalid identity fails explicitly; it does not infer identity from recent transcripts or use
+`CODEX_SESSION_ID` as a fallback. The hook continues to obtain and validate thread identity from
+its request and transcript. The script returns JSON with `thread_id`, `mode`, `start_k`,
+`interval_k`, and `thresholds`. Custom `thresholds` are three token counts (not K values).
+In `model_default` mode, the K fields are null and `thresholds` lists the `strict` and `default`
+model thresholds; it does not infer the active model. The script accepts `--state-db` for tests
+or explicitly managed installations.
+
+The three custom thresholds are `start`, `start + interval`, and `start + 2 * interval`.
+They override model-specific defaults, including after model changes. Policies apply only to the
+selected thread, are not inherited by subagents, and persist across context rollover, compaction,
+and process restarts until manually reset. Setting or resetting a policy does not clear the
+current window's reported stages. The next hook invocation uses the new thresholds and emits
+only a stage higher than the one already reported. Normal compaction still resets reminder history.
+
+Policies live in a separate `thread_policies` table in the hook's existing SQLite database.
+Creating this table does not alter existing `session_state` rows. Policy records are not removed
+by reminder-history eviction; only an explicit reset removes the selected thread's override.
+The CLI writes and the hook reads policies under SQLite transaction locking. Invalid stored
+policies or table schemas fail with a state diagnostic rather than silently reverting to defaults.
+
+### Reminder history
+
 By default the script stores state in `%CODEX_HOME%\state\context-window-rollover-reminder-v2.sqlite3`; when `%CODEX_HOME%` is unset,
 the script falls back to `%USERPROFILE%\.codex\state\context-window-rollover-reminder-v2.sqlite3`. `--state-db` can
 override that path for tests or an explicitly managed installation. The database is created on first
@@ -111,13 +158,19 @@ Run the focused tests from the repository root:
 python -m unittest discover -s plugins/context-window-rollover-reminder/tests -p "test_*.py"
 ```
 
+Validate the manual skill with the installed skill-creator validator:
+
+```text
+python <skill-creator>/scripts/quick_validate.py plugins/context-window-rollover-reminder/skills/context-window-policy
+```
+
 Validate the plugin manifest with the installed plugin-creator validator:
 
 ```text
 python <plugin-creator>/scripts/validate_plugin.py plugins/context-window-rollover-reminder
 ```
 
-When changing hook logic, keep the model-specific thresholds, stage selection, state schema, transcript
+When changing hook logic, keep the model-specific defaults, thread policy thresholds, stage selection, state schema, transcript
 parsing rules, and exit-code contract aligned with the tests. Keep
 `hooks/hooks.json` synchronous unless the hook's output and state semantics are redesigned
 together. Do not add the separate context-usage probe or commit generated SQLite state to the
