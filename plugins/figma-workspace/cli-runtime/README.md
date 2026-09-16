@@ -2,7 +2,9 @@
 
 This private Node package builds the checked-in CLI/runtime artifacts used by the Figma Workspace plugin. It keeps the official Figma remote MCP behind the CLI transport, does not register a local MCP server, and exposes no supported typed import facade.
 
-The public 0.6.7 agent contract is a stateless set of fixed `figma:*` leaf commands. Commands that require a Figma file or node target receive it explicitly; targetless `figma:upstream:list` and `figma:upstream:read` do not inherit one, and `figma:upstream:call` follows its live schema. `list` and `read` can report local first-class `coverage`, but never reject a covered direct call. Shell orchestration owns local `.figma.ts` script creation for native Plugin API work; Code Connect mappings use the dedicated workflow below. The [plugin README](../README.md) and generated command help own the public contract. From the plugin root, use:
+The public 0.6.8 agent contract is a stateless set of fixed `figma:*` leaf commands. Commands that require a Figma file or node target receive it explicitly; targetless `figma:upstream:list` and `figma:upstream:read` do not inherit one, and `figma:upstream:call` follows its live schema. `list` and `read` can report local first-class `coverage`, but never reject a covered direct call. Shell orchestration owns local `.figma.ts` script creation for native Plugin API work; Code Connect mappings use the dedicated workflow below. The [plugin README](../README.md) and generated command help own the public contract. From the plugin root, use:
+
+`assets:apply` reads one JSON document directly and expects an `assets` array. `assets:download` is a single-node CLI: pass `--target <node-url>` or `--file <url|key> --node <node-id>`, with optional default format and scale. Relative upload paths are based on the JSON file's directory, or the invocation cwd for stdin; see each generated leaf help for nested fields and examples.
 
 ```text
 npm --silent run figma:help

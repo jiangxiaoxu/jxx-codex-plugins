@@ -326,7 +326,7 @@ export const FIGMA_WORKSPACE_WRAPPER_CONTRACTS = [
       derivedUpstream: ["fileKey", "nodeId"],
       passthroughOptional: ["defaultFormat", "defaultScale"],
     }),
-    targetSupport: "node-scoped-list",
+    targetSupport: "node-scoped",
     outputPolicy: {
       inlineLimitFields: [],
       resultFiles: ["resultFile"],

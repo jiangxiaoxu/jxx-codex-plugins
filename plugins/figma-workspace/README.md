@@ -1,6 +1,6 @@
 # Figma Workspace
 
-Figma Workspace 0.6.7 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
+Figma Workspace 0.6.8 is a stateless fixed-leaf Node CLI and plugin bundle for repairable Figma automation. The official Figma remote MCP is internal transport only: agents use public `figma:*` npm commands, not a local MCP server.
 
 ## Quick Start
 
@@ -23,6 +23,8 @@ npm --silent run figma:run -- --file "https://www.figma.com/design/FILE_KEY/File
 Use generated `--help` for each exact input schema, option, limit, and JSON stdin/file contract. Typed results are Restricted Markdown. If a result names `outputFiles.resultFile`, stdout reports the receipt path once; read that receipt directly and do not parse stdout as JSON.
 
 Every command that requires a Figma file or node target supplies it in that invocation. `figma:upstream:list` and `figma:upstream:read` are targetless; `figma:upstream:call` follows the selected live schema instead of inheriting a target. Use a full file or node URL whenever possible. A node URL's `node-id=230-2` converts to Plugin API ID `230:2`; a bare node ID is invalid without an explicit file. URLs infer Design, FigJam, or Slides; a raw fileKey needs `--surface` when the selected command needs a surface.
+
+Asset uploads use a direct JSON object: `figma:assets:apply --input <json-file|->` requires an `assets` array. Asset downloads are single-node invocations: use `figma:assets:download --target <node-url>` or `--file <url|key> --node <node-id>`, with optional default format and scale. Relative upload paths resolve from the JSON input file's directory, or from the invocation cwd when stdin (`-`) is used; absolute paths are preserved. The generated leaf help contains each complete schema and examples.
 
 For Code Connect, use the Design-only sequence `figma:code-connect:inspect` -> `figma:code-connect:plan` -> `figma:code-connect:apply --confirm-plan` -> `figma:code-connect:verify`. Supply an explicit mapping manifest with simple node IDs, `componentName`, `source`, and a live-contract `label` (1 to 64 unique entries). Plans are immutable and digest-bound; `apply` is the only write, rejects stale snapshots and unapproved conflicts, and must not be replayed after `outcome_unknown` until `verify` reconciles the remote state. Template fields and `.figma.ts`/`.figma.js` Code Connect artifacts are unsupported; use generic `figma:upstream:*` for uncovered capabilities and `figma:run` only for native Plugin API scripts.
 

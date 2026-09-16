@@ -87,7 +87,7 @@ test("batch failures summarize their first nested error", () => {
   assert.match(rendered, /FIGMA_ASSET_UPLOAD_FAILED: Asset upload failed\./u);
 });
 
-test("nested failures take precedence over unrelated warning diagnostics", () => {
+test("a single download failure takes precedence over unrelated warning diagnostics", () => {
   const rendered = cli.formatFigmaWorkspaceCommandMarkdown("download-assets", {
     ok: false,
     diagnostics: [{
@@ -96,10 +96,10 @@ test("nested failures take precedence over unrelated warning diagnostics", () =>
       message: "An optional upstream argument was skipped.",
       suggestion: "No local repair is required.",
     }],
-    failures: [{
-      targetNodeId: "1:2",
-      downloadError: { code: "HTTP_500", message: "Asset download failed." },
-    }],
+    targetNodeId: "1:2",
+    outputDir: "C:/downloads/1-2",
+    downloadedFiles: [],
+    downloadError: { code: "HTTP_500", message: "Asset download failed." },
   }, {});
 
   assert.match(rendered, /HTTP_500: Asset download failed\./u);

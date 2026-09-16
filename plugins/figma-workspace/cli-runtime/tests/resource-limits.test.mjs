@@ -35,12 +35,12 @@ test("download preserves upstream svgAssets as typed, bounded files", async () =
   });
   try {
     const result = await client.downloadAssets({
-      targets: [{ target: { fileKey: "DownloadSvgFileKey1234", nodeId: "7:7" } }],
+      target: { fileKey: "DownloadSvgFileKey1234", nodeId: "7:7" },
       outputDir,
     });
     assert.equal(result.ok, true, JSON.stringify(result));
     assert.deepEqual(
-      result.targets[0].downloadedFiles.map(({ kind, format, path }) => [kind, format, path]),
+      result.downloadedFiles.map(({ kind, format, path }) => [kind, format, path]),
       [
         ["exported", "png", resolve(outputDir, "7-7", "exported.png")],
         ["raw", "png", resolve(outputDir, "7-7", "raw-1.png")],
@@ -66,20 +66,20 @@ test("download fails visibly when an svgAssets entry has no supported URL", asyn
   });
   try {
     const result = await client.downloadAssets({
-      targets: [{ target: { fileKey: "DownloadSvgShapeKey123", nodeId: "8:8" } }],
+      target: { fileKey: "DownloadSvgShapeKey123", nodeId: "8:8" },
       outputDir: resolve(tempDir, "downloads"),
     });
     assert.equal(result.ok, false);
-    assert.equal(result.targets[0].downloadedFiles.length, 0);
-    assert.match(result.targets[0].downloadError.message, /svgAssets.*without a supported downloadable URL/iu);
+    assert.equal(result.downloadedFiles.length, 0);
+    assert.match(result.downloadError.message, /svgAssets.*without a supported downloadable URL/iu);
     assert.ok(result.diagnostics.some((diagnostic) =>
       diagnostic.code === "FIGMA_WORKSPACE_DOWNLOAD_SVG_ASSET_SHAPE_UNSUPPORTED"
       && diagnostic.severity === "fatal"));
     assert.ok(result.outputFiles?.resultFile?.path);
     const receipt = JSON.parse(await readFile(result.outputFiles.resultFile.path, "utf8"));
     assert.equal(receipt.schemaVersion, 1);
-    assert.match(JSON.stringify(receipt.result.targetDetails), /<svg\/>/u);
-    assert.equal(result.outputFiles.resultFile.jq.data, ".result");
+    assert.match(JSON.stringify(receipt.result), /<svg\/>/u);
+    assert.equal(result.outputFiles.resultFile.jq.data, ".result.upstream.result");
   } finally {
     await client.close();
     await rm(tempDir, { recursive: true, force: true });
@@ -185,95 +185,17 @@ test("SVG sniff does not reject a non-SVG DOCTYPE or known raster signature", as
   }
 });
 
-test("asset and download manifests reject more than 64 items", async () => {
+test("download input rejects the retired batch targets array", async () => {
   const client = createFigmaWorkspaceClient({ client: fakeUpstream([]) });
   try {
     await assert.rejects(
-      client.applyAssetManifest({
-        file: "ManifestLimitFileKey123",
-        surface: "design",
-        assets: Array.from({ length: 65 }, (_, index) => ({
-          path: resolve(tmpdir(), `asset-${index}.png`),
-          target: { fileKey: "ManifestLimitFileKey123", nodeId: `1:${index + 1}` },
-        })),
-        validateTargets: false,
-      }),
-      /at most 64/iu,
-    );
-    await assert.rejects(
       client.downloadAssets({
-        targets: Array.from({ length: 65 }, (_, index) => ({
-          target: { fileKey: "ManifestLimitFileKey123", nodeId: `2:${index + 1}` },
-        })),
+        targets: [{ target: { fileKey: "ManifestLimitFileKey123", nodeId: "2:1" } }],
       }),
-      /at most 64/iu,
+      /unknown field|targets/iu,
     );
   } finally {
     await client.close();
-  }
-});
-
-test("download manifest accepts exactly 64 items", async () => {
-  let calls = 0;
-  const client = createFigmaWorkspaceClient({
-    client: fakeUpstream(downloadTools(), () => {
-      calls += 1;
-      return textResult({ ok: false, error: { code: "EXPECTED", message: "No download for limit test." } });
-    }),
-  });
-  try {
-    const result = await client.downloadAssets({
-      targets: Array.from({ length: 64 }, (_, index) => ({
-        target: { fileKey: "ManifestBoundaryFileKey123", nodeId: `4:${index + 1}` },
-      })),
-    });
-    assert.equal(result.ok, false);
-    assert.equal(calls, 64);
-    assert.doesNotMatch(JSON.stringify(result), /resource limit|at most 64/iu);
-  } finally {
-    await client.close();
-  }
-});
-
-test("asset manifest files accept exactly 256 KiB and reject 256 KiB plus one byte", async () => {
-  const tempDir = await mkdtemp(resolve(tmpdir(), "figma-workspace-manifest-limit-"));
-  const assetPath = resolve(tempDir, "asset.png");
-  const boundaryPath = resolve(tempDir, "boundary.json");
-  const manifestPath = resolve(tempDir, "oversized.json");
-  await writeFile(assetPath, PNG);
-  const boundaryManifest = {
-    assets: [{
-      path: assetPath,
-      target: { fileKey: "ManifestBoundaryFileKey123", nodeId: "1:1" },
-    }],
-    padding: "",
-  };
-  const unpadded = JSON.stringify(boundaryManifest);
-  boundaryManifest.padding = "x".repeat(256 * 1024 - Buffer.byteLength(unpadded, "utf8"));
-  const boundarySource = JSON.stringify(boundaryManifest);
-  assert.equal(Buffer.byteLength(boundarySource, "utf8"), 256 * 1024);
-  await writeFile(boundaryPath, boundarySource);
-  await writeFile(manifestPath, Buffer.alloc(256 * 1024 + 1, 0x20));
-  let upstreamCalls = 0;
-  const client = createFigmaWorkspaceClient({
-    client: fakeUpstream(uploadTools(), () => {
-      upstreamCalls += 1;
-      return textResult({ ok: false, error: { code: "EXPECTED", message: "Boundary accepted." } });
-    }),
-  });
-  try {
-    const boundary = await client.applyAssetManifest({ file: "ManifestBoundaryFileKey123", surface: "design", manifestPath: boundaryPath, validateTargets: false, outputDir: tempDir });
-    assert.equal(boundary.ok, false);
-    assert.equal(upstreamCalls, 1);
-    assert.doesNotMatch(JSON.stringify(boundary), /resource limit|256 KiB per-item limit/iu);
-
-    const result = await client.applyAssetManifest({ file: "ManifestBoundaryFileKey123", surface: "design", manifestPath, validateTargets: false, outputDir: tempDir });
-    assert.equal(result.ok, false);
-    assert.equal(upstreamCalls, 1);
-    assert.match(result.diagnostics[0].message, /256 KiB per-item limit/iu);
-  } finally {
-    await client.close();
-    await rm(tempDir, { recursive: true, force: true });
   }
 });
 
@@ -491,7 +413,7 @@ test("SVG download rejects oversized Content-Length before writing a partial tar
   });
   try {
     const result = await client.downloadAssets({
-      targets: [{ target: { fileKey: "DownloadLimitFileKey123", nodeId: "2:2" } }],
+      target: { fileKey: "DownloadLimitFileKey123", nodeId: "2:2" },
       outputDir,
     });
     assert.equal(result.ok, false);
@@ -525,7 +447,7 @@ test("interrupted chunked downloads do not leave partial target files", async ()
   });
   try {
     const result = await client.downloadAssets({
-      targets: [{ target: { fileKey: "DownloadInterruptFileKey123", nodeId: "5:5" } }],
+      target: { fileKey: "DownloadInterruptFileKey123", nodeId: "5:5" },
       outputDir,
     });
     assert.equal(result.ok, false);
@@ -559,7 +481,7 @@ test("SVG download cancels the response body when the local managed writer fails
   });
   try {
     const result = await client.downloadAssets({
-      targets: [{ target: { fileKey: "DownloadCancelFileKey123", nodeId: "6:6" } }],
+      target: { fileKey: "DownloadCancelFileKey123", nodeId: "6:6" },
       outputDir,
     });
     assert.equal(result.ok, false);
