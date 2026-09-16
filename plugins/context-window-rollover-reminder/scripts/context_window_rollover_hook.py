@@ -25,6 +25,9 @@ DEFAULT_THRESHOLDS = (350_000, 400_000, 450_000)
 MESSAGE_PREFIX = "[Context window rollover reminder] "
 SQLITE_TIMEOUT_SECONDS = 5.0
 MAX_THREADS = 10_000
+SQLITE_MAX_INTEGER = 2**63 - 1
+TOKENS_PER_K = 1_000
+MAX_THRESHOLD_K = SQLITE_MAX_INTEGER // TOKENS_PER_K
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS session_state (
     session_id TEXT PRIMARY KEY,
@@ -33,8 +36,19 @@ CREATE TABLE IF NOT EXISTS session_state (
     last_seen_at REAL NOT NULL
 )
 """
+POLICY_SCHEMA = """
+CREATE TABLE IF NOT EXISTS thread_policies (
+    thread_id TEXT PRIMARY KEY,
+    start_k INTEGER NOT NULL CHECK (start_k > 0),
+    interval_k INTEGER NOT NULL CHECK (interval_k > 0),
+    updated_at REAL NOT NULL
+)
+"""
 REQUIRED_STATE_COLUMNS = frozenset(
     {"session_id", "compacted_marker", "highest_stage", "last_seen_at"}
+)
+REQUIRED_POLICY_COLUMNS = frozenset(
+    {"thread_id", "start_k", "interval_k", "updated_at"}
 )
 
 COMMON_INSTRUCTIONS = (
@@ -278,13 +292,89 @@ def ensure_state_schema(connection: sqlite3.Connection) -> None:
     }
     if not columns:
         connection.execute(SCHEMA)
+    else:
+        missing = REQUIRED_STATE_COLUMNS - columns
+        if missing:
+            missing_names = ", ".join(sorted(missing))
+            raise StateError(
+                f"state database schema is missing required columns: {missing_names}"
+            )
+
+    policy_info = connection.execute("PRAGMA table_info(thread_policies)").fetchall()
+    if not policy_info:
+        connection.execute(POLICY_SCHEMA)
         return
-    missing = REQUIRED_STATE_COLUMNS - columns
+    policy_columns = {row[1] for row in policy_info}
+    missing = REQUIRED_POLICY_COLUMNS - policy_columns
     if missing:
         missing_names = ", ".join(sorted(missing))
         raise StateError(
-            f"state database schema is missing required columns: {missing_names}"
+            f"policy database schema is missing required columns: {missing_names}"
         )
+    by_name = {row[1]: row for row in policy_info}
+    if by_name["thread_id"][5] != 1 or any(
+        row[5] > 0 and row[1] != "thread_id" for row in policy_info
+    ):
+        raise StateError("policy database schema requires thread_id as the primary key")
+    expected_types = {
+        "thread_id": "TEXT",
+        "start_k": "INTEGER",
+        "interval_k": "INTEGER",
+        "updated_at": "REAL",
+    }
+    for name, expected_type in expected_types.items():
+        if str(by_name[name][2]).upper() != expected_type:
+            raise StateError(
+                f"policy database schema requires {name} to use {expected_type}"
+            )
+    for name in ("start_k", "interval_k", "updated_at"):
+        if by_name[name][3] != 1:
+            raise StateError(
+                f"policy database schema requires {name} to be NOT NULL"
+            )
+
+
+def validate_policy_values(start_k: object, interval_k: object) -> tuple[int, int]:
+    """Validate K-valued policy fields and their token threshold range."""
+
+    if type(start_k) is not int or start_k <= 0:
+        raise ValueError("start_k must be a positive integer")
+    if type(interval_k) is not int or interval_k <= 0:
+        raise ValueError("interval_k must be a positive integer")
+    if start_k + 2 * interval_k > MAX_THRESHOLD_K:
+        raise ValueError(
+            "the three thresholds exceed SQLite's signed 64-bit integer range"
+        )
+    return start_k, interval_k
+
+
+def policy_thresholds(start_k: int, interval_k: int) -> tuple[int, int, int]:
+    """Return custom thresholds in the token unit consumed by stage_for_usage."""
+
+    validate_policy_values(start_k, interval_k)
+    return tuple(
+        value * TOKENS_PER_K
+        for value in (start_k, start_k + interval_k, start_k + 2 * interval_k)
+    )
+
+
+def read_thread_policy(
+    connection: sqlite3.Connection, thread_id: str
+) -> tuple[int, int] | None:
+    """Read and validate one thread policy; malformed persisted values fail closed."""
+
+    row = connection.execute(
+        "SELECT start_k, interval_k FROM thread_policies WHERE thread_id = ?",
+        (thread_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    try:
+        return validate_policy_values(row[0], row[1])
+    except ValueError as error:
+        raise StateError(
+            f"state database contains invalid thread policy for {thread_id}: {error}"
+        ) from error
 
 
 def run(state_db: Path) -> str:
@@ -325,11 +415,17 @@ def run(state_db: Path) -> str:
                 stored_marker = compacted_marker
                 highest_stage = 0
 
+            policy = read_thread_policy(connection, thread_id)
             message = ""
             if used is not None:
-                thresholds = (
-                    STRICT_THRESHOLDS if model in STRICT_MODELS else DEFAULT_THRESHOLDS
-                )
+                if policy is None:
+                    thresholds = (
+                        STRICT_THRESHOLDS
+                        if model in STRICT_MODELS
+                        else DEFAULT_THRESHOLDS
+                    )
+                else:
+                    thresholds = policy_thresholds(*policy)
                 stage = stage_for_usage(used, thresholds)
                 if stage > highest_stage:
                     message = output_for(used, stage)
