@@ -136,6 +136,8 @@ Version 0.1.15 adds the read-only `usage` command to the policy script. It retur
 `display`. For example, 73,000 tokens used with an 800,000-token model window produces
 `73K/680K (11% used)`.
 
+Version 0.1.16 includes the finalized missing-capacity test fixtures; runtime behavior is unchanged.
+
 The effective denominator is `model_context_window * 85 // 100`. Displayed K counts are rounded down
 to whole thousands; the percentage is rounded to the nearest integer using the unrounded token
 counts, with halves rounded up. Values above 100% are retained. This display does not change the
