@@ -25,19 +25,21 @@ def write_rollout(
     compacted=None,
     capacity=500_000,
 ):
-    rows = [
-        record("session_meta", 0, {"id": thread_id, "session_id": session_id}),
-        record(
-            "event_msg",
-            1,
-            {
-                "type": "task_started",
-                "turn_id": "turn-1",
-                "model_context_window": capacity,
-            },
-        ),
-    ]
-    ordinal = 2
+    rows = [record("session_meta", 0, {"id": thread_id, "session_id": session_id})]
+    ordinal = 1
+    if capacity is not None:
+        rows.append(
+            record(
+                "event_msg",
+                ordinal,
+                {
+                    "type": "task_started",
+                    "turn_id": "turn-1",
+                    "model_context_window": capacity,
+                },
+            )
+        )
+        ordinal += 1
     if compacted is not None:
         rows.append(record("compacted", ordinal, {}))
         ordinal += 1
