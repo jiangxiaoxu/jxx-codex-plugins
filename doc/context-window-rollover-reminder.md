@@ -86,8 +86,9 @@ an explicit user or parent-agent request before `set` or `reset`, and inspection
 or ordinary work delegation does not authorize a write. The receiving subagent executes the
 script with its own `CODEX_THREAD_ID`, asks its parent for missing parameters, and reports its
 thread ID and thresholds back. The parent does not impersonate the subagent's identity.
-It includes the model defaults and exact stage messages, and shows both model groups when the
-active model slug is unknown rather than guessing which default applies.
+Version 0.1.14 keeps model defaults and stage summaries in the skill entrypoint and moves exact
+stage messages into its on-demand `references/reminder-text.md`. The skill shows both model groups
+when the active model slug is unknown rather than guessing which default applies.
 It offers a starting threshold and a stage interval, both positive whole K tokens (1K = 1,000 tokens).
 Examples:
 

@@ -1,6 +1,6 @@
 {
   "name": "context-window-rollover-reminder",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Provides staged context rollover reminders and user-requested per-thread thresholds.",
   "author": {
     "name": "jiangxiaoxu"
