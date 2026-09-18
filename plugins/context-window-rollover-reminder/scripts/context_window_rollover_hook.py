@@ -21,6 +21,8 @@ EXIT_STATE_ERROR = 7
 
 STRICT_MODELS = frozenset({"gpt-5.6-sol", "gpt-6-astra"})
 STRICT_THRESHOLDS = (300_000, 350_000, 400_000)
+LUNA_MODEL = "gpt-5.6-luna"
+LUNA_THRESHOLDS = (400_000, 450_000, 500_000)
 DEFAULT_THRESHOLDS = (350_000, 400_000, 450_000)
 MESSAGE_PREFIX = "[Context window rollover reminder] "
 SQLITE_TIMEOUT_SECONDS = 5.0
@@ -422,6 +424,8 @@ def run(state_db: Path) -> str:
                     thresholds = (
                         STRICT_THRESHOLDS
                         if model in STRICT_MODELS
+                        else LUNA_THRESHOLDS
+                        if model == LUNA_MODEL
                         else DEFAULT_THRESHOLDS
                     )
                 else:

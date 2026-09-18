@@ -14,6 +14,7 @@ from context_window_rollover_hook import (
     DEFAULT_THRESHOLDS,
     EXIT_REQUEST_ERROR,
     HookError,
+    LUNA_THRESHOLDS,
     RequestError,
     SQLITE_TIMEOUT_SECONDS,
     STRICT_THRESHOLDS,
@@ -153,6 +154,7 @@ def policy_output(thread_id: str, policy: tuple[int, int] | None) -> dict[str, o
             "interval_k": None,
             "thresholds": {
                 "strict": list(STRICT_THRESHOLDS),
+                "luna": list(LUNA_THRESHOLDS),
                 "default": list(DEFAULT_THRESHOLDS),
             },
         }

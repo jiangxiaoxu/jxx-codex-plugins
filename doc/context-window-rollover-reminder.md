@@ -9,10 +9,12 @@ Without a thread override, the hook selects three reminder thresholds from the a
 | Model | Stage 1 | Stage 2 | Stage 3 |
 | --- | --- | --- | --- |
 | `gpt-5.6-sol`, `gpt-6-astra` | 300,000 tokens | 350,000 tokens | 400,000 tokens |
+| `gpt-5.6-luna` | 400,000 tokens | 450,000 tokens | 500,000 tokens |
 | All other model slugs | 350,000 tokens | 400,000 tokens | 450,000 tokens |
 
 Model matching is exact and case-sensitive. The `model` input must be a nonempty string; missing
 or invalid values fail with a request diagnostic. No aliases or context-capacity scaling are used.
+Version 0.1.17 sets the Luna defaults to 400K/450K/500K and includes the `luna` group in policy output.
 Each message reports actual usage in whole thousands and includes the applicable rollover action:
 
 | Stage | Action |
@@ -87,7 +89,7 @@ or ordinary work delegation does not authorize a write. The receiving subagent e
 script with its own `CODEX_THREAD_ID`, asks its parent for missing parameters, and reports its
 thread ID and thresholds back. The parent does not impersonate the subagent's identity.
 Version 0.1.14 keeps model defaults and stage summaries in the skill entrypoint and moves exact
-stage messages into its on-demand `references/reminder-text.md`. The skill shows both model groups
+stage messages into its on-demand `references/reminder-text.md`. The skill shows all model groups
 when the active model slug is unknown rather than guessing which default applies.
 It offers a starting threshold and a stage interval, both positive whole K tokens (1K = 1,000 tokens).
 Examples:
@@ -112,9 +114,9 @@ invalid identity fails explicitly; it does not infer identity from recent transc
 `CODEX_SESSION_ID` as a fallback. The hook continues to obtain and validate thread identity from
 its request and transcript. The script returns JSON with `thread_id`, `mode`, `start_k`,
 `interval_k`, and `thresholds`. Custom `thresholds` are three token counts (not K values).
-In `model_default` mode, the K fields are null and `thresholds` lists the `strict` and `default`
-model thresholds; it does not infer the active model. The script accepts `--state-db` for tests
-or explicitly managed installations.
+In `model_default` mode, the K fields are null and `thresholds` lists the `strict`, `luna`, and
+`default` model thresholds; it does not infer the active model. The script accepts `--state-db`
+for tests or explicitly managed installations.
 
 The three custom thresholds are `start`, `start + interval`, and `start + 2 * interval`.
 They override model-specific defaults, including after model changes. Policies apply only to the

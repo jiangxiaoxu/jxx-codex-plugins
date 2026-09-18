@@ -227,7 +227,14 @@ class ContextWindowPolicyTests(unittest.TestCase):
             self.assertEqual(reset.returncode, 0, reset.stderr)
             reset_payload = json.loads(reset.stdout)
             self.assertEqual(reset_payload["mode"], "model_default")
-            self.assertEqual(reset_payload["thresholds"]["default"], [350_000, 400_000, 450_000])
+            self.assertEqual(
+                reset_payload["thresholds"],
+                {
+                    "strict": [300_000, 350_000, 400_000],
+                    "luna": [400_000, 450_000, 500_000],
+                    "default": [350_000, 400_000, 450_000],
+                },
+            )
 
             connection = sqlite3.connect(state)
             history = connection.execute(

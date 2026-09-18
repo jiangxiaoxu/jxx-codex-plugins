@@ -28,11 +28,12 @@ For usage requests, return the `usage` result's `display`, such as `73K/680K (11
 
 ## Defaults and reminders
 
-When presenting settings or choices, distinguish the override from the model default. Match the runtime- or user-supplied model slug exactly; if unknown, show both rows. The script does not detect the active model.
+When presenting settings or choices, distinguish the override from the model default. Match the runtime- or user-supplied model slug exactly; if unknown, show all model rows. The script does not detect the active model.
 
 | Model | Stage 1 | Stage 2 | Stage 3 |
 | --- | --- | --- | --- |
 | `gpt-5.6-sol`, `gpt-6-astra` | 300K | 350K | 400K |
+| `gpt-5.6-luna` | 400K | 450K | 500K |
 | Other slugs | 350K | 400K | 450K |
 
 Explain these stage meanings when offering choices: (1) reach a meaningful milestone, checkpoint, then roll over; (2) reach a resumable stopping point with minimal work, checkpoint unfinished work, then roll over; (3) stop new work, perform necessary cleanup, checkpoint, and roll over immediately.

@@ -70,7 +70,7 @@ class ContextRolloverHookTests(unittest.TestCase):
         state,
         session_id="session-1",
         agent_id=None,
-        model="gpt-5.6-luna",
+        model="gpt-5.6-terra",
     ):
         request = {
             "session_id": session_id,
@@ -111,7 +111,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             check=False,
         )
 
-    def invoke_default(self, transcript, codex_home, model="gpt-5.6-luna"):
+    def invoke_default(self, transcript, codex_home, model="gpt-5.6-terra"):
         request = {
             "session_id": "session-1",
             "transcript_path": str(transcript),
@@ -188,7 +188,7 @@ class ContextRolloverHookTests(unittest.TestCase):
                     "session_id": "session-1",
                     "transcript_path": str(transcript),
                     "hook_event_name": "PostToolUse",
-                    "model": "gpt-5.6-luna",
+                    "model": "gpt-5.6-terra",
                 }
             )
             environment = os.environ.copy()
@@ -374,7 +374,7 @@ class ContextRolloverHookTests(unittest.TestCase):
                 {
                     "session_id": "session-1",
                     "transcript_path": str(transcript),
-                    "model": "gpt-5.6-luna",
+                    "model": "gpt-5.6-terra",
                 }
             )
             processes = [
@@ -505,6 +505,47 @@ class ContextRolloverHookTests(unittest.TestCase):
                         ),
                     )
                     result = self.invoke(transcript, state, model="gpt-5.6-sol-preview")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    if expected_used_k is None:
+                        self.assertEqual(result.stdout, "")
+                    else:
+                        self.assert_context(
+                            result,
+                            expected_used_k=expected_used_k,
+                            expected_action=expected_action,
+                        )
+
+    def test_luna_model_thresholds_use_400k_450k_500k_exact_slug(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            state = root / "state.sqlite3"
+            rollout(transcript, "session-1", usage=0, capacity=500_000)
+
+            cases = [
+                (399_999, None, None),
+                (400_000, 400, "continue the current unit of work"),
+                (400_000, None, None),
+                (449_999, None, None),
+                (450_000, 450, "resumable stopping point"),
+                (450_000, None, None),
+                (499_999, None, None),
+                (500_000, 500, "stop starting new work"),
+                (500_000, None, None),
+            ]
+            for ordinal, (used, expected_used_k, expected_action) in enumerate(
+                cases, start=3
+            ):
+                with self.subTest(used=used, expected_used_k=expected_used_k):
+                    append_record(
+                        transcript,
+                        record(
+                            "token_usage_record",
+                            ordinal,
+                            {"turn_id": "turn-1", "usage": {"total_tokens": used}},
+                        ),
+                    )
+                    result = self.invoke(transcript, state, model="gpt-5.6-luna")
                     self.assertEqual(result.returncode, 0, result.stderr)
                     if expected_used_k is None:
                         self.assertEqual(result.stdout, "")
