@@ -1,5 +1,5 @@
 interface:
   display_name: "Context Window Policy"
-  short_description: "Set rollover thresholds for the current thread"
+  short_description: "Inspect usage and set rollover policy"
 policy:
   allow_implicit_invocation: true

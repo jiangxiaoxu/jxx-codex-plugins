@@ -17,6 +17,8 @@ Model matching is exact and case-sensitive. The `model` input must be a nonempty
 or invalid values fail with a request diagnostic. No aliases or context-capacity scaling are used.
 Version 0.1.17 sets the Luna defaults to 400K/450K/500K and includes the `luna` group in policy output.
 Version 0.1.18 adds periodic usage snapshots beginning at 100K and then every 25K.
+Version 0.1.19 clarifies that thread policy overrides affect only rollover stages and are not
+inherited by subagents or forked threads.
 Each message reports actual usage in whole thousands and includes the applicable rollover action:
 
 | Stage | Action |
@@ -127,11 +129,12 @@ In `model_default` mode, the K fields are null and `thresholds` lists the `stric
 for tests or explicitly managed installations.
 
 The three custom thresholds are `start`, `start + interval`, and `start + 2 * interval`.
-They override model-specific defaults, including after model changes. Policies apply only to the
-selected thread, are not inherited by subagents, and persist across context rollover, compaction,
-and process restarts until manually reset. Setting or resetting a policy does not clear the
-current window's reported stages. The next hook invocation uses the new thresholds and emits
-only a stage higher than the one already reported. Normal compaction still resets reminder history.
+They override model-specific rollover defaults, including after model changes, but do not change
+the fixed 100K/25K periodic usage schedule. Policies apply only to the selected thread, are not
+inherited by subagents or forked threads, and persist across context rollover, compaction, and
+process restarts until manually reset. Setting or resetting a policy does not clear the current
+window's reported stages. The next hook invocation uses the new thresholds and emits only a stage
+higher than the one already reported. Normal compaction still resets reminder history.
 
 Policies live in a separate `thread_policies` table in the hook's existing SQLite database.
 Creating this table does not alter existing `session_state` rows. Policy records are not removed

@@ -20,7 +20,7 @@ python "<script>" set --start-k 150 --interval-k 50
 python "<script>" reset
 ```
 
-Report the returned thread ID, policy, and thresholds (JSON `thresholds` uses tokens, not K). Overrides persist across model changes, rollover, and restarts until reset; they are not inherited by subagents. Set/reset preserve already reported stages; only a higher stage can trigger until the next window resets history.
+Report the returned thread ID, policy, and thresholds (JSON `thresholds` uses tokens, not K). Overrides persist across model changes, rollover, and restarts until reset; they are not inherited by subagents or forked threads. They affect only the three rollover stages; periodic usage snapshots remain fixed at 100K and every 25K. Set/reset preserve already reported stages; only a higher stage can trigger until the next window resets history.
 
 On failure, report the diagnostic without editing SQLite or identity variables. Use `--state-db` only for tests or explicitly managed installations.
 
