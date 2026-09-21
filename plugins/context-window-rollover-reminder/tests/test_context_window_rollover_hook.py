@@ -93,14 +93,15 @@ class ContextRolloverHookTests(unittest.TestCase):
         context = context_text(result)
         self.assertTrue(context)
         if expected_used_k is not None:
-            self.assertTrue(
-                context.startswith(
-                    f"[Context window rollover reminder] Context Window Usage: {expected_used_k}K tokens."
-                ),
+            self.assertIn(
+                f"Context Window Usage: {expected_used_k}K",
                 context,
             )
         if expected_action is not None:
             self.assertIn(expected_action.casefold(), context.casefold())
+            self.assertIn("<context_window_rollover_reminder>", context)
+            self.assertIn("</context_window_rollover_reminder>", context)
+        self.assertNotIn("[Context window rollover reminder]", context)
 
     def invoke_raw(self, request, state, *extra_args):
         return subprocess.run(
@@ -364,6 +365,110 @@ class ContextRolloverHookTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual(second.stdout, "")
 
+    def test_usage_reminder_starts_at_100k_and_only_reports_new_highest_step(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            state = root / "state.sqlite3"
+            rollout(transcript, "session-1", usage=99_999, capacity=800_000)
+
+            below = self.invoke(transcript, state)
+            append_record(
+                transcript,
+                record(
+                    "token_usage_record",
+                    3,
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 100_000}},
+                ),
+            )
+            first = self.invoke(transcript, state)
+            append_record(
+                transcript,
+                record(
+                    "token_usage_record",
+                    4,
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 124_999}},
+                ),
+            )
+            repeat = self.invoke(transcript, state)
+            append_record(
+                transcript,
+                record(
+                    "token_usage_record",
+                    5,
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 178_999}},
+                ),
+            )
+            jumped = self.invoke(transcript, state)
+
+            self.assertEqual(below.stdout, "")
+            self.assertEqual(
+                context_text(first),
+                "<context_window_usage_reminder>Context Window Usage: "
+                "100K/680K (13% used). 580K tokens remaining."
+                "</context_window_usage_reminder>",
+            )
+            self.assertEqual(repeat.stdout, "")
+            self.assertEqual(
+                context_text(jumped),
+                "<context_window_usage_reminder>Context Window Usage: "
+                "178K/680K (25% used). 501K tokens remaining."
+                "</context_window_usage_reminder>",
+            )
+
+    def test_usage_reminder_resets_after_compaction(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            state = root / "state.sqlite3"
+            rollout(transcript, "session-1", usage=100_000, capacity=800_000)
+            self.assertTrue(self.invoke(transcript, state).stdout)
+
+            append_record(transcript, record("compacted", 3, {}))
+            append_record(
+                transcript,
+                record(
+                    "event_msg",
+                    4,
+                    {
+                        "type": "task_started",
+                        "turn_id": "turn-2",
+                        "model_context_window": 800_000,
+                    },
+                ),
+            )
+            append_record(
+                transcript,
+                record(
+                    "token_usage_record",
+                    5,
+                    {"turn_id": "turn-2", "usage": {"total_tokens": 100_000}},
+                ),
+            )
+            fresh = self.invoke(transcript, state)
+
+            self.assertEqual(fresh.returncode, 0, fresh.stderr)
+            self.assertIn("100K/680K", context_text(fresh))
+
+    def test_usage_precedes_rollover_when_stage_is_due(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            state = root / "state.sqlite3"
+            rollout(transcript, "session-1", usage=300_000, capacity=800_000)
+
+            result = self.invoke(transcript, state, model="gpt-5.6-sol")
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            context = context_text(result)
+            usage_end = context.index("</context_window_usage_reminder>")
+            rollover_start = context.index("<context_window_rollover_reminder>")
+            self.assertLess(usage_end, rollover_start)
+            self.assertIn("300K/680K (43% used). 380K tokens remaining.", context)
+            self.assertIn("</context_window_rollover_reminder>", context)
+            self.assertEqual(context.count("supersedes earlier rollover reminders"), 1)
+            self.assertNotIn("[Context window rollover reminder]", context)
+
     def test_concurrent_crossing_emits_one_message(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -476,7 +581,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=200_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=200_000)
 
             cases = [
                 (200_000, None, None),
@@ -520,7 +625,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=0, capacity=500_000)
+            rollout(transcript, "session-1", usage=0)
 
             cases = [
                 (399_999, None, None),
@@ -565,7 +670,7 @@ class ContextRolloverHookTests(unittest.TestCase):
                     model_root.mkdir()
                     transcript = model_root / "rollout.jsonl"
                     state = model_root / "state.sqlite3"
-                    rollout(transcript, "session-1", usage=0, capacity=500_000)
+                    rollout(transcript, "session-1", usage=0)
                     cases = [
                         (299_999, None, None),
                         (300_000, 300, "continue the current unit of work"),
@@ -605,7 +710,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=300_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=300_000)
 
             default_below = self.invoke(transcript, state, model="gpt-5.6-sol-preview")
             self.assertEqual(default_below.returncode, 0, default_below.stderr)
@@ -990,6 +1095,19 @@ class ContextRolloverHookTests(unittest.TestCase):
                 for index in range(9_998)
             )
             connection.executemany("INSERT INTO session_state VALUES (?, ?, ?, ?)", rows)
+            connection.execute(
+                """
+                CREATE TABLE usage_reminder_state (
+                    session_id TEXT PRIMARY KEY,
+                    compacted_marker TEXT NOT NULL,
+                    highest_threshold INTEGER NOT NULL CHECK (highest_threshold >= 0)
+                )
+                """
+            )
+            connection.executemany(
+                "INSERT INTO usage_reminder_state VALUES (?, ?, ?)",
+                (("old-thread", "", 350_000), ("recent-thread", "", 350_000)),
+            )
             connection.commit()
             connection.close()
 
@@ -1009,6 +1127,12 @@ class ContextRolloverHookTests(unittest.TestCase):
                 row[0]
                 for row in connection.execute("SELECT session_id FROM session_state")
             }
+            usage_keys = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT session_id FROM usage_reminder_state"
+                )
+            }
             connection.close()
             self.assertEqual(count, 10_000)
             self.assertIn("new-thread", keys)
@@ -1016,6 +1140,8 @@ class ContextRolloverHookTests(unittest.TestCase):
             self.assertIn("recent-thread", keys)
             self.assertNotIn("old-thread", keys)
             self.assertNotIn("filler-00000", keys)
+            self.assertIn("recent-thread", usage_keys)
+            self.assertNotIn("old-thread", usage_keys)
 
             reannounced = self.invoke(evicted_transcript, state)
 

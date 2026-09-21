@@ -11,6 +11,7 @@ import sys
 import time
 
 from context_window_rollover_hook import (
+    context_usage,
     DEFAULT_THRESHOLDS,
     EXIT_REQUEST_ERROR,
     HookError,
@@ -29,8 +30,6 @@ from context_window_rollover_hook import (
 )
 
 
-EFFECTIVE_WINDOW_NUMERATOR = 85
-EFFECTIVE_WINDOW_DENOMINATOR = 100
 DEFAULT_CODEX_STATE_DB_NAME = "state_5.sqlite"
 
 
@@ -92,36 +91,19 @@ def locate_rollout_path(codex_state_db: Path, thread_id: str) -> Path:
     return Path(rollout_path)
 
 
-def round_percent_half_up(used_tokens: int, effective_window_tokens: int) -> int:
-    """Round a non-negative percentage to the nearest integer, half up."""
-
-    return (
-        used_tokens * 100 * 2 + effective_window_tokens
-    ) // (effective_window_tokens * 2)
-
-
 def usage_output(
     thread_id: str,
     used_tokens: int,
     model_context_window: int,
 ) -> dict[str, object]:
-    effective_window_tokens = (
-        model_context_window * EFFECTIVE_WINDOW_NUMERATOR
-    ) // EFFECTIVE_WINDOW_DENOMINATOR
-    if effective_window_tokens <= 0:
-        raise TranscriptError(
-            "transcript has a model context window with a non-positive effective usage window"
-        )
-    used_percent = round_percent_half_up(used_tokens, effective_window_tokens)
-    used_k = used_tokens // 1_000
-    effective_k = effective_window_tokens // 1_000
+    usage = context_usage(used_tokens, model_context_window)
     return {
         "thread_id": thread_id,
         "used_tokens": used_tokens,
         "model_context_window": model_context_window,
-        "effective_window_tokens": effective_window_tokens,
-        "used_percent": used_percent,
-        "display": f"{used_k}K/{effective_k}K ({used_percent}% used)",
+        "effective_window_tokens": usage["effective_window_tokens"],
+        "used_percent": usage["used_percent"],
+        "display": usage["display"],
     }
 
 

@@ -1,14 +1,14 @@
 {
   "name": "context-window-rollover-reminder",
-  "version": "0.1.17",
-  "description": "Provides staged context rollover reminders, per-thread policies, and context usage queries.",
+  "version": "0.1.18",
+  "description": "Provides periodic context usage snapshots, staged rollover reminders, per-thread policies, and usage queries.",
   "author": {
     "name": "jiangxiaoxu"
   },
   "interface": {
     "displayName": "Context-window-rollover-reminder",
     "shortDescription": "Guide context rollover in Codex.",
-    "longDescription": "Emits staged context rollover instructions at model-specific defaults, with a skill to query context usage and inspect, customize, or reset the current thread's reminder policy.",
+    "longDescription": "Emits periodic context usage snapshots and staged rollover instructions at model-specific defaults, with a skill to query context usage and inspect, customize, or reset the current thread's reminder policy.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
     "composerIcon": "./assets/context-window-rollover-reminder-icon.png",

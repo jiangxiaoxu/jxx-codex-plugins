@@ -256,7 +256,13 @@ class ContextWindowPolicyTests(unittest.TestCase):
             thread_a = root / "thread-a.jsonl"
             thread_b = root / "thread-b.jsonl"
             write_rollout(thread_a, "session-a", "thread-a", usage=150_000)
-            write_rollout(thread_b, "session-b", "thread-b", usage=200_000)
+            write_rollout(
+                thread_b,
+                "session-b",
+                "thread-b",
+                usage=200_000,
+                capacity=None,
+            )
             configured = self.invoke_policy(
                 state,
                 ["set", "--start-k", "150", "--interval-k", "50"],
@@ -356,8 +362,8 @@ class ContextWindowPolicyTests(unittest.TestCase):
                     "used_tokens": 73_000,
                     "model_context_window": 800_000,
                     "effective_window_tokens": 680_000,
-                    "used_percent": 11,
-                    "display": "73K/680K (11% used)",
+                    "used_percent": 9,
+                    "display": "73K/680K (9% used)",
                 },
             )
             self.assertEqual(codex_state.read_bytes(), before)
@@ -375,9 +381,30 @@ class ContextWindowPolicyTests(unittest.TestCase):
             )
             over_window = self.invoke_usage(codex_state, codex_home=codex_home)
             self.assertEqual(over_window.returncode, 0, over_window.stderr)
-            self.assertEqual(json.loads(over_window.stdout)["used_percent"], 132)
+            self.assertEqual(json.loads(over_window.stdout)["used_percent"], 100)
             self.assertEqual(
-                json.loads(over_window.stdout)["display"], "900K/680K (132% used)"
+                json.loads(over_window.stdout)["display"], "900K/680K (100% used)"
+            )
+
+            write_rollout(
+                transcript,
+                "session-a",
+                "thread-a",
+                usage=0,
+                capacity=12_000,
+            )
+            baseline_window = self.invoke_usage(codex_state, codex_home=codex_home)
+            self.assertEqual(baseline_window.returncode, 0, baseline_window.stderr)
+            self.assertEqual(
+                json.loads(baseline_window.stdout),
+                {
+                    "thread_id": "thread-a",
+                    "used_tokens": 0,
+                    "model_context_window": 12_000,
+                    "effective_window_tokens": 10_200,
+                    "used_percent": 100,
+                    "display": "0K/10K (100% used)",
+                },
             )
 
     def test_usage_requires_both_identities_and_rejects_policy_state_db(self):

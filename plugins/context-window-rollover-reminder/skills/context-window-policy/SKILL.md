@@ -24,7 +24,7 @@ Report the returned thread ID, policy, and thresholds (JSON `thresholds` uses to
 
 On failure, report the diagnostic without editing SQLite or identity variables. Use `--state-db` only for tests or explicitly managed installations.
 
-For usage requests, return the `usage` result's `display`, such as `73K/680K (11% used)`. Its denominator is 85% of the recorded model window, not a reminder threshold; this query does not change policy. It requires `CODEX_SESSION_ID` as well as `CODEX_THREAD_ID` and reads the latest recorded usage. Missing fresh usage or capacity is an error, not zero usage.
+For usage requests, return the `usage` result's `display`, such as `73K/680K (9% used)`. The display uses the same window calculation as hook reminders; this query does not change policy. It requires `CODEX_SESSION_ID` as well as `CODEX_THREAD_ID` and reads the latest recorded usage. Missing fresh usage or capacity is an error, not zero usage.
 
 ## Defaults and reminders
 
