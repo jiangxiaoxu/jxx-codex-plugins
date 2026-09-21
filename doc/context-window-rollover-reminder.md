@@ -2,7 +2,8 @@
 
 `context-window-rollover-reminder` installs a synchronous `PostToolUse` command hook. It reads the
 active model and transcript path from standard input, checks usage in the Codex rollout transcript,
-and emits one `additionalContext` message when a higher reminder stage applies.
+and emits `additionalContext` when either a higher reminder stage or a new periodic usage threshold
+applies.
 
 Without a thread override, the hook selects three reminder thresholds from the active model slug supplied in hook input:
 
@@ -15,6 +16,7 @@ Without a thread override, the hook selects three reminder thresholds from the a
 Model matching is exact and case-sensitive. The `model` input must be a nonempty string; missing
 or invalid values fail with a request diagnostic. No aliases or context-capacity scaling are used.
 Version 0.1.17 sets the Luna defaults to 400K/450K/500K and includes the `luna` group in policy output.
+Version 0.1.18 adds periodic usage snapshots beginning at 100K and then every 25K.
 Each message reports actual usage in whole thousands and includes the applicable rollover action:
 
 | Stage | Action |
@@ -23,11 +25,17 @@ Each message reports actual usage in whole thousands and includes the applicable
 | 2 | Reach a resumable stopping point with minimal additional work, then save a checkpoint and roll over. Record unfinished work without waiting to complete a milestone. |
 | 3 | Stop starting new work, finish only necessary cleanup, save the checkpoint, and roll over immediately. |
 
-The message starts with:
+With capacity available, a stage delivery starts with a usage snapshot and then the rollover
+instruction:
 
 ```text
-[Context window rollover reminder] Context Window Usage: 350K tokens.
+<context_window_usage_reminder>Context Window Usage: 350K/500K (69% used). 150K tokens remaining.</context_window_usage_reminder>
+<context_window_rollover_reminder>Continue the current unit of work ... This reminder supersedes earlier rollover reminders in the current context window.</context_window_rollover_reminder>
 ```
+
+The usage snapshot has no `supersedes` sentence. When capacity is unavailable, periodic usage
+snapshots are skipped, but a stage delivery still emits a rollover fragment containing actual usage,
+for example `<context_window_rollover_reminder>Context Window Usage: 350K tokens. ...</context_window_rollover_reminder>`.
 
 Rollover actions and window-local trigger rules are delivered by the hook. Checkpoint content and
 notes path requirements remain in the applicable `AGENTS.md` as general context-management guidance.
@@ -136,14 +144,18 @@ policies or table schemas fail with a state diagnostic rather than silently reve
 Version 0.1.15 adds the read-only `usage` command to the policy script. It returns JSON containing
 `thread_id`, `used_tokens`, `model_context_window`, `effective_window_tokens`, `used_percent`, and
 `display`. For example, 73,000 tokens used with an 800,000-token model window produces
-`73K/680K (11% used)`.
+`73K/680K (9% used)`.
 
 Version 0.1.16 includes the finalized missing-capacity test fixtures; runtime behavior is unchanged.
 
-The effective denominator is `model_context_window * 85 // 100`. Displayed K counts are rounded down
-to whole thousands; the percentage is rounded to the nearest integer using the unrounded token
-counts, with halves rounded up. Values above 100% are retained. This display does not change the
-hook's reminder thresholds or messages.
+The reminder denominator is `model_context_window * 17 // 20`, where the recorded
+`model_context_window` is Codex's usable model window. For percentage calculations it follows the
+CLI status formula against that reminder window: subtract a 12,000-token baseline from both the
+window and usage, clamp adjusted usage and remaining values at zero, round remaining percentage to
+the nearest integer with halves rounded up, then report `100 - remaining_percent` as used percentage.
+A reminder window no larger than the baseline reports 100% used. Displayed K counts are rounded down,
+and absolute remaining tokens are `max(reminder_window_tokens - used_tokens, 0)`. The hook reuses this
+calculation for periodic usage reminders; it does not change the three rollover stage thresholds.
 
 The command uses `CODEX_THREAD_ID` to read `threads.rollout_path` from
 `%CODEX_HOME%/state_5.sqlite` (or `~/.codex/state_5.sqlite` when unset), opened read-only.
@@ -178,10 +190,20 @@ between the two stricter models does not repeat an already reported stage.
 Concurrent invocations use SQLite transaction locking so one stage crossing produces only one message. Old thread entries are
 evicted after the existing 10,000-entry limit.
 
-The hook writes a compact JSON hook result to standard output only when a higher stage applies.
+Periodic usage history lives in a separate `usage_reminder_state` table. Starting at 100,000 used
+tokens, the hook reports the highest newly crossed 25,000-token threshold. If one inference skips
+multiple thresholds, only one snapshot with the latest actual usage is emitted. The threshold state
+resets after compaction and is deleted together with an evicted `session_state` row. Missing capacity
+does not advance periodic usage state. A stage crossing with capacity always carries a fresh usage
+snapshot, even if the periodic threshold was already reported; if both are due, both fragments are
+returned in one `additionalContext`, with usage first.
+
+The hook writes a compact JSON hook result to standard output only when a higher stage or periodic
+usage threshold applies.
 If usage skips thresholds, it emits only the highest applicable stage, without replaying earlier
-stages. Once stage 3 has been reported, no further reminders are emitted in that window, even after
-switching models.
+stages. Once stage 3 has been reported, no further rollover reminders are emitted in that window,
+even after switching models; periodic usage snapshots may still report newly crossed usage
+thresholds until compaction.
 `PostToolUse` samples usage after tool calls, so delivery may occur above a threshold.
 
 A database passed through `--state-db` must provide the required state columns, including

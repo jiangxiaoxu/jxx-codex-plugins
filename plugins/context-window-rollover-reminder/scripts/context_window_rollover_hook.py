@@ -1,4 +1,4 @@
-"""Emit staged PostToolUse context rollover reminders at model-specific thresholds."""
+"""Emit periodic usage snapshots and staged PostToolUse rollover reminders."""
 
 from __future__ import annotations
 
@@ -24,12 +24,16 @@ STRICT_THRESHOLDS = (300_000, 350_000, 400_000)
 LUNA_MODEL = "gpt-5.6-luna"
 LUNA_THRESHOLDS = (400_000, 450_000, 500_000)
 DEFAULT_THRESHOLDS = (350_000, 400_000, 450_000)
-MESSAGE_PREFIX = "[Context window rollover reminder] "
 SQLITE_TIMEOUT_SECONDS = 5.0
 MAX_THREADS = 10_000
 SQLITE_MAX_INTEGER = 2**63 - 1
 TOKENS_PER_K = 1_000
 MAX_THRESHOLD_K = SQLITE_MAX_INTEGER // TOKENS_PER_K
+BASELINE_TOKENS = 12_000
+REMINDER_WINDOW_NUMERATOR = 17
+REMINDER_WINDOW_DENOMINATOR = 20
+USAGE_REMINDER_START = 100_000
+USAGE_REMINDER_INTERVAL = 25_000
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS session_state (
     session_id TEXT PRIMARY KEY,
@@ -46,11 +50,21 @@ CREATE TABLE IF NOT EXISTS thread_policies (
     updated_at REAL NOT NULL
 )
 """
+USAGE_REMINDER_SCHEMA = """
+CREATE TABLE IF NOT EXISTS usage_reminder_state (
+    session_id TEXT PRIMARY KEY,
+    compacted_marker TEXT NOT NULL,
+    highest_threshold INTEGER NOT NULL CHECK (highest_threshold >= 0)
+)
+"""
 REQUIRED_STATE_COLUMNS = frozenset(
     {"session_id", "compacted_marker", "highest_stage", "last_seen_at"}
 )
 REQUIRED_POLICY_COLUMNS = frozenset(
     {"thread_id", "start_k", "interval_k", "updated_at"}
+)
+REQUIRED_USAGE_REMINDER_COLUMNS = frozenset(
+    {"session_id", "compacted_marker", "highest_threshold"}
 )
 
 COMMON_INSTRUCTIONS = (
@@ -248,16 +262,76 @@ def stage_for_usage(used: int, thresholds: tuple[int, int, int]) -> int:
     )
 
 
-def output_for(used: int, stage: int) -> str:
+def round_percent_half_up(tokens: int, window: int) -> int:
+    """Round a non-negative percentage to the nearest integer, half up."""
+
+    return (tokens * 100 * 2 + window) // (window * 2)
+
+
+def context_usage(used_tokens: int, model_context_window: int) -> dict[str, int | str]:
+    """Calculate the shared effective-window usage values and display string."""
+
+    reminder_window_tokens = (
+        model_context_window * REMINDER_WINDOW_NUMERATOR
+    ) // REMINDER_WINDOW_DENOMINATOR
+    effective_for_percent = max(reminder_window_tokens - BASELINE_TOKENS, 0)
+    if reminder_window_tokens <= BASELINE_TOKENS:
+        used_percent = 100
+    else:
+        adjusted_used = max(used_tokens - BASELINE_TOKENS, 0)
+        remaining_for_percent = max(effective_for_percent - adjusted_used, 0)
+        remaining_percent = round_percent_half_up(
+            remaining_for_percent, effective_for_percent
+        )
+        used_percent = 100 - remaining_percent
+    used_k = used_tokens // TOKENS_PER_K
+    window_k = reminder_window_tokens // TOKENS_PER_K
+    remaining_k = max(reminder_window_tokens - used_tokens, 0) // TOKENS_PER_K
+    return {
+        "effective_window_tokens": reminder_window_tokens,
+        "used_percent": used_percent,
+        "used_k": used_k,
+        "window_k": window_k,
+        "remaining_k": remaining_k,
+        "display": f"{used_k}K/{window_k}K ({used_percent}% used)",
+    }
+
+
+def usage_threshold_for(used: int) -> int:
+    if used < USAGE_REMINDER_START:
+        return 0
+    return USAGE_REMINDER_START + (
+        (used - USAGE_REMINDER_START) // USAGE_REMINDER_INTERVAL
+    ) * USAGE_REMINDER_INTERVAL
+
+
+def usage_fragment(usage: dict[str, int | str]) -> str:
+    return (
+        "<context_window_usage_reminder>Context Window Usage: "
+        f"{usage['display']}. {usage['remaining_k']}K tokens remaining."
+        "</context_window_usage_reminder>"
+    )
+
+
+def rollover_fragment(used: int, stage: int, include_usage: bool) -> str:
     action = STAGE_INSTRUCTIONS[stage]
+    usage = (
+        f"Context Window Usage: {used // TOKENS_PER_K}K tokens. "
+        if include_usage
+        else ""
+    )
+    return (
+        f"<context_window_rollover_reminder>{usage}{action} {COMMON_INSTRUCTIONS}"
+        "</context_window_rollover_reminder>"
+    )
+
+
+def output_for(fragments: list[str]) -> str:
     return json.dumps(
         {
             "hookSpecificOutput": {
                 "hookEventName": "PostToolUse",
-                "additionalContext": (
-                    f"{MESSAGE_PREFIX}Context Window Usage: {used // 1_000}K tokens. "
-                    f"{action} {COMMON_INSTRUCTIONS}"
-                ),
+                "additionalContext": "\n".join(fragments),
             }
         },
         ensure_ascii=True,
@@ -285,6 +359,9 @@ def evict_old_threads(connection: sqlite3.Connection, current_thread_id: str) ->
     connection.executemany(
         "DELETE FROM session_state WHERE session_id = ?", victims
     )
+    connection.executemany(
+        "DELETE FROM usage_reminder_state WHERE session_id = ?", victims
+    )
 
 
 def ensure_state_schema(connection: sqlite3.Connection) -> None:
@@ -302,8 +379,23 @@ def ensure_state_schema(connection: sqlite3.Connection) -> None:
                 f"state database schema is missing required columns: {missing_names}"
             )
 
+    usage_info = connection.execute(
+        "PRAGMA table_info(usage_reminder_state)"
+    ).fetchall()
+    if usage_info:
+        usage_columns = {row[1] for row in usage_info}
+        missing = REQUIRED_USAGE_REMINDER_COLUMNS - usage_columns
+        if missing:
+            missing_names = ", ".join(sorted(missing))
+            raise StateError(
+                "usage reminder database schema is missing required columns: "
+                f"{missing_names}"
+            )
+
     policy_info = connection.execute("PRAGMA table_info(thread_policies)").fetchall()
     if not policy_info:
+        if not usage_info:
+            connection.execute(USAGE_REMINDER_SCHEMA)
         connection.execute(POLICY_SCHEMA)
         return
     policy_columns = {row[1] for row in policy_info}
@@ -334,6 +426,8 @@ def ensure_state_schema(connection: sqlite3.Connection) -> None:
             raise StateError(
                 f"policy database schema requires {name} to be NOT NULL"
             )
+    if not usage_info:
+        connection.execute(USAGE_REMINDER_SCHEMA)
 
 
 def validate_policy_values(start_k: object, interval_k: object) -> tuple[int, int]:
@@ -394,7 +488,7 @@ def run(state_db: Path) -> str:
             ensure_state_schema(connection)
             connection.commit()
             connection.execute("BEGIN IMMEDIATE")
-            thread_id, compacted_marker, used, _capacity = read_rollout(
+            thread_id, compacted_marker, used, capacity = read_rollout(
                 transcript_path, session_id, agent_id
             )
             row = connection.execute(
@@ -417,8 +511,26 @@ def run(state_db: Path) -> str:
                 stored_marker = compacted_marker
                 highest_stage = 0
 
+            usage_row = connection.execute(
+                "SELECT compacted_marker, highest_threshold FROM usage_reminder_state WHERE session_id = ?",
+                (thread_id,),
+            ).fetchone()
+            if usage_row is None:
+                usage_marker, highest_usage_threshold = "", 0
+            else:
+                usage_marker, highest_usage_threshold = usage_row
+                if (
+                    not isinstance(usage_marker, str)
+                    or type(highest_usage_threshold) is not int
+                    or highest_usage_threshold < 0
+                ):
+                    raise StateError("state database contains invalid usage reminder state")
+            if compacted_marker != usage_marker:
+                usage_marker = compacted_marker
+                highest_usage_threshold = 0
+
             policy = read_thread_policy(connection, thread_id)
-            message = ""
+            fragments = []
             if used is not None:
                 if policy is None:
                     thresholds = (
@@ -431,8 +543,23 @@ def run(state_db: Path) -> str:
                 else:
                     thresholds = policy_thresholds(*policy)
                 stage = stage_for_usage(used, thresholds)
-                if stage > highest_stage:
-                    message = output_for(used, stage)
+                stage_due = stage > highest_stage
+                current_usage_threshold = usage_threshold_for(used)
+                usage_due = (
+                    capacity is not None
+                    and current_usage_threshold > highest_usage_threshold
+                )
+                if capacity is not None and (usage_due or stage_due):
+                    fragments.append(usage_fragment(context_usage(used, capacity)))
+                    highest_usage_threshold = max(
+                        highest_usage_threshold, current_usage_threshold
+                    )
+                if stage_due:
+                    fragments.append(
+                        rollover_fragment(
+                            used, stage, include_usage=capacity is None
+                        )
+                    )
                     highest_stage = stage
 
             connection.execute(
@@ -448,9 +575,21 @@ def run(state_db: Path) -> str:
                 """,
                 (thread_id, stored_marker, highest_stage, time.time()),
             )
+            connection.execute(
+                """
+                INSERT INTO usage_reminder_state(
+                    session_id, compacted_marker, highest_threshold
+                )
+                VALUES (?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    compacted_marker = excluded.compacted_marker,
+                    highest_threshold = excluded.highest_threshold
+                """,
+                (thread_id, usage_marker, highest_usage_threshold),
+            )
             evict_old_threads(connection, thread_id)
             connection.commit()
-            return message
+            return output_for(fragments) if fragments else ""
         except sqlite3.Error as error:
             try:
                 connection.rollback()
