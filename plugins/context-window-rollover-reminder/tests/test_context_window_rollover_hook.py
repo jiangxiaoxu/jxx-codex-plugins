@@ -623,48 +623,51 @@ class ContextRolloverHookTests(unittest.TestCase):
     def test_luna_model_thresholds_use_400k_450k_500k_exact_slug(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            transcript = root / "rollout.jsonl"
-            state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=0)
+            for model in ("gpt-5.6-luna", "gpt-6-luna"):
+                with self.subTest(model=model):
+                    model_root = root / model
+                    model_root.mkdir()
+                    transcript = model_root / "rollout.jsonl"
+                    state = model_root / "state.sqlite3"
+                    rollout(transcript, "session-1", usage=0)
 
-            cases = [
-                (399_999, None, None),
-                (400_000, 400, "continue the current unit of work"),
-                (400_000, None, None),
-                (449_999, None, None),
-                (450_000, 450, "resumable stopping point"),
-                (450_000, None, None),
-                (499_999, None, None),
-                (500_000, 500, "stop starting new work"),
-                (500_000, None, None),
-            ]
-            for ordinal, (used, expected_used_k, expected_action) in enumerate(
-                cases, start=3
-            ):
-                with self.subTest(used=used, expected_used_k=expected_used_k):
-                    append_record(
-                        transcript,
-                        record(
-                            "token_usage_record",
-                            ordinal,
-                            {"turn_id": "turn-1", "usage": {"total_tokens": used}},
-                        ),
-                    )
-                    result = self.invoke(transcript, state, model="gpt-5.6-luna")
-                    self.assertEqual(result.returncode, 0, result.stderr)
-                    if expected_used_k is None:
-                        self.assertEqual(result.stdout, "")
-                    else:
-                        self.assert_context(
-                            result,
-                            expected_used_k=expected_used_k,
-                            expected_action=expected_action,
+                    cases = [
+                        (399_999, None, None),
+                        (400_000, 400, "continue the current unit of work"),
+                        (400_000, None, None),
+                        (449_999, None, None),
+                        (450_000, 450, "resumable stopping point"),
+                        (450_000, None, None),
+                        (499_999, None, None),
+                        (500_000, 500, "stop starting new work"),
+                        (500_000, None, None),
+                    ]
+                    for ordinal, (used, expected_used_k, expected_action) in enumerate(
+                        cases, start=3
+                    ):
+                        append_record(
+                            transcript,
+                            record(
+                                "token_usage_record",
+                                ordinal,
+                                {"turn_id": "turn-1", "usage": {"total_tokens": used}},
+                            ),
                         )
+                        result = self.invoke(transcript, state, model=model)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        if expected_used_k is None:
+                            self.assertEqual(result.stdout, "")
+                        else:
+                            self.assert_context(
+                                result,
+                                expected_used_k=expected_used_k,
+                                expected_action=expected_action,
+                            )
 
     def test_strict_model_thresholds_use_300k_350k_400k(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for model in ("gpt-5.6-sol", "gpt-6-astra"):
+            for model in ("gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol"):
                 with self.subTest(model=model):
                     model_root = root / model
                     model_root.mkdir()

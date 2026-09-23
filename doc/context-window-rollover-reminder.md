@@ -9,8 +9,8 @@ Without a thread override, the hook selects three reminder thresholds from the a
 
 | Model | Stage 1 | Stage 2 | Stage 3 |
 | --- | --- | --- | --- |
-| `gpt-5.6-sol`, `gpt-6-astra` | 300,000 tokens | 350,000 tokens | 400,000 tokens |
-| `gpt-5.6-luna` | 400,000 tokens | 450,000 tokens | 500,000 tokens |
+| `gpt-5.6-sol`, `gpt-6-astra`, `gpt-6-sol` | 300,000 tokens | 350,000 tokens | 400,000 tokens |
+| `gpt-5.6-luna`, `gpt-6-luna` | 400,000 tokens | 450,000 tokens | 500,000 tokens |
 | All other model slugs | 350,000 tokens | 400,000 tokens | 450,000 tokens |
 
 Model matching is exact and case-sensitive. The `model` input must be a nonempty string; missing
@@ -19,6 +19,7 @@ Version 0.1.17 sets the Luna defaults to 400K/450K/500K and includes the `luna` 
 Version 0.1.18 adds periodic usage snapshots beginning at 100K and then every 25K.
 Version 0.1.19 clarifies that thread policy overrides affect only rollover stages and are not
 inherited by subagents or forked threads.
+Version 0.1.20 adds `gpt-6-sol` to the strict group and `gpt-6-luna` to the Luna group.
 Each message reports actual usage in whole thousands and includes the applicable rollover action:
 
 | Stage | Action |
@@ -189,7 +190,7 @@ The stored `highest_stage` is an integer from 0 through 3, where 0 means no remi
 Changing models preserves that history; a reminder is emitted only when the current applicable stage
 exceeds the stored stage. For example, after stage 1 at 350K on a default model, switching to
 `gpt-5.6-sol` at the same usage emits stage 2. Switching back does not repeat stage 1, and switching
-between the two stricter models does not repeat an already reported stage.
+between stricter models does not repeat an already reported stage.
 Concurrent invocations use SQLite transaction locking so one stage crossing produces only one message. Old thread entries are
 evicted after the existing 10,000-entry limit.
 
