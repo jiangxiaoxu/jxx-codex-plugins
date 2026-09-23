@@ -217,6 +217,41 @@ columns, and invalid stage values fail with a state diagnostic; no schema migrat
 Malformed requests, transcripts, identity mismatches, and state failures produce categorized
 diagnostics on standard error and retain the existing exit codes.
 
+## Historical rollover audit
+
+Version 0.1.21 adds the audit skill and CLI without changing hook or policy behavior.
+
+The separate `context-window-rollover-audit` skill uses
+`scripts/context_window_rollover_audit.py` for a read-only, retrospective check. It accepts an
+explicit local thread ID (including a subagent ID) and can include its descendant subagents:
+
+```powershell
+python plugins/context-window-rollover-reminder/scripts/context_window_rollover_audit.py --thread-id <thread-id>
+python plugins/context-window-rollover-reminder/scripts/context_window_rollover_audit.py --thread-id <thread-id> --include-subagents
+```
+
+The command locates transcripts and descendant edges through the Codex `state_5.sqlite` thread
+index. It reads the first `session_meta` of each rollout to verify a subagent's direct parent;
+inherited parent metadata later in a subagent rollout must not create extra parent-child edges. It counts a
+`compacted` record with positive `window_number` and nonempty `previous_window_id` as a
+confirmed rollover. A subagent's startup `compacted` with `window_number=0` records inherited context and is excluded from rollover
+counts even when other records appear before it. Parent reminders inherited in a subagent's
+startup history are not attributed to that subagent's own work. A `new_context` call without a
+following confirmed marker remains an unconfirmed request.
+
+The JSON report provides rollout timing, usage around each window boundary, delivered reminder
+events (including reminders pending in an active window), notes read/write operations with paths,
+and activity between reminder and rollover. `seconds_after_last_reminder` measures from the last
+rollover reminder delivered in that window to the confirmed `compacted` marker; it is null when
+there was no rollover reminder. Each rollover has `note_calls_before` and `note_calls_after` for
+the adjacent windows. The script does not classify notes as checkpoints by filename or emit
+message bodies, note contents, or tool arguments. Historical reminder events are taken
+from the transcript; applying the currently installed threshold table to an older window can
+misstate what the agent actually received after a plugin update. Transcript and index schemas
+are Codex internals, so missing or incompatible data must be reported as a diagnostic rather
+than interpreted as zero rollovers. `--codex-state-db` supports tests and explicitly managed
+installations. This audit does not invoke the hook or change policy, state, or transcripts.
+
 ## Development and maintenance
 
 Run the focused tests from the repository root:
@@ -225,10 +260,11 @@ Run the focused tests from the repository root:
 python -m unittest discover -s plugins/context-window-rollover-reminder/tests -p "test_*.py"
 ```
 
-Validate the policy skill with the installed skill-creator validator:
+Validate both skills with the installed skill-creator validator:
 
 ```text
 python <skill-creator>/scripts/quick_validate.py plugins/context-window-rollover-reminder/skills/context-window-policy
+python <skill-creator>/scripts/quick_validate.py plugins/context-window-rollover-reminder/skills/context-window-rollover-audit
 ```
 
 Validate the plugin manifest with the installed plugin-creator validator:

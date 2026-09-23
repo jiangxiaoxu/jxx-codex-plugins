@@ -8,7 +8,7 @@ Codex plugin marketplace repository. See [Repository Guide](doc/jxx-codex-plugin
 | --- | --- |
 | `task-memory` | Maintains resumable task state and task-local artifacts through a plugin-root npm CLI. |
 | `figma-workspace` | Provides a stateless fixed-leaf Node CLI for Figma work, CLI-readable project docs, Restricted Markdown results, and a transient OAuth login bridge. |
-| `context-window-rollover-reminder` | Guides context rollover on Windows through PostToolUse reminders at 300K/350K/400K tokens for `gpt-5.6-sol`, `gpt-6-astra`, and `gpt-6-sol`; 400K/450K/500K for `gpt-5.6-luna` and `gpt-6-luna`; and 350K/400K/450K for other models. A skill queries context usage and inspects, sets, or resets persistent per-thread thresholds on request. |
+| `context-window-rollover-reminder` | Guides context rollover on Windows through PostToolUse reminders at 300K/350K/400K tokens for `gpt-5.6-sol`, `gpt-6-astra`, and `gpt-6-sol`; 400K/450K/500K for `gpt-5.6-luna` and `gpt-6-luna`; and 350K/400K/450K for other models. Skills manage per-thread thresholds and audit actual rollovers for a selected thread and its subagents. |
 
 ## Repository Layout
 
