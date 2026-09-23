@@ -8,7 +8,7 @@ This repository is a local Codex plugin marketplace. It has no root-level packag
 | --- | --- | --- |
 | `task-memory` | `plugins/task-memory/skills/`, `src/`, and `scripts/commands/` | Run the plugin test suite and packed-artifact check. |
 | `figma-workspace` | `plugins/figma-workspace/skills/`, `cli-runtime/src/`, `scripts/`, and focused tests | Run plugin-root and CLI-package validation. |
-| `context-window-rollover-reminder` | `plugins/context-window-rollover-reminder/hooks/`, `skills/`, `scripts/`, and `tests/` | Run Python unittest discovery, the skill validator, and the plugin manifest validator. |
+| `context-window-rollover-reminder` | `plugins/context-window-rollover-reminder/hooks/`, `skills/`, `scripts/`, and `tests/` | Run Python unittest discovery, both skill validators, and the plugin manifest validator. |
 
 For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, marketplace entry, and root README inventory aligned when plugin identity, placement, or availability changes.
 
@@ -59,6 +59,8 @@ From the repository root on Windows:
 
 ```text
 python -m unittest discover -s plugins/context-window-rollover-reminder/tests -p "test_*.py"
+python <skill-creator>/scripts/quick_validate.py plugins/context-window-rollover-reminder/skills/context-window-policy
+python <skill-creator>/scripts/quick_validate.py plugins/context-window-rollover-reminder/skills/context-window-rollover-audit
 python <plugin-creator>/scripts/validate_plugin.py plugins/context-window-rollover-reminder
 ```
 
