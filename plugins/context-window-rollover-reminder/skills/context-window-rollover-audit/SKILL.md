@@ -1,6 +1,6 @@
 ---
 name: context-window-rollover-audit
-description: Analyze actual Codex context rollovers for a specified local thread and, when requested, its descendant subagents. Use for historical rollover checks, not reminder policy changes.
+description: Use only when the user specifically asks for a retrospective audit of rollover history in a selected Codex thread or its subagents. A routine rollover request or hook reminder does not invoke this skill.
 ---
 
 # Context Window Rollover Audit

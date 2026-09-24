@@ -1,6 +1,6 @@
 ---
 name: context-window-policy
-description: Query current-thread context usage or inspect, set, or reset its rollover policy when requested by the user or parent agent.
+description: Use only when the user specifically asks to query current-thread token usage or inspect, set, or reset reminder thresholds. A routine rollover request or hook reminder does not invoke this skill.
 ---
 
 # Context Window Policy
