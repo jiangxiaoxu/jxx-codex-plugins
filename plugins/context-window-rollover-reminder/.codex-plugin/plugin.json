@@ -1,6 +1,6 @@
 {
   "name": "context-window-rollover-reminder",
-  "version": "0.1.21",
+  "version": "0.1.22",
   "description": "Provides context usage reminders, per-thread policies, and read-only rollover audits for threads and subagents.",
   "author": {
     "name": "jiangxiaoxu"
