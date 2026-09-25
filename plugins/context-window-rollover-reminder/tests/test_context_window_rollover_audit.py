@@ -15,12 +15,18 @@ def row(kind, payload, timestamp="2026-09-23T00:00:00Z"):
     return {"timestamp": timestamp, "type": kind, "payload": payload}
 
 
-def meta(thread_id, parent=None):
-    source = (
-        {"subagent": {"thread_spawn": {"parent_thread_id": parent}}}
-        if parent
-        else "vscode"
-    )
+def meta(thread_id, parent=None, *, agent_path=None, agent_role=None, agent_nickname=None):
+    if parent:
+        spawn = {"parent_thread_id": parent}
+        if agent_path is not None:
+            spawn["agent_path"] = agent_path
+        if agent_role is not None:
+            spawn["agent_role"] = agent_role
+        if agent_nickname is not None:
+            spawn["agent_nickname"] = agent_nickname
+        source = {"subagent": {"thread_spawn": spawn}}
+    else:
+        source = "vscode"
     return row("session_meta", {"id": thread_id, "session_id": "shared-session", "source": source})
 
 
@@ -95,7 +101,7 @@ class ContextWindowRolloverAuditTests(unittest.TestCase):
                 call("new_context", "2026-09-23T00:00:01Z"),
             ])
             write_rollout(child_rollout, [
-                meta("child", "root"),
+                meta("child", "root", agent_nickname="AliasOnly"),
                 meta("root"),  # Parent session_meta inherited after the child identity.
                 reminder("2026-09-23T00:00:01Z"),
                 call("new_context", "2026-09-23T00:00:02Z"),
@@ -109,12 +115,14 @@ class ContextWindowRolloverAuditTests(unittest.TestCase):
                     "path": "phase-120.md", "text": secret,
                 })),
                 call("append_to_file", "2026-09-23T00:00:08Z", json.dumps({
-                    "path": "phase-120.md", "text": secret,
+                    "path": "phase-121.md", "text": secret,
                 })),
                 reminder("2026-09-23T00:00:08Z", threshold=320),
                 call("new_context", "2026-09-23T00:00:09Z"),
                 usage(320_000, "2026-09-23T00:00:10Z"),
                 compacted(1, "2026-09-23T00:00:11Z"),
+                call("read_file", "2026-09-23T00:00:12Z", json.dumps({"path": "phase-120.md"})),
+                call("read_file", "2026-09-23T00:00:12Z", json.dumps({"path": "phase-121.md"})),
                 call("read_file", "2026-09-23T00:00:12Z", json.dumps({"path": "phase-120.md"})),
                 usage(30_000, "2026-09-23T00:00:13Z"),
             ])
@@ -135,7 +143,7 @@ class ContextWindowRolloverAuditTests(unittest.TestCase):
                 ("fork", str(fork_rollout), "fork"),
             ], [("root", "child"), ("child", "grandchild"), ("root", "fork")])
 
-            process = invoke(database, "root", "--include-subagents")
+            process = invoke(database, "root", "--include-subagents", "--format", "json")
             self.assertEqual(process.returncode, 0, process.stderr)
             self.assertNotIn(secret, process.stdout)
             result = json.loads(process.stdout)
@@ -146,10 +154,7 @@ class ContextWindowRolloverAuditTests(unittest.TestCase):
             self.assertEqual(result["summary"]["subagent_bootstrap_compacted_ignored"], 2)
             self.assertTrue(result["summary"]["coverage_incomplete"])
             agents = {agent["thread_id"]: agent for agent in result["agents"]}
-            self.assertEqual(agents["fork"]["coverage"], "not_subagent")
-            self.assertEqual(agents["root"]["unmatched_new_context_requests"][0]["latest_usage_before_request_tokens"], 100_000)
-            self.assertEqual(len(agents["root"]["pending_reminders"]), 1)
-            self.assertEqual(agents["root"]["pending_tool_calls_after_first_reminder"], 1)
+            self.assertEqual(set(agents), {"child"})
             child = agents["child"]
             self.assertEqual(child["parent_thread_id"], "root")
             self.assertEqual(child["bootstrap_compacted_ignored"], 1)
@@ -163,15 +168,32 @@ class ContextWindowRolloverAuditTests(unittest.TestCase):
             self.assertEqual(rollover["work_tool_calls_after_first_reminder"], 1)
             self.assertEqual([item["usage_k"] for item in rollover["reminders"]], [310, 320])
             self.assertEqual([event["operation"] for event in rollover["note_calls_before"]], ["write", "append"])
-            self.assertEqual([event["operation"] for event in rollover["note_calls_after"]], ["read"])
-            self.assertEqual([event["path"] for event in child["note_calls"]], ["phase-120.md"] * 3)
-            self.assertEqual([event["window_number"] for event in child["note_calls"]], [0, 0, 1])
+            self.assertEqual([event["operation"] for event in rollover["note_calls_after"]], ["read", "read", "read"])
+            self.assertEqual([event["path"] for event in child["note_calls"]], ["phase-120.md", "phase-121.md", "phase-120.md", "phase-121.md", "phase-120.md"])
+            self.assertEqual([event["window_number"] for event in child["note_calls"]], [0, 0, 1, 1, 1])
 
-            root_only = invoke(database)
+            table_process = invoke(database, "root", "--include-subagents")
+            self.assertEqual(table_process.returncode, 0, table_process.stderr)
+            self.assertIn("|", table_process.stdout)
+            self.assertIn("child", table_process.stdout)
+            self.assertIn("子代理名称: ?", table_process.stdout)
+            self.assertIn("agent_role: ?", table_process.stdout)
+            self.assertNotIn("AliasOnly", table_process.stdout)
+            self.assertIn("320K / 30K", table_process.stdout)
+            self.assertIn("3秒", table_process.stdout)
+            self.assertIn("写入: phase-120.md, phase-121.md", table_process.stdout)
+            self.assertIn("读取: phase-120.md, phase-121.md", table_process.stdout)
+            self.assertEqual(table_process.stdout.count("phase-120.md"), 2)
+            self.assertEqual(table_process.stdout.count("phase-121.md"), 2)
+            self.assertNotIn("grandchild", table_process.stdout)
+            self.assertNotIn("fork", table_process.stdout)
+            self.assertNotIn("PARENT_SECRET", table_process.stdout)
+
+            root_only = invoke(database, "root", "--format", "json")
             self.assertEqual(root_only.returncode, 0, root_only.stderr)
             self.assertEqual(json.loads(root_only.stdout)["summary"]["agents_indexed"], 1)
 
-            selected_child = invoke(database, "child")
+            selected_child = invoke(database, "child", "--format", "json")
             self.assertEqual(selected_child.returncode, 0, selected_child.stderr)
             selected = json.loads(selected_child.stdout)
             self.assertEqual(selected["summary"]["subagents_scanned"], 1)
@@ -188,23 +210,85 @@ class ContextWindowRolloverAuditTests(unittest.TestCase):
                 ("root", str(rollout), "vscode"),
                 ("child", str(root / "missing.jsonl"), "subagent"),
             ], [("root", "child"), ("child", "root")])
-            process = invoke(database, "root", "--include-subagents")
+            process = invoke(database, "root", "--include-subagents", "--format", "json")
             self.assertEqual(process.returncode, 0, process.stderr)
             result = json.loads(process.stdout)
             self.assertTrue(result["summary"]["coverage_incomplete"])
             self.assertEqual(result["summary"]["agents_scanned"], 1)
-            self.assertEqual(result["agents"][1]["coverage"], "unreadable_rollout")
-            self.assertIsNone(result["agents"][1]["real_rollovers"])
             self.assertEqual(result["agents"][0]["rollovers"][0]["trigger"], "unknown")
             self.assertIsNone(result["agents"][0]["rollovers"][0]["seconds_after_last_reminder"])
 
-            missing_root = invoke(database, "not-indexed")
+            missing_root = invoke(database, "not-indexed", "--format", "json")
             self.assertEqual(missing_root.returncode, 0, missing_root.stderr)
             missing = json.loads(missing_root.stdout)
             self.assertTrue(missing["summary"]["coverage_incomplete"])
             self.assertEqual(missing["summary"]["agents_indexed"], 0)
-            self.assertEqual(missing["agents"][0]["coverage"], "missing_index_record")
-            self.assertIsNone(missing["agents"][0]["real_rollovers"])
+            self.assertEqual(missing["agents"], [])
+
+    def test_table_groups_confirmed_rollovers_by_agent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = root / "state_5.sqlite"
+            root_rollout = root / "root.jsonl"
+            child_rollout = root / "child.jsonl"
+            quiet_rollout = root / "quiet.jsonl"
+            write_rollout(root_rollout, [
+                meta("root"),
+                usage(100_999, "2026-09-23T00:00:00Z"),
+                reminder("2026-09-23T00:00:01Z"),
+                call("new_context", "2026-09-23T00:00:02Z"),
+                compacted(1, "2026-09-23T00:00:03Z"),
+                usage(10_999, "2026-09-23T00:00:04Z"),
+            ])
+            write_rollout(child_rollout, [
+                meta("child", "root", agent_path="/root/worker_child", agent_role="worker", agent_nickname="OtherAlias"),
+                compacted(0, "2026-09-23T00:00:00Z"),
+                row("event_msg", {"type": "thread_settings_applied"}, "2026-09-23T00:00:01Z"),
+                usage(200_000, "2026-09-23T00:00:05Z"),
+                call("new_context", "2026-09-23T00:00:06Z"),
+                compacted(1, "2026-09-23T00:00:07Z"),
+                usage(20_000, "2026-09-23T00:00:08Z"),
+                usage(210_000, "2026-09-23T00:00:09Z"),
+                call("new_context", "2026-09-23T00:00:10Z"),
+                compacted(2, "2026-09-23T00:00:11Z"),
+                usage(30_000, "2026-09-23T00:00:12Z"),
+            ])
+            write_rollout(quiet_rollout, [
+                meta("quiet", "root"),
+                compacted(0, "2026-09-23T00:00:00Z"),
+                row("event_msg", {"type": "thread_settings_applied"}, "2026-09-23T00:00:01Z"),
+            ])
+            write_index(database, [
+                ("root", str(root_rollout), "vscode"),
+                ("child", str(child_rollout), "subagent"),
+                ("quiet", str(quiet_rollout), "subagent"),
+            ], [("root", "child"), ("root", "quiet")])
+
+            process = invoke(database, "root", "--include-subagents")
+            self.assertEqual(process.returncode, 0, process.stderr)
+            self.assertNotIn("quiet", process.stdout)
+            self.assertEqual(process.stdout.count("线程: root"), 1)
+            self.assertEqual(process.stdout.count("线程: child"), 1)
+            self.assertIn("子代理名称: /root/worker_child", process.stdout)
+            self.assertIn("agent_role: worker", process.stdout)
+            self.assertNotIn("OtherAlias", process.stdout)
+            root_section, child_section = process.stdout.split("线程: child")
+            self.assertIn("确认换窗: 1", root_section)
+            self.assertIn("100K / 10K", root_section)
+            self.assertNotIn("200K / 20K", root_section)
+            self.assertIn("确认换窗: 2", child_section)
+            self.assertIn("200K / 20K", child_section)
+            self.assertIn("210K / 30K", child_section)
+            self.assertNotIn("100K / 10K", child_section)
+
+            structured = invoke(database, "root", "--include-subagents", "--format", "json")
+            self.assertEqual(structured.returncode, 0, structured.stderr)
+            report = json.loads(structured.stdout)
+            self.assertEqual(report["summary"]["real_rollovers"], 3)
+            self.assertEqual({agent["thread_id"] for agent in report["agents"]}, {"root", "child"})
+            root_rollover = next(agent for agent in report["agents"] if agent["thread_id"] == "root")["rollovers"][0]
+            self.assertEqual(root_rollover["usage_before_tokens"], 100_999)
+            self.assertEqual(root_rollover["usage_after_tokens"], 10_999)
 
     def test_bootstrap_discards_apparent_parent_rollover_before_it(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -227,17 +311,13 @@ class ContextWindowRolloverAuditTests(unittest.TestCase):
                 ("child", str(child_rollout), "subagent"),
             ], [("root", "child")])
 
-            process = invoke(database, "child")
+            process = invoke(database, "child", "--format", "json")
             self.assertEqual(process.returncode, 0, process.stderr)
             self.assertNotIn("PARENT_SECRET", process.stdout)
-            agent = json.loads(process.stdout)["agents"][0]
-            self.assertEqual(agent["coverage"], "ok")
-            self.assertEqual(agent["bootstrap_compacted_ignored"], 1)
-            self.assertEqual(agent["real_rollovers"], 0)
-            self.assertEqual(agent["rollovers"], [])
-            self.assertEqual(agent["note_calls"], [])
-            self.assertEqual(agent["pending_reminders"], [])
-            self.assertEqual(agent["unmatched_new_context_requests"], [])
+            result = json.loads(process.stdout)
+            self.assertEqual(result["summary"]["bootstrap_compacted_ignored"], 1)
+            self.assertEqual(result["summary"]["real_rollovers"], 0)
+            self.assertEqual(result["agents"], [])
 
 
 if __name__ == "__main__":

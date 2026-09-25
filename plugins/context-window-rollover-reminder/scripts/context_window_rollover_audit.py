@@ -92,18 +92,17 @@ def positive_token_count(value: object) -> int | None:
     return value if type(value) is int and value >= 0 else None
 
 
-def first_meta_parent(meta: dict) -> str | None:
+def first_meta_spawn(meta: dict) -> dict:
     source = meta.get("source")
     if not isinstance(source, dict):
-        return None
+        return {}
     subagent = source.get("subagent")
     if not isinstance(subagent, dict):
-        return None
+        return {}
     spawn = subagent.get("thread_spawn")
     if not isinstance(spawn, dict):
-        return None
-    parent = spawn.get("parent_thread_id")
-    return parent if isinstance(parent, str) and parent else None
+        return {}
+    return spawn
 
 
 def marker_kind(payload: dict) -> str:
@@ -391,8 +390,15 @@ def audit(thread_id: str, database: Path, include_subagents: bool) -> dict:
             except ValueError as error:
                 agent["coverage"] = "identity_mismatch" if "ID does not match" in str(error) else "malformed_rollout"
             else:
-                parent = first_meta_parent(meta)
+                spawn = first_meta_spawn(meta)
+                parent = spawn.get("parent_thread_id")
+                parent = parent if isinstance(parent, str) and parent else None
                 agent["parent_thread_id"] = parent
+                if agent["is_subagent"]:
+                    agent_path = spawn.get("agent_path")
+                    agent_role = spawn.get("agent_role")
+                    agent["agent_path"] = agent_path if isinstance(agent_path, str) and agent_path else None
+                    agent["agent_role"] = agent_role if isinstance(agent_role, str) and agent_role else None
                 if row["depth"] > 0 and parent != row["indexed_parent"]:
                     agent["coverage"] = "parent_mismatch"
                 else:
@@ -424,10 +430,78 @@ def audit(thread_id: str, database: Path, include_subagents: bool) -> dict:
     }
 
 
+def local_timestamp(timestamp: str | None) -> str:
+    if timestamp is None:
+        return "?"
+    try:
+        local = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone()
+    except ValueError:
+        return "?"
+    offset = local.strftime("%z")
+    return f"{local:%Y-%m-%d %H:%M:%S} {offset[:3]}:{offset[3:]}"
+
+
+def note_transition(rollover: dict) -> str:
+    writes = [item for item in rollover["note_calls_before"] if item["operation"] in {"write", "append"}]
+    reads = [item for item in rollover["note_calls_after"] if item["operation"] == "read"]
+
+    def paths(items: list[dict]) -> str:
+        unique = dict.fromkeys(item["path"] for item in items)
+        return ", ".join(path.replace("|", "\\|").replace("\r", " ").replace("\n", " ") for path in unique) or "-"
+
+    first = "写入"
+    reminder = rollover["reminders"][-1] if rollover["reminders"] else None
+    reminder_gap = duration(writes[-1]["timestamp"], reminder["timestamp"]) if writes and reminder else None
+    if reminder_gap is not None and reminder_gap > 0:
+        first += " (提醒前)"
+    return f"{first}: {paths(writes)} -> 读取: {paths(reads)}"
+
+
+def markdown_report(output: dict) -> str:
+    sections = []
+    headers = ["换窗时间 (本地)", "tokens: 换窗前 / 后", "最后提醒距换窗", "notes 操作"]
+    for agent in output["agents"]:
+        rollovers = agent["rollovers"]
+        if not rollovers:
+            continue
+        lines = [f"线程: {agent['thread_id']}"]
+        if agent["is_subagent"]:
+            lines.extend([
+                f"子代理名称: {agent.get('agent_path') or '?'}",
+                f"agent_role: {agent.get('agent_role') or '?'}",
+            ])
+        lines.extend([
+            f"确认换窗: {len(rollovers)}",
+            "",
+            "| " + " | ".join(headers) + " |",
+            "| " + " | ".join("---" for _ in headers) + " |",
+        ])
+        for rollover in sorted(rollovers, key=lambda item: item["timestamp"] or ""):
+            before = rollover["usage_before_tokens"]
+            after = rollover["usage_after_tokens"]
+            usage = f"{before // 1000}K" if before is not None else "?"
+            usage += " / " + (f"{after // 1000}K" if after is not None else "?")
+            seconds = rollover["seconds_after_last_reminder"]
+            if seconds is None:
+                interval = "-"
+            else:
+                minutes, remaining = divmod(int(seconds + 0.5), 60)
+                interval = f"{minutes}分{remaining}秒" if minutes else f"{remaining}秒"
+            cells = [local_timestamp(rollover["timestamp"]), usage, interval, note_transition(rollover)]
+            lines.append("| " + " | ".join(cells) + " |")
+        sections.append("\n".join(lines))
+    if not sections:
+        sections.append(f"线程: {output['thread_id']}\n确认换窗: 0")
+    if output["summary"]["coverage_incomplete"]:
+        sections.insert(0, "记录覆盖: 不完整")
+    return "\n\n".join(sections)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--thread-id", required=True, help="Explicit Codex thread ID")
     parser.add_argument("--include-subagents", action="store_true", help="Audit indexed descendants recursively")
+    parser.add_argument("--format", choices=("table", "json"), default="table", help="Output format (default: table)")
     parser.add_argument("--codex-state-db", type=Path, default=default_codex_state_db())
     options = parser.parse_args(argv)
     try:
@@ -440,7 +514,11 @@ def main(argv: list[str] | None = None) -> int:
             "detail": type(error).__name__,
         }), file=sys.stderr)
         return 2
-    print(json.dumps(output, ensure_ascii=True, separators=(",", ":")))
+    if options.format == "table":
+        print(markdown_report(output))
+    else:
+        output["agents"] = [agent for agent in output["agents"] if (agent["real_rollovers"] or 0) > 0]
+        print(json.dumps(output, ensure_ascii=True, separators=(",", ":")))
     return 0
 
 

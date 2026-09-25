@@ -220,6 +220,10 @@ diagnostics on standard error and retain the existing exit codes.
 ## Historical rollover audit
 
 Version 0.1.21 adds the audit skill and CLI without changing hook or policy behavior.
+Version 0.1.23 makes the audit CLI print a per-agent rollover table by default. It omits agents
+without confirmed rollovers, shows subagent paths and roles, lists distinct notes files on both
+sides of each rollover, and displays token usage in whole K. `--format json` keeps exact token
+counts but includes only agents with confirmed rollovers.
 
 The separate `context-window-rollover-audit` skill uses
 `scripts/context_window_rollover_audit.py` for a read-only, retrospective check. It accepts an
@@ -228,6 +232,7 @@ explicit local thread ID (including a subagent ID) and can include its descendan
 ```powershell
 python plugins/context-window-rollover-reminder/scripts/context_window_rollover_audit.py --thread-id <thread-id>
 python plugins/context-window-rollover-reminder/scripts/context_window_rollover_audit.py --thread-id <thread-id> --include-subagents
+python plugins/context-window-rollover-reminder/scripts/context_window_rollover_audit.py --thread-id <thread-id> --include-subagents --format json
 ```
 
 The command locates transcripts and descendant edges through the Codex `state_5.sqlite` thread
@@ -239,13 +244,27 @@ counts even when other records appear before it. Parent reminders inherited in a
 startup history are not attributed to that subagent's own work. A `new_context` call without a
 following confirmed marker remains an unconfirmed request.
 
+Default output groups confirmed rollovers by agent. Each agent with a rollover has its own
+`线程` and `确认换窗` count followed by a compact Markdown table with local time, token usage
+before and after as integer K (whole thousands, truncated), elapsed time since the last reminder,
+and notes operations. A subagent section also shows `子代理名称` from `agent_path` and
+`agent_role`, using `?` when either value is absent;
+`agent_nickname` is not used as a name fallback. The notes column lists each distinct file path
+written or appended before the rollover and read in the adjacent new window. Agents with no
+confirmed rollover do not appear. `--format json` returns structured detail with raw token counts
+for agents with confirmed rollovers. Its `summary` still covers every indexed agent.
+There is no all-agent dump mode: a delegated thread can have many zero-rollover descendants, and
+serializing their empty records would make the report grow with delegation instead of rollovers.
+
 The JSON report provides rollout timing, usage around each window boundary, delivered reminder
-events (including reminders pending in an active window), notes read/write operations with paths,
+events for included agents, notes read/write operations with paths,
 and activity between reminder and rollover. `seconds_after_last_reminder` measures from the last
 rollover reminder delivered in that window to the confirmed `compacted` marker; it is null when
 there was no rollover reminder. Each rollover has `note_calls_before` and `note_calls_after` for
 the adjacent windows. The script does not classify notes as checkpoints by filename or emit
-message bodies, note contents, or tool arguments. Historical reminder events are taken
+message bodies, note contents, or tool arguments. The notes lists cover the adjacent windows,
+not only the immediate rollover boundary; file operations alone do not establish checkpoint
+quality or successful task recovery. Historical reminder events are taken
 from the transcript; applying the currently installed threshold table to an older window can
 misstate what the agent actually received after a plugin update. Transcript and index schemas
 are Codex internals, so missing or incompatible data must be reported as a diagnostic rather
