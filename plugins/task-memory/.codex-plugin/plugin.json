@@ -1,7 +1,7 @@
 {
   "name": "task-memory",
-  "version": "0.1.43",
-  "description": "Durable workspace-local task state managed through independent npm CLI commands for Codex",
+  "version": "0.1.44",
+  "description": "Durable workspace-local task state through a manually invoked Codex skill and independent npm commands",
   "author": {
     "name": "jiangxiaoxu"
   },
@@ -14,8 +14,8 @@
   ],
   "interface": {
     "displayName": "Task Memory",
-    "shortDescription": "Persist long-task state through npm commands.",
-    "longDescription": "Provides independent npm command entrypoints for durable workspace-local task state and resumable checkpoints for long-running Codex tasks.",
+    "shortDescription": "Manually persist task state through npm commands.",
+    "longDescription": "Explicitly invoke $task-memory to maintain durable workspace-local task state and resumable checkpoints through independent npm commands.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
     "capabilities": [

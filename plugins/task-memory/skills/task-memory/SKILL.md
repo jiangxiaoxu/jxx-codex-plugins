@@ -1,9 +1,11 @@
 ---
 name: task-memory
-description: Maintain durable, workspace-local task state that survives context compaction, interruption, or later resume. Use when the user explicitly asks to persist or resume task state or when a long-running task needs a resumable checkpoint. Do not activate for ordinary summaries, ordinary subagent work, short tasks, validation/build/test-only work, or one-shot commands.
+description: Maintain durable, workspace-local task state that survives context compaction, interruption, or later resume. Use only when the user explicitly invokes $task-memory.
 ---
 
 # Task Memory
+
+Activate this skill only through an explicit `$task-memory` invocation. A long task or a need for a checkpoint does not activate it.
 
 Store each task under `<absolute-workspace>/task-memory/<task-id>/`:
 
