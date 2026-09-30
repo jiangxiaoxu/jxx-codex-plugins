@@ -9,7 +9,7 @@ Without a thread override, the hook selects three reminder thresholds from the a
 
 | Model | Stage 1 | Stage 2 | Stage 3 |
 | --- | --- | --- | --- |
-| `gpt-5.6-sol`, `gpt-6-astra`, `gpt-6-sol` | 300,000 tokens | 350,000 tokens | 400,000 tokens |
+| `gpt-5.6-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6.1-sol`, `gpt-6.1-astra` (reserved) | 300,000 tokens | 350,000 tokens | 400,000 tokens |
 | `gpt-5.6-luna`, `gpt-6-luna` | 400,000 tokens | 450,000 tokens | 500,000 tokens |
 | All other model slugs | 350,000 tokens | 400,000 tokens | 450,000 tokens |
 
@@ -20,6 +20,8 @@ Version 0.1.18 adds periodic usage snapshots beginning at 100K and then every 25
 Version 0.1.19 clarifies that thread policy overrides affect only rollover stages and are not
 inherited by subagents or forked threads.
 Version 0.1.20 adds `gpt-6-sol` to the strict group and `gpt-6-luna` to the Luna group.
+Version 0.1.24 adds `gpt-6.1-sol` and the reserved `gpt-6.1-astra` slug to the strict group.
+The reserved slug anticipates a future model name; it does not indicate model availability.
 Each message reports actual usage in whole thousands and includes the applicable rollover action:
 
 | Stage | Action |

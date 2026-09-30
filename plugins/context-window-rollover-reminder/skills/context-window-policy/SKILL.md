@@ -32,7 +32,7 @@ When presenting settings or choices, distinguish the override from the model def
 
 | Model | Stage 1 | Stage 2 | Stage 3 |
 | --- | --- | --- | --- |
-| `gpt-5.6-sol`, `gpt-6-astra`, `gpt-6-sol` | 300K | 350K | 400K |
+| `gpt-5.6-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6.1-sol`, `gpt-6.1-astra` (reserved) | 300K | 350K | 400K |
 | `gpt-5.6-luna`, `gpt-6-luna` | 400K | 450K | 500K |
 | Other slugs | 350K | 400K | 450K |
 
