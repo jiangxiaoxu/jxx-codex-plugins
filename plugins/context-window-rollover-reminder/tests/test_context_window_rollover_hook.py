@@ -667,7 +667,9 @@ class ContextRolloverHookTests(unittest.TestCase):
     def test_strict_model_thresholds_use_300k_350k_400k(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for model in ("gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol"):
+            for model in (
+                "gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-astra"
+            ):
                 with self.subTest(model=model):
                     model_root = root / model
                     model_root.mkdir()

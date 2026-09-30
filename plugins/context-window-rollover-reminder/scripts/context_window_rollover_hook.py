@@ -19,7 +19,9 @@ EXIT_TRANSCRIPT_ERROR = 5
 EXIT_IDENTITY_ERROR = 6
 EXIT_STATE_ERROR = 7
 
-STRICT_MODELS = frozenset({"gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol"})
+STRICT_MODELS = frozenset(
+    {"gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-astra"}
+)
 STRICT_THRESHOLDS = (300_000, 350_000, 400_000)
 LUNA_MODELS = frozenset({"gpt-5.6-luna", "gpt-6-luna"})
 LUNA_THRESHOLDS = (400_000, 450_000, 500_000)
