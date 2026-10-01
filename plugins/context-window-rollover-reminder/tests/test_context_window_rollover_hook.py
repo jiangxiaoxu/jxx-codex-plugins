@@ -809,6 +809,48 @@ class ContextRolloverHookTests(unittest.TestCase):
             self.assertTrue(current_state.exists())
             self.assertEqual(previous_state.read_bytes(), before)
 
+    def test_legacy_thread_policies_do_not_affect_model_default_reminders(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            state = root / "state.sqlite3"
+            connection = sqlite3.connect(state)
+            connection.execute(
+                "CREATE TABLE thread_policies (thread_id TEXT PRIMARY KEY, "
+                "start_k INTEGER NOT NULL, interval_k INTEGER NOT NULL, updated_at REAL NOT NULL)"
+            )
+            connection.execute(
+                "INSERT INTO thread_policies VALUES (?, ?, ?, ?)",
+                ("session-1", 150, 50, 1.0),
+            )
+            connection.commit()
+            connection.close()
+
+            rollout(transcript, "session-1", usage=300_000, capacity=500_000)
+            usage_only = self.invoke(transcript, state)
+            self.assertEqual(usage_only.returncode, 0, usage_only.stderr)
+            self.assert_context(usage_only, expected_used_k=300)
+            self.assertNotIn("<context_window_rollover_reminder>", context_text(usage_only))
+
+            append_record(
+                transcript,
+                record(
+                    "token_usage_record",
+                    3,
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
+                ),
+            )
+            stage_one = self.invoke(transcript, state)
+            self.assertEqual(stage_one.returncode, 0, stage_one.stderr)
+            self.assert_context(
+                stage_one,
+                expected_used_k=350,
+                expected_action="continue the current unit of work",
+            )
+            repeated = self.invoke(transcript, state)
+            self.assertEqual(repeated.returncode, 0, repeated.stderr)
+            self.assertEqual(repeated.stdout, "")
+
     def test_old_threshold_schema_is_rejected_without_modification(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

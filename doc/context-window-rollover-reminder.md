@@ -5,7 +5,7 @@ active model and transcript path from standard input, checks usage in the Codex 
 and emits `additionalContext` when either a higher reminder stage or a new periodic usage threshold
 applies.
 
-Without a thread override, the hook selects three reminder thresholds from the active model slug supplied in hook input:
+The hook selects three reminder thresholds from the active model slug supplied in hook input:
 
 | Model | Stage 1 | Stage 2 | Stage 3 |
 | --- | --- | --- | --- |
@@ -15,13 +15,17 @@ Without a thread override, the hook selects three reminder thresholds from the a
 
 Model matching is exact and case-sensitive. The `model` input must be a nonempty string; missing
 or invalid values fail with a request diagnostic. No aliases or context-capacity scaling are used.
-Version 0.1.17 sets the Luna defaults to 400K/450K/500K and includes the `luna` group in policy output.
+Version 0.1.17 sets the Luna defaults to 400K/450K/500K.
 Version 0.1.18 adds periodic usage snapshots beginning at 100K and then every 25K.
-Version 0.1.19 clarifies that thread policy overrides affect only rollover stages and are not
-inherited by subagents or forked threads.
 Version 0.1.20 adds `gpt-6-sol` to the strict group and `gpt-6-luna` to the Luna group.
 Version 0.1.24 adds `gpt-6.1-sol` and the reserved `gpt-6.1-astra` slug to the strict group.
 The reserved slug anticipates a future model name; it does not indicate model availability.
+Version 0.1.25 removes the policy skill and its manual usage query and threshold commands.
+The hook always uses model defaults and ignores any existing `thread_policies` table.
+Existing reminder history is retained; no runtime database cleanup is required.
+The audit skill always includes descendant subagents and runs the script directly for supplied
+thread IDs. It then reads focused rollout intervals for confirmed boundaries to explain work
+and recovery before and after rollover.
 Each message reports actual usage in whole thousands and includes the applicable rollover action:
 
 | Stage | Action |
@@ -87,72 +91,7 @@ independently of the three reminder thresholds.
 
 ## Runtime state and behavior
 
-### User-requested thread policy
-
-Version 0.1.12 adds manual thread policies while retaining the existing v2 state database.
-
-Version 0.1.13 enables `policy.allow_implicit_invocation: true` in `agents/openai.yaml`.
-Invoke `$context-window-policy` or ask in natural language to inspect, configure, or reset the
-current thread's reminder policy. A parent agent can also explicitly instruct a subagent to
-load the skill and configure that subagent's own policy. The description limits selection to
-these user or delegated requests;
-high context usage or a hook reminder alone is not a reason to activate it. The skill requires
-an explicit user or parent-agent request before `set` or `reset`, and inspection, explanation,
-or ordinary work delegation does not authorize a write. The receiving subagent executes the
-script with its own `CODEX_THREAD_ID`, asks its parent for missing parameters, and reports its
-thread ID and thresholds back. The parent does not impersonate the subagent's identity.
-Version 0.1.14 keeps model defaults and stage summaries in the skill entrypoint and moves exact
-stage messages into its on-demand `references/reminder-text.md`. The skill shows all model groups
-when the active model slug is unknown rather than guessing which default applies.
-It offers a starting threshold and a stage interval, both positive whole K tokens (1K = 1,000 tokens).
-Examples:
-
-| Start | Interval | Stage thresholds |
-| --- | --- | --- |
-| 150K | 50K | 150K / 200K / 250K |
-| 150K | 100K | 150K / 250K / 350K |
-
-The skill asks for missing values and supports custom whole K values, inspecting the policy,
-and restoring model defaults. Its companion script is `scripts/context_window_policy.py`:
-
-```powershell
-python "<plugin-root>/scripts/context_window_policy.py" show
-python "<plugin-root>/scripts/context_window_policy.py" usage
-python "<plugin-root>/scripts/context_window_policy.py" set --start-k 150 --interval-k 50
-python "<plugin-root>/scripts/context_window_policy.py" reset
-```
-
-The script requires `CODEX_THREAD_ID` from the current Codex execution environment. Missing or
-invalid identity fails explicitly; it does not infer identity from recent transcripts or use
-`CODEX_SESSION_ID` as a fallback. The hook continues to obtain and validate thread identity from
-its request and transcript. The script returns JSON with `thread_id`, `mode`, `start_k`,
-`interval_k`, and `thresholds`. Custom `thresholds` are three token counts (not K values).
-In `model_default` mode, the K fields are null and `thresholds` lists the `strict`, `luna`, and
-`default` model thresholds; it does not infer the active model. The script accepts `--state-db`
-for tests or explicitly managed installations.
-
-The three custom thresholds are `start`, `start + interval`, and `start + 2 * interval`.
-They override model-specific rollover defaults, including after model changes, but do not change
-the fixed 100K/25K periodic usage schedule. Policies apply only to the selected thread, are not
-inherited by subagents or forked threads, and persist across context rollover, compaction, and
-process restarts until manually reset. Setting or resetting a policy does not clear the current
-window's reported stages. The next hook invocation uses the new thresholds and emits only a stage
-higher than the one already reported. Normal compaction still resets reminder history.
-
-Policies live in a separate `thread_policies` table in the hook's existing SQLite database.
-Creating this table does not alter existing `session_state` rows. Policy records are not removed
-by reminder-history eviction; only an explicit reset removes the selected thread's override.
-The CLI writes and the hook reads policies under SQLite transaction locking. Invalid stored
-policies or table schemas fail with a state diagnostic rather than silently reverting to defaults.
-
-### Context usage query
-
-Version 0.1.15 adds the read-only `usage` command to the policy script. It returns JSON containing
-`thread_id`, `used_tokens`, `model_context_window`, `effective_window_tokens`, `used_percent`, and
-`display`. For example, 73,000 tokens used with an 800,000-token model window produces
-`73K/680K (9% used)`.
-
-Version 0.1.16 includes the finalized missing-capacity test fixtures; runtime behavior is unchanged.
+### Automatic usage calculation
 
 The reminder denominator is `model_context_window * 17 // 20`, where the recorded
 `model_context_window` is Codex's usable model window. For percentage calculations it follows the
@@ -162,19 +101,6 @@ the nearest integer with halves rounded up, then report `100 - remaining_percent
 A reminder window no larger than the baseline reports 100% used. Displayed K counts are rounded down,
 and absolute remaining tokens are `max(reminder_window_tokens - used_tokens, 0)`. The hook reuses this
 calculation for periodic usage reminders; it does not change the three rollover stage thresholds.
-
-The command uses `CODEX_THREAD_ID` to read `threads.rollout_path` from
-`%CODEX_HOME%/state_5.sqlite` (or `~/.codex/state_5.sqlite` when unset), opened read-only.
-This is a Codex internal schema dependency; a missing database, incompatible schema, missing row,
-or invalid path produces a diagnostic. The command does not search other databases or guess the
-latest transcript. `usage --codex-state-db <path>` supports tests or explicitly managed
-installations. The policy database option `--state-db` is not applicable to usage queries.
-
-Both `CODEX_THREAD_ID` and `CODEX_SESSION_ID` are required to validate the located transcript.
-The reported values come from its latest usage record and that record's corresponding turn
-capacity, not a live count including the query itself. A compacted window with no fresh usage,
-missing capacity, or mismatched identity fails explicitly. Querying usage does not create or
-modify the plugin policy database or Codex index.
 
 ### Reminder history
 
@@ -221,7 +147,7 @@ diagnostics on standard error and retain the existing exit codes.
 
 ## Historical rollover audit
 
-Version 0.1.21 adds the audit skill and CLI without changing hook or policy behavior.
+Version 0.1.21 adds the audit skill and CLI without changing hook behavior.
 Version 0.1.23 makes the audit CLI print a per-agent rollover table by default. It omits agents
 without confirmed rollovers, shows subagent paths and roles, lists distinct notes files on both
 sides of each rollover, and displays token usage in whole K. `--format json` keeps exact token
@@ -229,10 +155,15 @@ counts but includes only agents with confirmed rollovers.
 
 The separate `context-window-rollover-audit` skill uses
 `scripts/context_window_rollover_audit.py` for a read-only, retrospective check. It accepts an
-explicit local thread ID (including a subagent ID) and can include its descendant subagents:
+explicit local thread ID (including a subagent ID). The skill always passes `--include-subagents`
+to cover the target and its descendant subagents. For a supplied thread ID, it runs the script
+first without separate thread listing or directory traversal. Only a chat name requires ID
+resolution through the Codex thread list. After presenting the table, it uses JSON boundary
+locations and read-only `threads.rollout_path` lookups for reported IDs to read focused rollout
+intervals, explaining work and recovery around confirmed rollovers for the target and subagents.
+It does not scan unrelated threads or rollout directories. The CLI flag remains explicit:
 
 ```powershell
-python plugins/context-window-rollover-reminder/scripts/context_window_rollover_audit.py --thread-id <thread-id>
 python plugins/context-window-rollover-reminder/scripts/context_window_rollover_audit.py --thread-id <thread-id> --include-subagents
 python plugins/context-window-rollover-reminder/scripts/context_window_rollover_audit.py --thread-id <thread-id> --include-subagents --format json
 ```
@@ -271,7 +202,7 @@ from the transcript; applying the currently installed threshold table to an olde
 misstate what the agent actually received after a plugin update. Transcript and index schemas
 are Codex internals, so missing or incompatible data must be reported as a diagnostic rather
 than interpreted as zero rollovers. `--codex-state-db` supports tests and explicitly managed
-installations. This audit does not invoke the hook or change policy, state, or transcripts.
+installations. This audit does not invoke the hook or change state or transcripts.
 
 ## Development and maintenance
 
@@ -281,10 +212,9 @@ Run the focused tests from the repository root:
 python -m unittest discover -s plugins/context-window-rollover-reminder/tests -p "test_*.py"
 ```
 
-Validate both skills with the installed skill-creator validator:
+Validate the audit skill with the installed skill-creator validator:
 
 ```text
-python <skill-creator>/scripts/quick_validate.py plugins/context-window-rollover-reminder/skills/context-window-policy
 python <skill-creator>/scripts/quick_validate.py plugins/context-window-rollover-reminder/skills/context-window-rollover-audit
 ```
 
@@ -294,7 +224,7 @@ Validate the plugin manifest with the installed plugin-creator validator:
 python <plugin-creator>/scripts/validate_plugin.py plugins/context-window-rollover-reminder
 ```
 
-When changing hook logic, keep the model-specific defaults, thread policy thresholds, stage selection, state schema, transcript
+When changing hook logic, keep the model-specific defaults, stage selection, state schema, transcript
 parsing rules, and exit-code contract aligned with the tests. Keep
 `hooks/hooks.json` synchronous unless the hook's output and state semantics are redesigned
 together. Do not add the separate context-usage probe or commit generated SQLite state to the
