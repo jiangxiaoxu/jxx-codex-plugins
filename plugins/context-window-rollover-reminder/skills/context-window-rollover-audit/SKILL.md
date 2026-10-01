@@ -1,23 +1,18 @@
 ---
 name: context-window-rollover-audit
-description: Use only when the user specifically asks for a retrospective audit of rollover history in a selected Codex thread or its subagents. A routine rollover request or hook reminder does not invoke this skill.
+description: Audit a selected Codex thread's rollover history and descendant subagents only when the user explicitly requests it. Routine rollover requests and hook reminders do not invoke this skill.
 ---
 
 # Context Window Rollover Audit
 
-Resolve `../../scripts/context_window_rollover_audit.py` relative to this skill directory and run it with Python.
-
-When the requester supplies a thread ID, use it directly. Do not list threads or traverse rollout directories before running the script. If only a chat name is supplied, use the Codex thread list to resolve its ID.
-
-Always include `--include-subagents` so the audit covers the target thread and its descendant subagents. Run the default table command first. Use `--format json` for exact boundary lines, timestamps, and structured detail needed for the analysis. `--codex-state-db` is for tests or an explicitly managed installation.
+Resolve `<script>` to `../../scripts/context_window_rollover_audit.py` relative to this skill directory. Use a supplied thread ID directly, or extract `<id>` from a `codex://threads/<id>` link, excluding any query or fragment. Resolve a chat name through the Codex thread list only when no ID or thread link is supplied. Always include descendant subagents:
 
 ```powershell
 python "<script>" --thread-id <thread-id> --include-subagents
-python "<script>" --thread-id <thread-id> --include-subagents --format json
 ```
 
-Report the script's table directly. Then read the relevant rollout intervals for the target and descendant agents with confirmed rollovers to explain what happened before and after each rollover. Locate only the reported thread IDs through a read-only lookup of `threads.rollout_path` in the same Codex `state_5.sqlite` index used by the script. Use the reported boundary lines and timestamps to read focused intervals, expanding only as needed to understand the work and its resumption. Do not enumerate unrelated threads, scan rollout directories, or reconstruct the table from JSON. On script failure, report the diagnostic without searching for fallback transcripts or databases.
+Present the table unchanged. Add `--format json` when boundary lines, timestamps, or structured details are needed. For agents with confirmed rollovers, locate their rollout through read-only `threads.rollout_path` lookups in the script's Codex `state_5.sqlite` index. Read relevant boundary intervals to explain work before rollover and recovery afterward; do not scan unrelated threads or directories.
 
-Summarize the recorded events for each relevant agent: reminder, intervening work, checkpoint writes, `new_context` request, confirmed `compacted` boundary, notes reads, and subsequent work. These events may be absent; do not invent missing steps or classify every notes write as a checkpoint. Distinguish observed events from inferred task continuity. Notes operations and filenames alone do not establish checkpoint quality or successful recovery; ground that assessment in the corresponding rollout content and subsequent actions. Do not infer note contents that the rollout does not expose.
+Follow recorded reminders, work, checkpoint writes, `new_context`, `compacted`, notes reads, and subsequent actions. Distinguish evidence from inference: events may be absent, notes writes are not necessarily checkpoints, and filenames alone do not prove content, checkpoint quality, or recovery.
 
-Confirmed rollovers are `compacted` markers; an unconfirmed `new_context` request or inherited subagent startup is not a confirmed rollover. The script makes this distinction. Do not add agents with zero confirmed rollovers to the table. The reminder interval is `-` when no reminder was delivered. If coverage or the relevant rollout content is incomplete, state the limit instead of inferring missing events.
+Use the script's confirmed rollover classification; unconfirmed requests and inherited startup context are excluded. Report incomplete coverage or errors without guessing missing events or searching fallback databases/transcripts. `--codex-state-db` is reserved for tests or explicitly managed installations.

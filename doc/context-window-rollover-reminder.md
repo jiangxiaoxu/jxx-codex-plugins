@@ -147,6 +147,8 @@ diagnostics on standard error and retain the existing exit codes.
 
 ## Historical rollover audit
 
+Version 0.1.26 shortens the audit skill, adds thread-link ID extraction and OpenAI interface
+metadata, and keeps activation limited to user-requested audits. Hook behavior is unchanged.
 Version 0.1.21 adds the audit skill and CLI without changing hook behavior.
 Version 0.1.23 makes the audit CLI print a per-agent rollover table by default. It omits agents
 without confirmed rollovers, shows subagent paths and roles, lists distinct notes files on both
@@ -155,7 +157,9 @@ counts but includes only agents with confirmed rollovers.
 
 The separate `context-window-rollover-audit` skill uses
 `scripts/context_window_rollover_audit.py` for a read-only, retrospective check. It accepts an
-explicit local thread ID (including a subagent ID). The skill always passes `--include-subagents`
+explicit local thread ID (including a subagent ID). The skill also extracts the ID from
+`codex://threads/<id>` links, excluding any query or fragment, before invoking the script.
+The skill always passes `--include-subagents`
 to cover the target and its descendant subagents. For a supplied thread ID, it runs the script
 first without separate thread listing or directory traversal. Only a chat name requires ID
 resolution through the Codex thread list. After presenting the table, it uses JSON boundary
