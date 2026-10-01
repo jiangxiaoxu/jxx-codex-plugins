@@ -1,0 +1,4 @@
+interface:
+  display_name: "Context Window Rollover Audit"
+  short_description: "Audit thread and subagent rollovers only on user request."
+  default_prompt: "Use $context-window-rollover-audit to audit the provided thread ID or link and its subagents, then explain work and recovery around rollovers."
