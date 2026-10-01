@@ -1,5 +1,0 @@
-interface:
-  display_name: "Context Window Policy"
-  short_description: "Inspect usage and set rollover policy"
-policy:
-  allow_implicit_invocation: true
