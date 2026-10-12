@@ -365,63 +365,59 @@ class ContextRolloverHookTests(unittest.TestCase):
             self.assertEqual(second.returncode, 0, second.stderr)
             self.assertEqual(second.stdout, "")
 
-    def test_usage_reminder_starts_at_100k_and_only_reports_new_highest_step(self):
+    def test_usage_reminder_starts_at_200k_and_only_reports_new_highest_step(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=99_999, capacity=800_000)
+            rollout(transcript, "session-1", usage=199_999, capacity=800_000)
 
-            below = self.invoke(transcript, state)
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    3,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 100_000}},
-                ),
-            )
-            first = self.invoke(transcript, state)
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    4,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 124_999}},
-                ),
-            )
-            repeat = self.invoke(transcript, state)
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    5,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 178_999}},
-                ),
-            )
-            jumped = self.invoke(transcript, state)
+            below = self.invoke(transcript, state, model="gpt-6.1-sol")
+            results = []
+            for ordinal, usage in enumerate(
+                (200_000, 249_999, 250_000, 378_999, 399_999), start=3
+            ):
+                append_record(
+                    transcript,
+                    record(
+                        "token_usage_record",
+                        ordinal,
+                        {"turn_id": "turn-1", "usage": {"total_tokens": usage}},
+                    ),
+                )
+                results.append(self.invoke(transcript, state, model="gpt-6.1-sol"))
+            first, repeat, next_step, jumped, repeat_after_jump = results
 
+            for result in (below, *results):
+                self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(below.stdout, "")
             self.assertEqual(
                 context_text(first),
                 "<context_window_usage_reminder>Context Window Usage: "
-                "100K/680K (13% used). 580K tokens remaining."
+                "200K/680K (28% used). 480K tokens remaining."
                 "</context_window_usage_reminder>",
             )
             self.assertEqual(repeat.stdout, "")
             self.assertEqual(
-                context_text(jumped),
+                context_text(next_step),
                 "<context_window_usage_reminder>Context Window Usage: "
-                "178K/680K (25% used). 501K tokens remaining."
+                "250K/680K (36% used). 430K tokens remaining."
                 "</context_window_usage_reminder>",
             )
+            self.assertEqual(
+                context_text(jumped),
+                "<context_window_usage_reminder>Context Window Usage: "
+                "378K/680K (55% used). 301K tokens remaining."
+                "</context_window_usage_reminder>",
+            )
+            self.assertEqual(repeat_after_jump.stdout, "")
 
     def test_usage_reminder_resets_after_compaction(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=100_000, capacity=800_000)
+            rollout(transcript, "session-1", usage=200_000, capacity=800_000)
             self.assertTrue(self.invoke(transcript, state).stdout)
 
             append_record(transcript, record("compacted", 3, {}))
@@ -442,13 +438,13 @@ class ContextRolloverHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     5,
-                    {"turn_id": "turn-2", "usage": {"total_tokens": 100_000}},
+                    {"turn_id": "turn-2", "usage": {"total_tokens": 200_000}},
                 ),
             )
             fresh = self.invoke(transcript, state)
 
             self.assertEqual(fresh.returncode, 0, fresh.stderr)
-            self.assertIn("100K/680K", context_text(fresh))
+            self.assertIn("200K/680K", context_text(fresh))
 
     def test_usage_precedes_rollover_when_stage_is_due(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -538,7 +534,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             fresh = self.invoke(transcript, state)
             self.assertEqual(fresh.returncode, 0, fresh.stderr)
             self.assert_context(
-                fresh, expected_used_k=350, expected_action="continue the current unit of work"
+                fresh, expected_used_k=350, expected_action="resumable stopping point"
             )
 
     def test_new_window_reannounces_same_bucket(self):
@@ -584,17 +580,15 @@ class ContextRolloverHookTests(unittest.TestCase):
             rollout(transcript, "session-1", usage=200_000)
 
             cases = [
-                (200_000, None, None),
-                (250_000, None, None),
+                (299_999, None, None),
+                (300_000, 300, "continue the current unit of work"),
+                (300_000, None, None),
                 (349_999, None, None),
-                (350_000, 350, "continue the current unit of work"),
+                (350_000, 350, "resumable stopping point"),
                 (350_000, None, None),
                 (399_999, None, None),
-                (400_000, 400, "resumable stopping point"),
+                (400_000, 400, "stop starting new work"),
                 (400_000, None, None),
-                (449_999, None, None),
-                (450_000, 450, "stop starting new work"),
-                (450_000, None, None),
                 (500_000, None, None),
             ]
             for ordinal, (used, expected_used_k, expected_action) in enumerate(
@@ -620,158 +614,123 @@ class ContextRolloverHookTests(unittest.TestCase):
                             expected_action=expected_action,
                         )
 
-    def test_luna_model_thresholds_use_400k_450k_500k_exact_slug(self):
+    def test_gpt_6_1_sol_thresholds_use_400k_500k_600k(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for model in ("gpt-5.6-luna", "gpt-6-luna"):
-                with self.subTest(model=model):
-                    model_root = root / model
-                    model_root.mkdir()
-                    transcript = model_root / "rollout.jsonl"
-                    state = model_root / "state.sqlite3"
-                    rollout(transcript, "session-1", usage=0)
+            transcript = root / "rollout.jsonl"
+            state = root / "state.sqlite3"
+            rollout(transcript, "session-1", usage=0)
 
-                    cases = [
-                        (399_999, None, None),
-                        (400_000, 400, "continue the current unit of work"),
-                        (400_000, None, None),
-                        (449_999, None, None),
-                        (450_000, 450, "resumable stopping point"),
-                        (450_000, None, None),
-                        (499_999, None, None),
-                        (500_000, 500, "stop starting new work"),
-                        (500_000, None, None),
-                    ]
-                    for ordinal, (used, expected_used_k, expected_action) in enumerate(
-                        cases, start=3
-                    ):
-                        append_record(
-                            transcript,
-                            record(
-                                "token_usage_record",
-                                ordinal,
-                                {"turn_id": "turn-1", "usage": {"total_tokens": used}},
-                            ),
+            cases = [
+                (399_999, None, None),
+                (400_000, 400, "continue the current unit of work"),
+                (400_000, None, None),
+                (499_999, None, None),
+                (500_000, 500, "resumable stopping point"),
+                (500_000, None, None),
+                (599_999, None, None),
+                (600_000, 600, "stop starting new work"),
+                (600_000, None, None),
+                (700_000, None, None),
+            ]
+            for ordinal, (used, expected_used_k, expected_action) in enumerate(
+                cases, start=3
+            ):
+                with self.subTest(used=used, expected_used_k=expected_used_k):
+                    append_record(
+                        transcript,
+                        record(
+                            "token_usage_record",
+                            ordinal,
+                            {"turn_id": "turn-1", "usage": {"total_tokens": used}},
+                        ),
+                    )
+                    result = self.invoke(transcript, state, model="gpt-6.1-sol")
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    if expected_used_k is None:
+                        self.assertEqual(result.stdout, "")
+                    else:
+                        self.assert_context(
+                            result,
+                            expected_used_k=expected_used_k,
+                            expected_action=expected_action,
                         )
-                        result = self.invoke(transcript, state, model=model)
-                        self.assertEqual(result.returncode, 0, result.stderr)
-                        if expected_used_k is None:
-                            self.assertEqual(result.stdout, "")
-                        else:
-                            self.assert_context(
-                                result,
-                                expected_used_k=expected_used_k,
-                                expected_action=expected_action,
-                            )
 
-    def test_strict_model_thresholds_use_300k_350k_400k(self):
+    def test_gpt_6_1_prefix_includes_future_models_and_variant_slugs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            for model in (
-                "gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-astra"
+            transcript = root / "rollout.jsonl"
+            rollout(transcript, "session-1", usage=400_000)
+            for ordinal, model in enumerate(("gpt-6.1-astra", "gpt-6.1-sol-preview")):
+                with self.subTest(model=model):
+                    result = self.invoke(transcript, root / f"state-{ordinal}.sqlite3", model=model)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assert_context(
+                        result,
+                        expected_used_k=400,
+                        expected_action="continue the current unit of work",
+                    )
+
+    def test_all_other_model_slugs_use_default_thresholds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "rollout.jsonl"
+            rollout(transcript, "session-1", usage=350_000)
+            for ordinal, model in enumerate(
+                (
+                    "gpt-6-astra",
+                    "gpt-6-luna",
+                    "gpt-5.6-terra",
+                    "unknown-model",
+                    "gpt-6.10-sol",
+                    "GPT-6.1-SOL",
+                )
             ):
                 with self.subTest(model=model):
-                    model_root = root / model
-                    model_root.mkdir()
-                    transcript = model_root / "rollout.jsonl"
-                    state = model_root / "state.sqlite3"
-                    rollout(transcript, "session-1", usage=0)
-                    cases = [
-                        (299_999, None, None),
-                        (300_000, 300, "continue the current unit of work"),
-                        (300_000, None, None),
-                        (349_999, None, None),
-                        (350_000, 350, "resumable stopping point"),
-                        (350_000, None, None),
-                        (399_999, None, None),
-                        (400_000, 400, "stop starting new work"),
-                        (400_000, None, None),
-                        (500_000, None, None),
-                    ]
-                    for ordinal, (used, expected_used_k, expected_action) in enumerate(
-                        cases, start=3
-                    ):
-                        append_record(
-                            transcript,
-                            record(
-                                "token_usage_record",
-                                ordinal,
-                                {"turn_id": "turn-1", "usage": {"total_tokens": used}},
-                            ),
-                        )
-                        result = self.invoke(transcript, state, model=model)
-                        self.assertEqual(result.returncode, 0, result.stderr)
-                        if expected_used_k is None:
-                            self.assertEqual(result.stdout, "")
-                        else:
-                            self.assert_context(
-                                result,
-                                expected_used_k=expected_used_k,
-                                expected_action=expected_action,
-                            )
+                    result = self.invoke(transcript, root / f"state-{ordinal}.sqlite3", model=model)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assert_context(
+                        result,
+                        expected_used_k=350,
+                        expected_action="resumable stopping point",
+                    )
 
     def test_switching_models_upgrades_stage_without_resetting_history(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=300_000)
+            rollout(transcript, "session-1", usage=0)
 
-            default_below = self.invoke(transcript, state, model="gpt-5.6-sol-preview")
-            self.assertEqual(default_below.returncode, 0, default_below.stderr)
-            self.assertEqual(default_below.stdout, "")
-
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    3,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
-                ),
-            )
-            default_stage_one = self.invoke(
-                transcript, state, model="gpt-5.6-sol-preview"
-            )
-            self.assert_context(
-                default_stage_one,
-                expected_used_k=350,
-                expected_action="continue the current unit of work",
-            )
-
-            strict_stage_two = self.invoke(transcript, state, model="gpt-5.6-sol")
-            self.assert_context(
-                strict_stage_two,
-                expected_used_k=350,
-                expected_action="resumable stopping point",
-            )
-            same_stage = self.invoke(transcript, state, model="gpt-6-astra")
-            self.assertEqual(same_stage.returncode, 0, same_stage.stderr)
-            self.assertEqual(same_stage.stdout, "")
-            switch_back = self.invoke(
-                transcript, state, model="gpt-5.6-sol-preview"
-            )
-            self.assertEqual(switch_back.returncode, 0, switch_back.stderr)
-            self.assertEqual(switch_back.stdout, "")
-
-            append_record(
-                transcript,
-                record(
-                    "token_usage_record",
-                    4,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 400_000}},
-                ),
-            )
-            strict_stage_three = self.invoke(transcript, state, model="gpt-6-astra")
-            self.assert_context(
-                strict_stage_three,
-                expected_used_k=400,
-                expected_action="stop starting new work",
-            )
-            default_after_final = self.invoke(
-                transcript, state, model="gpt-5.6-sol-preview"
-            )
-            self.assertEqual(default_after_final.returncode, 0, default_after_final.stderr)
-            self.assertEqual(default_after_final.stdout, "")
+            cases = [
+                (300_000, "gpt-6.1-sol", None),
+                (300_000, "gpt-6-astra", "continue the current unit of work"),
+                (300_000, "gpt-6.1-sol", None),
+                (350_000, "gpt-6-astra", "resumable stopping point"),
+                (400_000, "gpt-6.1-sol", None),
+                (400_000, "gpt-6-astra", "stop starting new work"),
+                (600_000, "gpt-6.1-sol", None),
+            ]
+            for ordinal, (used, model, expected_action) in enumerate(cases, start=3):
+                with self.subTest(used=used, model=model, expected_action=expected_action):
+                    append_record(
+                        transcript,
+                        record(
+                            "token_usage_record",
+                            ordinal,
+                            {"turn_id": "turn-1", "usage": {"total_tokens": used}},
+                        ),
+                    )
+                    result = self.invoke(transcript, state, model=model)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    if expected_action is None:
+                        self.assertEqual(result.stdout, "")
+                    else:
+                        self.assert_context(
+                            result,
+                            expected_used_k=used // 1_000,
+                            expected_action=expected_action,
+                        )
 
     def test_default_state_path_uses_v2_and_leaves_previous_file_untouched(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -826,10 +785,10 @@ class ContextRolloverHookTests(unittest.TestCase):
             connection.commit()
             connection.close()
 
-            rollout(transcript, "session-1", usage=300_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=275_000, capacity=500_000)
             usage_only = self.invoke(transcript, state)
             self.assertEqual(usage_only.returncode, 0, usage_only.stderr)
-            self.assert_context(usage_only, expected_used_k=300)
+            self.assert_context(usage_only, expected_used_k=275)
             self.assertNotIn("<context_window_rollover_reminder>", context_text(usage_only))
 
             append_record(
@@ -837,14 +796,14 @@ class ContextRolloverHookTests(unittest.TestCase):
                 record(
                     "token_usage_record",
                     3,
-                    {"turn_id": "turn-1", "usage": {"total_tokens": 350_000}},
+                    {"turn_id": "turn-1", "usage": {"total_tokens": 300_000}},
                 ),
             )
             stage_one = self.invoke(transcript, state)
             self.assertEqual(stage_one.returncode, 0, stage_one.stderr)
             self.assert_context(
                 stage_one,
-                expected_used_k=350,
+                expected_used_k=300,
                 expected_action="continue the current unit of work",
             )
             repeated = self.invoke(transcript, state)
@@ -903,7 +862,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             root = Path(directory)
             transcript = root / "rollout.jsonl"
             state = root / "state.sqlite3"
-            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
+            rollout(transcript, "session-1", usage=300_000, capacity=500_000)
 
             first = self.invoke(transcript, state)
             append_record(
@@ -918,7 +877,7 @@ class ContextRolloverHookTests(unittest.TestCase):
             repeated = self.invoke(transcript, state)
 
             self.assert_context(
-                first, expected_used_k=350, expected_action="continue the current unit of work"
+                first, expected_used_k=300, expected_action="continue the current unit of work"
             )
             self.assert_context(
                 jumped, expected_used_k=500, expected_action="stop starting new work"
@@ -1134,8 +1093,8 @@ class ContextRolloverHookTests(unittest.TestCase):
                 """
             )
             rows = [
-                ("old-thread", "", 1, 0.0),
-                ("recent-thread", "", 1, 1.0),
+                ("old-thread", "", 2, 0.0),
+                ("recent-thread", "", 2, 1.0),
             ]
             rows.extend(
                 (f"filler-{index:05}", "", 1, 50.0)

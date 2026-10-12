@@ -9,12 +9,17 @@ The hook selects three reminder thresholds from the active model slug supplied i
 
 | Model | Stage 1 | Stage 2 | Stage 3 |
 | --- | --- | --- | --- |
-| `gpt-5.6-sol`, `gpt-6-astra`, `gpt-6-sol`, `gpt-6.1-sol`, `gpt-6.1-astra` (reserved) | 300,000 tokens | 350,000 tokens | 400,000 tokens |
-| `gpt-5.6-luna`, `gpt-6-luna` | 400,000 tokens | 450,000 tokens | 500,000 tokens |
-| All other model slugs | 350,000 tokens | 400,000 tokens | 450,000 tokens |
+| Model slugs starting with `gpt-6.1-` | 400,000 tokens | 500,000 tokens | 600,000 tokens |
+| All other model slugs | 300,000 tokens | 350,000 tokens | 400,000 tokens |
 
-Model matching is exact and case-sensitive. The `model` input must be a nonempty string; missing
+Model prefix matching is case-sensitive. The `model` input must be a nonempty string; missing
 or invalid values fail with a request diagnostic. No aliases or context-capacity scaling are used.
+The `gpt-6.1-` thresholds target an expanded context window of roughly 1M tokens. They apply to
+`gpt-6.1-sol`, `gpt-6.1-astra`, and future slugs with this prefix; `gpt-6.10-sol` does not match.
+They do not expand Codex's configured window or delay automatic compaction. With a 500K default window,
+automatic compaction can occur before stages 2 and 3; configure a larger window to use all three.
+Stage 1 already requests rollover after the current meaningful milestone; stages 2 and 3 escalate
+only if work continues past their thresholds.
 Version 0.1.17 sets the Luna defaults to 400K/450K/500K.
 Version 0.1.18 adds periodic usage snapshots beginning at 100K and then every 25K.
 Version 0.1.20 adds `gpt-6-sol` to the strict group and `gpt-6-luna` to the Luna group.
@@ -23,6 +28,9 @@ The reserved slug anticipates a future model name; it does not indicate model av
 Version 0.1.25 removes the policy skill and its manual usage query and threshold commands.
 The hook always uses model defaults and ignores any existing `thread_policies` table.
 Existing reminder history is retained; no runtime database cleanup is required.
+Version 0.1.27 sets all model slugs starting with `gpt-6.1-` to 400K/500K/600K for expanded
+context windows and unifies all other model slugs at 300K/350K/400K, replacing the previous model groups.
+It also changes periodic usage snapshots from 100K/every 25K to 200K/every 50K.
 The audit skill always includes descendant subagents and runs the script directly for supplied
 thread IDs. It then reads focused rollout intervals for confirmed boundaries to explain work
 and recovery before and after rollover.
@@ -38,7 +46,7 @@ With capacity available, a stage delivery starts with a usage snapshot and then 
 instruction:
 
 ```text
-<context_window_usage_reminder>Context Window Usage: 350K/500K (69% used). 150K tokens remaining.</context_window_usage_reminder>
+<context_window_usage_reminder>Context Window Usage: 300K/500K (59% used). 200K tokens remaining.</context_window_usage_reminder>
 <context_window_rollover_reminder>Continue the current unit of work ... This reminder supersedes earlier rollover reminders in the current context window.</context_window_rollover_reminder>
 ```
 
@@ -116,14 +124,14 @@ State is keyed by the transcript thread ID. A compacted transcript resets the hi
 stage, so a fresh context window can report the same stage again once fresh usage is available.
 The stored `highest_stage` is an integer from 0 through 3, where 0 means no reminder has been reported.
 Changing models preserves that history; a reminder is emitted only when the current applicable stage
-exceeds the stored stage. For example, after stage 1 at 350K on a default model, switching to
-`gpt-5.6-sol` at the same usage emits stage 2. Switching back does not repeat stage 1, and switching
-between stricter models does not repeat an already reported stage.
+exceeds the stored stage. For example, after stage 1 at 400K on `gpt-6.1-sol`, switching to
+any model outside the `gpt-6.1-` family at the same usage emits stage 3. Switching back does not repeat stage 1, and
+switching between models with the same thresholds does not repeat an already reported stage.
 Concurrent invocations use SQLite transaction locking so one stage crossing produces only one message. Old thread entries are
 evicted after the existing 10,000-entry limit.
 
-Periodic usage history lives in a separate `usage_reminder_state` table. Starting at 100,000 used
-tokens, the hook reports the highest newly crossed 25,000-token threshold. If one inference skips
+Periodic usage history lives in a separate `usage_reminder_state` table. Starting at 200,000 used
+tokens, the hook reports the highest newly crossed 50,000-token threshold. If one inference skips
 multiple thresholds, only one snapshot with the latest actual usage is emitted. The threshold state
 resets after compaction and is deleted together with an evicted `session_state` row. Missing capacity
 does not advance periodic usage state. A stage crossing with capacity always carries a fresh usage
