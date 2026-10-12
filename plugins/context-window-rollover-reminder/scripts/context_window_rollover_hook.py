@@ -19,21 +19,16 @@ EXIT_TRANSCRIPT_ERROR = 5
 EXIT_IDENTITY_ERROR = 6
 EXIT_STATE_ERROR = 7
 
-STRICT_MODELS = frozenset(
-    {"gpt-5.6-sol", "gpt-6-astra", "gpt-6-sol", "gpt-6.1-sol", "gpt-6.1-astra"}
-)
-STRICT_THRESHOLDS = (300_000, 350_000, 400_000)
-LUNA_MODELS = frozenset({"gpt-5.6-luna", "gpt-6-luna"})
-LUNA_THRESHOLDS = (400_000, 450_000, 500_000)
-DEFAULT_THRESHOLDS = (350_000, 400_000, 450_000)
+GPT_6_1_THRESHOLDS = (400_000, 500_000, 600_000)
+DEFAULT_THRESHOLDS = (300_000, 350_000, 400_000)
 SQLITE_TIMEOUT_SECONDS = 5.0
 MAX_THREADS = 10_000
 TOKENS_PER_K = 1_000
 BASELINE_TOKENS = 12_000
 REMINDER_WINDOW_NUMERATOR = 17
 REMINDER_WINDOW_DENOMINATOR = 20
-USAGE_REMINDER_START = 100_000
-USAGE_REMINDER_INTERVAL = 25_000
+USAGE_REMINDER_START = 200_000
+USAGE_REMINDER_INTERVAL = 50_000
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS session_state (
     session_id TEXT PRIMARY KEY,
@@ -443,13 +438,10 @@ def run(state_db: Path) -> str:
 
             fragments = []
             if used is not None:
-                thresholds = (
-                    STRICT_THRESHOLDS
-                    if model in STRICT_MODELS
-                    else LUNA_THRESHOLDS
-                    if model in LUNA_MODELS
-                    else DEFAULT_THRESHOLDS
-                )
+                if model.startswith("gpt-6.1-"):
+                    thresholds = GPT_6_1_THRESHOLDS
+                else:
+                    thresholds = DEFAULT_THRESHOLDS
                 stage = stage_for_usage(used, thresholds)
                 stage_due = stage > highest_stage
                 current_usage_threshold = usage_threshold_for(used)
