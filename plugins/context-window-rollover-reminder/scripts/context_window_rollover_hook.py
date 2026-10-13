@@ -120,7 +120,7 @@ class StateError(HookError):
 
 def read_request() -> tuple[str, str | None, str, Path]:
     try:
-        request = json.load(sys.stdin)
+        request = json.loads(sys.stdin.buffer.read().decode("utf-8"))
     except (json.JSONDecodeError, UnicodeDecodeError) as error:
         raise RequestError(f"invalid hook input JSON: {error}") from error
     if not isinstance(request, dict):

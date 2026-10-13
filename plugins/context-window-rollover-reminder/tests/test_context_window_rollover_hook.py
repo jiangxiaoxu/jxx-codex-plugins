@@ -107,7 +107,7 @@ class ContextRolloverHookTests(unittest.TestCase):
         return subprocess.run(
             [sys.executable, str(SCRIPT), "--state-db", str(state), *extra_args],
             input=request,
-            text=True,
+            text=isinstance(request, str),
             capture_output=True,
             check=False,
         )
@@ -138,6 +138,15 @@ class ContextRolloverHookTests(unittest.TestCase):
             self.assertEqual(invalid_json.returncode, 3)
             self.assertEqual(invalid_json.stdout, "")
             self.assertIn("request-error", invalid_json.stderr)
+
+            invalid_utf8 = self.invoke_raw(
+                b'{"session_id":"session-1","model":"gpt-6-sol",'
+                b'"transcript_path":"unused.jsonl","tool_response":{"output":"\xff"}}',
+                state,
+            )
+            self.assertEqual(invalid_utf8.returncode, 3)
+            self.assertEqual(invalid_utf8.stdout, b"")
+            self.assertIn(b"request-error", invalid_utf8.stderr)
 
             missing_fields = self.invoke_raw("{}", state)
             self.assertEqual(missing_fields.returncode, 3)
@@ -171,6 +180,34 @@ class ContextRolloverHookTests(unittest.TestCase):
                 check=False,
             )
             self.assertEqual(help_result.returncode, 0)
+
+    def test_utf8_request_is_independent_of_python_stdio_encoding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            transcript = root / "中文 rollout.jsonl"
+            rollout(transcript, "session-1", usage=350_000, capacity=500_000)
+            request = json.dumps(
+                {
+                    "session_id": "session-1",
+                    "transcript_path": str(transcript),
+                    "hook_event_name": "PostToolUse",
+                    "model": "gpt-5.6-terra",
+                    "tool_response": {"output": "64 位"},
+                },
+                ensure_ascii=False,
+            )
+            environment = os.environ.copy()
+            environment["PYTHONUTF8"] = "0"
+            environment["PYTHONIOENCODING"] = "gbk"
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "--state-db", str(root / "state.sqlite3")],
+                input=request.encode("utf-8"),
+                capture_output=True,
+                env=environment,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assert_context(result, expected_used_k=350)
 
     def test_discovered_command_runs_through_powershell(self):
         hooks = json.loads(HOOKS.read_text(encoding="utf-8"))

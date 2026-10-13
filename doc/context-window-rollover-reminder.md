@@ -31,6 +31,9 @@ Existing reminder history is retained; no runtime database cleanup is required.
 Version 0.1.27 sets all model slugs starting with `gpt-6.1-` to 400K/500K/600K for expanded
 context windows and unifies all other model slugs at 300K/350K/400K, replacing the previous model groups.
 It also changes periodic usage snapshots from 100K/every 25K to 200K/every 50K.
+Version 0.1.28 explicitly decodes hook input bytes as UTF-8 in the script.
+Requests containing non-ASCII tool output or paths work
+independently of the Windows locale encoding or Python standard-input encoding settings.
 The audit skill always includes descendant subagents and runs the script directly for supplied
 thread IDs. It then reads focused rollout intervals for confirmed boundaries to explain work
 and recovery before and after rollover.
@@ -90,7 +93,10 @@ does not declare a `hooks` field. The discovered configuration registers one syn
 }
 ```
 
-The command uses Windows PowerShell and `python`. The hook runner provides `PLUGIN_ROOT` as an
+The command uses Windows PowerShell and `python`. The script reads standard-input bytes
+and explicitly decodes them as UTF-8 before parsing JSON, including non-ASCII fields in tool
+results. This input contract also applies when the script is run directly;
+invalid UTF-8 produces a request diagnostic with exit code 3. The hook runner provides `PLUGIN_ROOT` as an
 environment variable; PowerShell reads it with `$env:PLUGIN_ROOT`, and the quoted path remains valid
 when the plugin path contains spaces. The command is intended for a PowerShell hook runner; CMD
 variable expansion is not supported by this configuration.
