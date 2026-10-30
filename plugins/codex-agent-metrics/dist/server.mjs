@@ -32621,7 +32621,7 @@ var wrapper_default = import_websocket.default;
 // package.json
 var package_default = {
   name: "@jxx-codex-plugins/codex-agent-metrics",
-  version: "0.1.6",
+  version: "0.1.7",
   private: true,
   description: "Read-only Codex agent speed and activity monitoring through MCP Apps.",
   type: "module",

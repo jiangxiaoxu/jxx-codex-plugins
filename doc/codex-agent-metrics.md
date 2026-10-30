@@ -2,7 +2,7 @@
 
 Codex Agent Metrics (plugin ID `codex-agent-metrics`) is a local Codex MCP App that sends only read-only data requests to an existing Codex daemon. It monitors Working and Ready threads with available uncompressed `.jsonl` rollouts, displaying output speed by model, root conversations, subagents, recorded token usage, acceleration evidence and daily usage history. Needs you, Inactive, compressed and unavailable-log threads are excluded. The global and thread entrypoints open the same dashboard.
 
-Version 0.1.6 renames the plugin to Codex Agent Metrics with ID `codex-agent-metrics`, `CODEX_AGENT_METRICS_*` configuration and state under `<CODEX_HOME>/state/plugins/codex-agent-metrics`. It starts a new database without migrating previous locations. Thread timelines now show measured per-agent contributions in their tooltips, replacing separate agent detail panels; all timelines omit in-flight estimates.
+Version 0.1.7 aligns total and per-agent rates in timeline tooltips and places concise interaction guidance beside explicit zoom controls above each chart. The plugin uses ID `codex-agent-metrics`, `CODEX_AGENT_METRICS_*` configuration and state under `<CODEX_HOME>/state/plugins/codex-agent-metrics`, without migrating previous database locations. Thread timelines show measured per-agent contributions in their tooltips; all timelines omit in-flight estimates.
 
 For the previous 0.1.2 baseline, verification evidence and cross-machine continuation checklist, see the [2026-10-30 handoff](codex-agent-metrics-handoff.md).
 

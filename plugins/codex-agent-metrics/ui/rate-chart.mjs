@@ -3,11 +3,11 @@ import { RateTimeline } from './timeline.mjs';
 export const rateChartHtml = ({ id, label }) => `<div class="rate-timeline" id="${id}">
   <div class="curve-controls" aria-label="时间线控制">
     <span class="curve-mode">实时 · 5 分钟</span>
-    <div><button type="button" data-curve="previous" aria-label="向前移动时间段">←</button><button type="button" data-curve="next" aria-label="向后移动时间段">→</button><button type="button" data-curve="in" aria-label="放大时间线">+</button><button type="button" data-curve="out" aria-label="缩小时间线">−</button><button type="button" data-curve="live">恢复实时</button></div>
+    <div class="curve-tools"><span class="curve-help" id="${id}-help">拖拽框选 · 悬浮查看</span><div class="curve-buttons" role="group" aria-label="平移与缩放"><button type="button" data-curve="previous" aria-label="向前移动时间段">←</button><button type="button" data-curve="next" aria-label="向后移动时间段">→</button><button type="button" data-curve="in">放大 +</button><button type="button" data-curve="out">缩小 −</button><button type="button" data-curve="live">恢复实时</button></div></div>
   </div>
-  <div class="agent-curve" tabindex="0" role="group" aria-label="${label}" aria-describedby="${id}-help ${id}-detail" title="拖拽框选; 悬浮查看; 方向键逐秒查看, +/− 缩放."><div class="curve-svg"></div><div class="curve-tooltip" id="${id}-detail" hidden></div></div>
+  <div class="agent-curve" tabindex="0" role="group" aria-label="${label}" aria-describedby="${id}-help ${id}-keyboard ${id}-detail"><div class="curve-svg"></div><div class="curve-tooltip" id="${id}-detail" hidden></div></div>
   <div class="curve-foot"><span>tok/s</span><span class="curve-range"></span></div>
-  <div class="sr-only" id="${id}-help">拖拽框选放大; 悬浮或轻点查看. 方向键逐秒查看, +/− 缩放. 仅最近 5 分钟速率采样, 无完整历史状态.</div>
+  <div class="sr-only" id="${id}-keyboard">可轻点固定详情. 键盘方向键逐秒查看, 加号和减号键缩放, Escape 恢复实时.</div>
 </div>`;
 
 const clock = time => new Date(time).toLocaleTimeString('zh-CN', { hour12: false });
@@ -156,12 +156,12 @@ export class RateChart {
     tooltip.hidden = timeline.cursor === null || Boolean(this.drag);
     if (!tooltip.hidden) {
       const content = selected
-        ? `<strong>${new Date(selected.time).toLocaleString('zh-CN', { hour12: false })}</strong><dl><dt>输出 tok/s</dt><dd>${decimal(selected.measuredTps)}</dd></dl>${contributorHtml(selected.contributors)}`
+        ? `<strong>${new Date(selected.time).toLocaleString('zh-CN', { hour12: false })}</strong><div class="curve-details"><dl><dt>输出 tok/s</dt><dd>${decimal(selected.measuredTps)}</dd></dl>${contributorHtml(selected.contributors)}</div>`
         : '<span>该时刻无速率采样</span>';
       if (tooltip.innerHTML !== content) {
-        const scroll = tooltip.querySelector('.curve-contributors')?.scrollTop ?? 0;
+        const scroll = tooltip.querySelector('.curve-details')?.scrollTop ?? 0;
         tooltip.innerHTML = content;
-        const list = tooltip.querySelector('.curve-contributors');
+        const list = tooltip.querySelector('.curve-details');
         if (list) { list.tabIndex = 0; list.scrollTop = scroll; }
       }
       tooltip.classList.toggle('has-contributors', Array.isArray(selected?.contributors));
