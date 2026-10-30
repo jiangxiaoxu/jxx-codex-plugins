@@ -30,10 +30,10 @@
       "category": "Developer Tools"
     },
     {
-      "name": "agent-monitor",
+      "name": "codex-agent-metrics",
       "source": {
         "source": "local",
-        "path": "./plugins/agent-monitor"
+        "path": "./plugins/codex-agent-metrics"
       },
       "policy": {
         "installation": "AVAILABLE",
