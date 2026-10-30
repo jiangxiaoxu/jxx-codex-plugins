@@ -7,8 +7,6 @@ Codex plugin marketplace repository. See [Repository Guide](doc/jxx-codex-plugin
 | Plugin | Purpose |
 | --- | --- |
 | `task-memory` | Manually invoked with `$task-memory` to maintain resumable task state and task-local artifacts through a plugin-root npm CLI. |
-| `figma-workspace` | Provides a stateless fixed-leaf Node CLI for Figma work, CLI-readable project docs, Restricted Markdown results, and a transient OAuth login bridge. |
-| `codex-agent-metrics` | Provides a live MCP App for an existing Codex daemon's monitorable Working/Ready threads and subagents, aggregate model speed, sampled token usage, acceleration evidence and recorded daily history. See [maintenance guide](doc/codex-agent-metrics.md). |
 | `context-window-rollover-reminder` | Reports context usage starting at 200K and every 50K thereafter. Guides context rollover on Windows through PostToolUse reminders at 400K/500K/600K for model slugs starting with `gpt-6.1-` with an expanded context window of roughly 1M, and 300K/350K/400K for all other models. The audit skill reviews actual rollovers for a selected thread and its subagents. |
 
 ## Repository Layout

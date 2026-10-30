@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "codex-agent-metrics": {
-      "command": "node",
-      "args": ["${PLUGIN_ROOT}/dist/server.mjs"],
-      "cwd": "${PLUGIN_ROOT}"
-    }
-  }
-}

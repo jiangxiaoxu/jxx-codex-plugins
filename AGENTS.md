@@ -7,7 +7,6 @@
 
 - `AGENTS.md` 仅保存 AI 执行指令,不是项目 canonical 文档;不得复制或摘录其内容到项目文件.
 - Plugin 维护文档统一放在 `doc/` 下,文件名包含对应 plugin 名称.
-- 处理 `plugins/figma-workspace` 的开发,重构或维护任务前,先阅读 `doc/figma-workspace-ai-agent-development.md`.
 - 新增,重命名或移除 `plugins/*` 下的 plugin 时,同步维护 `.agents/plugins/marketplace.json`,`README.md` 和 repository guide 的 plugin inventory.
 - 将 plugin 数字版本号 +1 时,同步修改对应 `plugins/<plugin>/.codex-plugin/plugin.json` 的 `version`.
 
