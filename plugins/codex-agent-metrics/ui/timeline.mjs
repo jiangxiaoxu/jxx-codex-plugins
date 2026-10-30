@@ -4,60 +4,39 @@ export class RateTimeline {
   reset() {
     this.agentId = null;
     this.points = [];
-    this.frozen = null;
-    this.range = null;
+    this.sampleMs = 1000;
     this.cursor = null;
   }
 
-  update(agentId, history, contributors) {
+  update(agentId, history, groups, sampleMs = 1000) {
     if (agentId !== this.agentId) { this.reset(); this.agentId = agentId; }
-    const contributions = Array.isArray(contributors) ? history.map(() => []) : null;
-    for (const series of contributors ?? []) {
-      const samples = new Map();
-      for (const [index, value] of series.samples ?? []) {
-        if (!Number.isInteger(index) || index < 0 || index >= history.length || !Number.isFinite(value) || value <= 0) continue;
-        const contribution = samples.get(index) ?? { agentId: series.agentId, name: series.name, role: series.role,
-          model: series.model, serviceTier: series.serviceTier, measuredTps: 0 };
-        contribution.measuredTps += value;
-        samples.set(index, contribution);
+    this.sampleMs = sampleMs;
+    this.points = history.map((point, index) => {
+      const sample = { ...point, time: Date.parse(point.time) };
+      if (Array.isArray(groups)) {
+        let resolved;
+        Object.defineProperty(sample, 'groups', { enumerable: true, get() {
+          return resolved ??= groups.flatMap(series => {
+            const values = (series.samples ?? []).filter(([slot, count, rate]) => slot === index
+              && Number.isInteger(count) && count > 0 && Number.isFinite(rate) && rate > 0);
+            if (!values.length) return [];
+            return [{ model: series.model, serviceTier: series.serviceTier,
+              agentCount: values.reduce((total, value) => total + value[1], 0),
+              measuredTps: values.reduce((total, value) => total + value[2], 0) }];
+          }).sort((a, b) => b.measuredTps - a.measuredTps);
+        } });
       }
-      for (const [index, sample] of samples) contributions[index].push(sample);
-    }
-    this.points = history.map((point, index) => ({ ...point, time: Date.parse(point.time),
-      ...(contributions ? { contributors: contributions[index].sort((a, b) => b.measuredTps - a.measuredTps) } : {}) }))
+      return sample;
+    })
       .filter(point => Number.isFinite(point.time) && ['measuredTps', 'estimatedTps'].every(key => Number.isFinite(point[key]) && point[key] >= 0))
       .sort((a, b) => a.time - b.time);
-  }
-
-  get data() { return this.frozen ?? this.points; }
-  get bounds() { return this.data.length ? [this.data[0].time, this.data.at(-1).time] : null; }
-  get view() { return this.range ?? this.bounds; }
-
-  live() { this.frozen = null; this.range = null; this.cursor = null; }
-
-  focus(start, end) {
     const bounds = this.bounds;
-    if (!bounds || bounds[0] === bounds[1]) return;
-    if (!this.frozen) this.frozen = this.points.map(point => ({ ...point }));
-    const span = Math.min(bounds[1] - bounds[0], Math.max(5000, Math.abs(end - start)));
-    const first = Math.max(bounds[0], Math.min(Math.min(start, end), bounds[1] - span));
-    this.range = [first, first + span];
-    if (this.cursor !== null) this.cursor = Math.max(first, Math.min(first + span, this.cursor));
+    if (!bounds || this.cursor < bounds[0] || this.cursor > bounds[1]) this.cursor = null;
   }
 
-  zoom(factor) {
-    if (!this.view) return;
-    const [start, end] = this.view;
-    const center = this.cursor ?? (start + end) / 2;
-    const span = (end - start) * factor;
-    this.focus(center - span / 2, center + span / 2);
-  }
-
-  pan(direction) {
-    if (!this.view) return;
-    const [start, end] = this.view, delta = (end - start) * .5 * direction;
-    this.focus(start + delta, end + delta);
-  }
+  get data() { return this.points; }
+  get bounds() { return this.data.length ? [this.data[0].time, this.data.at(-1).time] : null; }
+  get view() { return this.bounds; }
 
   nearest(time) {
     const view = this.view;
@@ -67,7 +46,7 @@ export class RateTimeline {
       if (point.time < view[0] || point.time > view[1]) continue;
       if (!nearest || Math.abs(point.time - time) < Math.abs(nearest.time - time)) nearest = point;
     }
-    return nearest && Math.abs(nearest.time - time) <= 1500 ? nearest : null;
+    return nearest && Math.abs(nearest.time - time) <= this.sampleMs * 1.5 ? nearest : null;
   }
 
   step(direction) {

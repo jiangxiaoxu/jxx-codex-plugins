@@ -14,10 +14,11 @@ test('MCP discovery opens an app resource and supports independent read-only ref
   const uiUrl = pathToFileURL(join(temporary, 'dashboard.html'));
   await writeFile(uiUrl, '<!doctype html><title>Codex Agent Metrics</title><main id="app"></main>');
   const overview = { schemaVersion: 1, totals: { outputTps: 82, estimatedTps: 12 }, threads: [], nextCursor: null };
+  let snapshotArgs;
   const monitor = {
     activate() {},
     setBackgroundCollection: ({ enabled }) => ({ backgroundEnabled: enabled, scope: 'process' }),
-    getSnapshot: async () => overview,
+    getSnapshot: async args => { snapshotArgs = args; return overview; },
     getThread: async () => { throw new Error('Unknown thread'); },
     getAgent: async () => { throw new Error('Unknown agent'); },
     getHistory: async () => ({ days: [] })
@@ -48,6 +49,10 @@ test('MCP discovery opens an app resource and supports independent read-only ref
   overview.totals.outputTps = 91;
   const refreshed = await client.callTool({ name: 'monitor_snapshot', arguments: {} });
   assert.equal(refreshed.structuredContent.totals.outputTps, 91);
+  await client.callTool({ name: 'monitor_snapshot', arguments: { timelineMinutes: 60 } });
+  assert.equal(snapshotArgs.timelineMinutes, 60);
+  const invalidRange = await client.callTool({ name: 'monitor_snapshot', arguments: { timelineMinutes: 15 } });
+  assert.equal(invalidRange.isError, true);
   const enabled = await client.callTool({ name: 'monitor_background', arguments: { enabled: true } });
   assert.deepEqual(enabled.structuredContent, { backgroundEnabled: true, scope: 'process' });
   const disabled = await client.callTool({ name: 'monitor_background', arguments: { enabled: false } });

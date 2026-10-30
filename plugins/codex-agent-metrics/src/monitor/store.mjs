@@ -49,7 +49,7 @@ export class MetricsStore {
       const rows = this.db.prepare(`SELECT rowid AS rowId, response_key AS key, agent_id AS agentId, model, service_tier AS serviceTier,
         start_ms AS startMs, end_ms AS endMs, input_tokens AS input, cached_tokens AS cachedInput,
         output_tokens AS output, reasoning_tokens AS reasoning FROM responses
-        WHERE ${initial ? 'end_ms >= ?' : 'rowid > ?'} ORDER BY rowid`).all(initial ? nowMs - 1800000 : afterRowId);
+        WHERE ${initial ? 'end_ms >= ?' : 'rowid > ?'} ORDER BY rowid`).all(initial ? nowMs - 3612000 : afterRowId);
       const responses = rows.map(({ input, cachedInput, output, reasoning, ...response }) => ({ ...response, output, tokens: { input, cachedInput, output, reasoning } }));
       const rateSamples = initial ? this.db.prepare(`WITH latest AS (
         SELECT model, service_tier AS tier, MAX(end_ms) AS last_ms FROM responses
@@ -57,7 +57,7 @@ export class MetricsStore {
         GROUP BY model, service_tier)
         SELECT r.response_key AS key, r.model, r.service_tier AS serviceTier,
           r.start_ms AS startMs, r.end_ms AS endMs, r.output_tokens AS output
-        FROM latest l JOIN responses r ON r.model IS l.model AND r.end_ms>=l.last_ms-300000 AND r.end_ms<=l.last_ms
+        FROM latest l JOIN responses r ON r.model IS l.model AND r.end_ms>=l.last_ms-1800000 AND r.end_ms<=l.last_ms
         WHERE r.service_tier IS l.tier AND r.start_ms IS NOT NULL AND r.end_ms>r.start_ms AND r.end_ms-r.start_ms<=900000`).all() : null;
       const today = this.today(nowMs);
       this.db.exec('COMMIT');

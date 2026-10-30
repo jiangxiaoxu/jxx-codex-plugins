@@ -81,10 +81,12 @@ export function createServer(monitor, { uiUrl = new URL('../dist/dashboard.html'
   tool('monitor_snapshot', 'Read monitored Working/Ready aggregate rates and a cursor page of root threads.', {
     ...listSchema,
     order: z.enum(['priority', 'recent']).optional(),
-    scope: z.enum(['all', 'working', 'ready']).optional()
+    scope: z.enum(['all', 'working', 'ready']).optional(),
+    timelineMinutes: z.union([z.literal(5), z.literal(10), z.literal(30), z.literal(60)]).optional()
   }, (args) => monitor.getSnapshot(args));
   tool('monitor_thread', 'Read a root thread and a cursor page of its agents.', {
-    ...listSchema, threadId: z.string().min(1), scope: z.enum(['all', 'working', 'ready']).optional()
+    ...listSchema, threadId: z.string().min(1), scope: z.enum(['all', 'working', 'ready']).optional(),
+    timelineMinutes: z.union([z.literal(5), z.literal(10), z.literal(30), z.literal(60)]).optional()
   }, (args) => monitor.getThread(args));
   tool('monitor_agent', 'Read one agent and its recent speed history.', {
     agentId: z.string().min(1)

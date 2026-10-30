@@ -6,38 +6,24 @@ const history = (offset = 0) => Array.from({ length: 300 }, (_, index) => ({
   time: new Date((offset + index) * 1000).toISOString(), measuredTps: index, estimatedTps: 2,
 }));
 
-test('a focused time range and its rate samples survive live refresh and reset to latest data', () => {
+test('the timeline always follows fresh samples and expires a pinned sample outside the live window', () => {
   const timeline = new RateTimeline();
   timeline.update('agent-a', history());
-  timeline.focus(100_000, 120_000);
-  assert.deepEqual(timeline.view, [100_000, 120_000]);
-  assert.equal(timeline.nearest(110_100).measuredTps, 110);
+  timeline.cursor = 110_000;
   timeline.update('agent-a', history(300));
-  assert.deepEqual(timeline.view, [100_000, 120_000]);
-  assert.equal(timeline.nearest(110_100).measuredTps, 110);
-  timeline.live();
   assert.deepEqual(timeline.view, [300_000, 599_000]);
+  assert.equal(timeline.cursor, null);
   timeline.update('agent-b', history(600));
-  assert.equal(timeline.frozen, null);
   assert.deepEqual(timeline.view, [600_000, 899_000]);
 });
 
-test('zoom and pan stay within retained sample bounds and allow keyboard point inspection', () => {
+test('keyboard inspection follows available samples without changing the live window', () => {
   const timeline = new RateTimeline();
   timeline.update('agent-a', history());
-  timeline.cursor = 100_000;
-  timeline.zoom(.5);
-  assert.deepEqual(timeline.view, [25_250, 174_750]);
-  timeline.pan(-1);
-  assert.deepEqual(timeline.view, [0, 149_500]);
-  timeline.focus(298_000, 297_000);
-  assert.deepEqual(timeline.view, [294_000, 299_000]);
-  timeline.cursor = null;
   timeline.step(-1);
   assert.equal(timeline.cursor, 299_000);
   timeline.step(-1);
   assert.equal(timeline.cursor, 298_000);
-  timeline.zoom(100);
   assert.deepEqual(timeline.view, [0, 299_000]);
 });
 
@@ -47,26 +33,38 @@ test('missing or invalid samples are never presented as a rate at an unobserved 
   assert.equal(timeline.nearest(5000), null);
   assert.equal(timeline.nearest(10_000).measuredTps, 10);
   timeline.update('agent-b', []);
-  timeline.zoom(.5);
   timeline.step(1);
   assert.equal(timeline.view, null);
   assert.equal(timeline.cursor, null);
 });
 
-test('thread contribution evidence stays attached to its captured second while live data changes', () => {
+test('model and tier groups update with their matching live sample', () => {
   const timeline = new RateTimeline();
-  const contributors = [
-    { agentId: 'main', name: '主代理', role: 'main', model: 'model-a', serviceTier: 'priority', samples: [[110, 30]] },
-    { agentId: 'child', name: 'Worker test', role: 'subagent', model: 'model-b', serviceTier: null, samples: [[110, 50], [111, 10]] },
-  ];
-  timeline.update('thread', history(), contributors);
+  timeline.update('thread', history(), [
+    { model: 'model-a', serviceTier: 'priority', samples: [[110, 2, 70], [111, 1, 35]] },
+    { model: 'model-a', serviceTier: 'default', samples: [[110, 1, 20]] },
+    { model: null, serviceTier: null, samples: [[110, 1, 10]] },
+  ]);
   const sample = timeline.nearest(110_000);
-  assert.deepEqual(sample.contributors.map(item => [item.agentId, item.measuredTps]), [['child', 50], ['main', 30]]);
-  assert.equal(sample.contributors[0].serviceTier, null);
-  assert.deepEqual(timeline.nearest(109_000).contributors, []);
-  timeline.focus(100_000, 120_000);
+  assert.deepEqual(sample.groups.map(group => [group.model, group.serviceTier, group.agentCount, group.measuredTps]), [
+    ['model-a', 'priority', 2, 70], ['model-a', 'default', 1, 20], [null, null, 1, 10],
+  ]);
+  assert.deepEqual(timeline.nearest(109_000).groups, []);
   timeline.update('thread', history(300), []);
-  assert.deepEqual(timeline.nearest(110_000).contributors, sample.contributors);
-  timeline.live();
-  assert.deepEqual(timeline.nearest(410_000).contributors, []);
+  assert.equal(timeline.nearest(110_000), null);
+  assert.deepEqual(timeline.nearest(410_000).groups, []);
+  timeline.update('other-thread', history(), []);
+  assert.deepEqual(timeline.nearest(110_000).groups, []);
+});
+
+test('longer time windows inspect their aggregated buckets with matching group evidence', () => {
+  const timeline = new RateTimeline();
+  timeline.update('global', [0, 12_000, 24_000].map(time => ({ time: new Date(time).toISOString(), measuredTps: 20, estimatedTps: 0 })), [
+    { model: 'model-a', serviceTier: 'priority', samples: [[1, 2, 20]] },
+  ], 12_000);
+  assert.equal(timeline.nearest(17_000).time, 12_000);
+  assert.equal(timeline.nearest(17_000).groups[0].agentCount, 2);
+  timeline.cursor = 12_000;
+  timeline.step(1);
+  assert.equal(timeline.cursor, 24_000);
 });
