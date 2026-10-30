@@ -1,8 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import packageInfo from '../package.json' with { type: 'json' };
 
-export const VERSION = '0.1.1';
+export const VERSION = packageInfo.version;
 export const UI_URI = 'ui://agent-monitor/dashboard';
 const mimeType = 'text/html;profile=mcp-app';
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
@@ -53,7 +54,7 @@ export function createServer(monitor, { uiUrl = new URL('../dist/dashboard.html'
   });
   server.registerTool('monitor_open', {
     title: 'Agent Monitor',
-    description: 'Open the current host\'s read-only Codex agent monitor. View total output speed, model contribution, root threads, subagents, token usage and recorded execution modes.',
+    description: 'Open the current daemon\'s read-only Working/Ready agent monitor. View monitored output speed, model contribution, root threads, subagents, sampled token usage and recorded execution modes.',
     inputSchema: {}, annotations: readOnly,
     _meta: {
       ui: { resourceUri: UI_URI, visibility: ['model', 'app'] },
@@ -65,19 +66,19 @@ export function createServer(monitor, { uiUrl = new URL('../dist/dashboard.html'
       monitor.activate();
       const snapshot = await monitor.getSnapshot({ limit: 10 });
       diagnostics?.write('info', 'mcp.entrypoint_opened', { tool: 'monitor_open', state: snapshot.collection?.state, threads: snapshot.totals?.threadCount, durationMs: performance.now() - started });
-      return result(snapshot, 'Opened Agent Monitor. Compressed rollouts are excluded. Rates may include explicitly marked in-flight estimates.');
+      return result(snapshot, 'Opened Agent Monitor for Working/Ready threads with uncompressed rollouts. Usage history is sampled and incomplete. Rates may include explicitly marked in-flight estimates.');
     } catch (error) {
       diagnostics?.write('error', 'mcp.entrypoint_failed', { tool: 'monitor_open', durationMs: performance.now() - started, error });
       return { content: [{ type: 'text', text: error.message }], isError: true };
     }
   });
-  tool('monitor_snapshot', 'Read current-host aggregate rates and a cursor page of root threads.', {
+  tool('monitor_snapshot', 'Read monitored Working/Ready aggregate rates and a cursor page of root threads.', {
     ...listSchema,
     order: z.enum(['priority', 'recent']).optional(),
-    scope: z.enum(['all', 'active']).optional()
+    scope: z.enum(['all', 'working', 'ready']).optional()
   }, (args) => monitor.getSnapshot(args));
   tool('monitor_thread', 'Read a root thread and a cursor page of its agents.', {
-    ...listSchema, threadId: z.string().min(1), scope: z.enum(['all', 'active', 'completed']).optional()
+    ...listSchema, threadId: z.string().min(1), scope: z.enum(['all', 'working', 'ready']).optional()
   }, (args) => monitor.getThread(args));
   tool('monitor_agent', 'Read one agent and its recent speed history.', {
     agentId: z.string().min(1)

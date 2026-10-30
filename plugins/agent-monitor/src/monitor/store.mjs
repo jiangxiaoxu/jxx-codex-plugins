@@ -21,6 +21,7 @@ export class MetricsStore {
       );
       CREATE INDEX IF NOT EXISTS response_end ON responses(end_ms);
       CREATE INDEX IF NOT EXISTS response_agent ON responses(agent_id, end_ms);
+      CREATE INDEX IF NOT EXISTS response_day ON responses(day);
       CREATE TABLE IF NOT EXISTS peaks(day TEXT PRIMARY KEY, tps REAL NOT NULL);`);
       this.insert = this.db.prepare('INSERT OR IGNORE INTO responses VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     } catch (error) { this.db.close(); throw error; }

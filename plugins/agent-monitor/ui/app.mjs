@@ -1,18 +1,18 @@
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
 import {
-  SnapshotHealth, ThreadList, createVisiblePoller, dateGroup, mergeStableItems,
-  modePresentation, phasePresentation, threadPresentation,
+  SnapshotHealth, ThreadList, compareAgents, createVisiblePoller, dateGroup, mergeStableItems,
+  modePresentation, modelPresentation, phasePresentation,
 } from './state.mjs';
 
 const root = document.getElementById('monitor');
 const element = id => document.getElementById(id);
-const app = new App({ name: 'Agent Monitor', version: '0.1.1' }, {});
+const app = new App({ name: 'Agent Monitor', version: '0.1.2' }, {});
 const rows = new ThreadList();
 const health = new SnapshotHealth();
 const state = {
-  snapshot: null, order: 'priority', scope: 'all', view: 'live', nextThreadCursor: null,
+  snapshot: null, order: 'recent', scope: 'all', view: 'live', nextThreadCursor: null, threadPrefixCount: 10,
   openThreadId: null, selectedAgentId: null, threadData: null, agents: [], agentData: null,
-  nextAgentCursor: null, agentScope: 'all', history: null, listEpoch: 0, selectionEpoch: 0,
+  nextAgentCursor: null, agentScope: 'all', agentPrefixCount: 10, history: null, listEpoch: 0, selectionEpoch: 0,
   loadingThreads: false, loadingAgents: false, connected: false, inViewport: true, detailError: null,
   diagnostics: null, clientEvents: [],
   lastRefreshDurationMs: null,
@@ -28,6 +28,18 @@ const tps = value => number(value, 1);
 const outputTps = item => finite(item?.rate?.outputTps) ? item.rate.outputTps : null;
 const isMain = agent => agent.role === 'main' || agent.id === state.openThreadId;
 const panelVisible = () => state.inViewport && document.visibilityState !== 'hidden';
+
+function clearSelection() {
+  state.selectionEpoch++;
+  state.openThreadId = null;
+  state.selectedAgentId = null;
+  state.threadData = null;
+  state.agents = [];
+  state.agentData = null;
+  state.nextAgentCursor = null;
+  state.agentPrefixCount = 10;
+  state.detailError = null;
+}
 
 function colorForModel(model) {
   const key = model || '未知模型';
@@ -59,7 +71,7 @@ function renderHealth() {
   else setNotice('');
   if (!rows.items.length) {
     element('thread-empty').hidden = false;
-    element('thread-empty').textContent = current.kind === 'live' ? '尚未发现 Codex 会话' : current.collectionState === 'scanning' ? '正在扫描 Codex 日志' : '等待采集恢复';
+    element('thread-empty').textContent = current.kind === 'live' ? '没有符合范围的 Working / Ready 会话' : current.collectionState === 'scanning' ? '正在读取运行中的线程' : '等待采集恢复';
   }
   if (state.view === 'diagnostics') renderDiagnostics();
 }
@@ -96,8 +108,17 @@ function renderDiagnostics() {
     lastGoodUiReceivedAt: health.receivedAt === null ? null : new Date(health.receivedAt).toISOString(),
     ageMs: current.ageMs,
     lastRefreshDurationMs: state.lastRefreshDurationMs,
+    refreshIntervalMs: 500,
+    coverage: state.snapshot?.collection?.coverage ?? null,
+    partialHistoryFiles: state.snapshot?.collection?.partialHistoryFiles ?? null,
+    source: state.snapshot?.collection?.source ?? null,
+    excluded: state.snapshot?.collection?.excluded ?? null,
+    skippedCompressedFiles: state.snapshot?.collection?.skippedCompressedFiles ?? null,
+    skippedUnavailableThreads: state.snapshot?.collection?.skippedUnavailableThreads ?? null,
     loadedThreadCount: rows.items.length,
+    threadPrefixCount: state.threadPrefixCount,
     loadedAgentCount: state.agents.length,
+    agentPrefixCount: state.agentPrefixCount,
     visible: panelVisible(),
   }, null, 2);
   const client = element('diagnostics-client');
@@ -148,7 +169,10 @@ function updateOverview() {
   const rate = totals.outputTps;
   element('host-name').textContent = snapshot.hostName || '当前插件宿主';
   element('total-rate').textContent = tps(totals.outputTps);
-  element('activity-summary').textContent = `${number(totals.threadCount)} 个根会话 / ${number(totals.generatingCount)} 个代理生成中 / ${number(totals.toolCount)} 个执行工具`;
+  element('activity-summary').textContent = `Working ${number(totals.workingThreadCount)} / Ready ${number(totals.readyThreadCount)} / ${number(totals.threadCount)} 个根会话`;
+  const partial = snapshot.collection?.coverage === 'sampled' || snapshot.collection?.historyComplete === false;
+  element('sample-coverage').hidden = !partial;
+  element('sample-coverage').textContent = partial ? 'Token 和历史为已采样累计, 不代表会话完整用量.' : '';
   element('estimated-share').textContent = rate > 0
     ? `${Math.round(totals.estimatedTps / rate * 100)}% 为生成中估算`
     : '当前没有输出速率';
@@ -163,7 +187,7 @@ function updateOverview() {
 }
 
 function threadMeta(thread) {
-  return `${threadPresentation(thread)} / ${number(thread.agentCount)} 个代理 / ${relativeTime(thread.recencyAt ?? thread.updatedAt)}`;
+  return `${phasePresentation(thread.status)} / ${number(thread.agentCount)} 个代理 / ${relativeTime(thread.recencyAt ?? thread.updatedAt)}`;
 }
 
 function threadHtml(thread) {
@@ -177,30 +201,32 @@ function threadHtml(thread) {
 
 function agentHtml(agent) {
   const mode = modePresentation(agent.mode);
-  const phase = phasePresentation(agent.phase);
+  const model = modelPresentation(agent);
+  const activity = phasePresentation(agent.activity);
   const name = isMain(agent) ? `主代理${agent.name && agent.name !== agent.id ? ` / ${agent.name}` : ''}`
     : agent.name && agent.name !== agent.id ? agent.name : `子代理 ${agent.id.slice(0, 8)}`;
   return `<button type="button" class="agent-row" data-agent="${escapeHtml(agent.id)}" aria-pressed="${agent.id === state.selectedAgentId}">
-    <span><span class="agent-name">${escapeHtml(name)}</span><span class="agent-meta">${escapeHtml(agent.model || '未知模型')} / ${escapeHtml(mode.label)}</span></span>
-    <span class="agent-rate"><b>${tps(outputTps(agent))}</b><span>${escapeHtml(phase)}</span></span>
+    <span><span class="agent-name">${escapeHtml(name)}</span><span class="agent-meta">${escapeHtml(model.label)} / ${escapeHtml(mode.label)}</span></span>
+    <span class="agent-rate"><b>${tps(outputTps(agent))}</b><span title="${escapeHtml(phasePresentation(agent.phase))}">${escapeHtml(activity)}</span></span>
   </button>`;
 }
 
 function detailHtml() {
   const main = state.agents.find(isMain);
   const children = state.agents.filter(agent => !isMain(agent));
-  const scopeOptions = [['all', '全部子代理'], ['active', '进行中'], ['completed', '已结束']]
+  const scopeOptions = [['all', 'Working + Ready'], ['working', 'Working'], ['ready', 'Ready']]
     .map(([value, label]) => `<option value="${value}"${value === state.agentScope ? ' selected' : ''}>${label}</option>`).join('');
   return `<div class="thread-detail">
     <div class="thread-models" id="thread-models"></div>
     <div class="agent-layout"><div class="agent-column">
-      <div class="main-agent">${main ? agentHtml(main) : '<span class="muted">正在读取主代理</span>'}</div>
-      <div class="sub-head"><span>子代理 / 最近更新</span><select id="agent-scope" aria-label="子代理范围">${scopeOptions}</select></div>
+      <div class="main-agent">${main ? agentHtml(main) : `<span class="muted">${state.threadData ? '主代理不在当前监视范围' : '正在读取主代理'}</span>`}</div>
+      <div class="sub-head"><span>子代理 / 最近交互</span><select id="agent-scope" aria-label="子代理范围">${scopeOptions}</select></div>
       <div class="agent-list" id="agent-list">${children.map(agentHtml).join('')}<div class="load-sentinel" id="agent-sentinel">${state.nextAgentCursor ? '向下滚动载入更多' : `${children.length} 个子代理`}</div></div>
     </div><aside class="inspector" aria-label="所选代理详情">
-      <div class="inspector-head"><strong id="agent-name">正在读取代理</strong><span class="muted" id="agent-phase"></span></div>
+      <div class="inspector-head"><strong id="agent-name">${state.selectedAgentId || !state.threadData ? '正在读取代理' : '请选择代理'}</strong><span class="muted" id="agent-phase"></span></div>
       <div class="inspector-model" id="agent-model"></div>
-      <dl class="facts"><dt>当前输出</dt><dd id="agent-rate">-</dd><dt>加速模式</dt><dd id="agent-mode">-</dd><dt>模式依据</dt><dd id="agent-mode-evidence">-</dd><dt>父代理</dt><dd id="agent-parent">-</dd><dt>该代理输出</dt><dd id="agent-output">-</dd><dt>输入 / 缓存输入</dt><dd id="agent-input">-</dd></dl>
+      <div class="inspector-configuration" id="agent-configuration" hidden></div>
+      <dl class="facts"><dt>当前输出</dt><dd id="agent-rate">-</dd><dt>加速模式</dt><dd id="agent-mode">-</dd><dt>模式依据</dt><dd id="agent-mode-evidence">-</dd><dt>父代理</dt><dd id="agent-parent">-</dd><dt>已采样输出</dt><dd id="agent-output">-</dd><dt>已采样输入 / 缓存</dt><dd id="agent-input">-</dd></dl>
       <div class="agent-curve" id="agent-curve"></div><div class="curve-foot"><span>近 5 分钟 / tok/s</span><span>实线已测 / 虚线估算</span></div>
     </aside></div>
   </div>`;
@@ -211,22 +237,39 @@ function renderThreadList() {
   const oldAgentList = element('agent-list');
   const scroll = container.scrollTop;
   const subScroll = oldAgentList?.scrollTop ?? 0;
+  const anchor = scroll > 0 ? [...container.querySelectorAll('[data-thread-row]')]
+    .find(row => row.getBoundingClientRect().bottom > container.getBoundingClientRect().top) : null;
+  const anchorOffset = anchor ? anchor.getBoundingClientRect().top - container.getBoundingClientRect().top : null;
+  const subAnchor = subScroll > 0 ? [...oldAgentList.querySelectorAll('[data-agent]')]
+    .find(row => row.getBoundingClientRect().bottom > oldAgentList.getBoundingClientRect().top) : null;
+  const subAnchorOffset = subAnchor ? subAnchor.getBoundingClientRect().top - oldAgentList.getBoundingClientRect().top : null;
   const focus = document.activeElement;
   const focusedThread = focus?.dataset?.thread;
   const focusedAgent = focus?.dataset?.agent;
   const { priority, recent } = rows.sections();
-  let html = priority.length ? `<div class="group-heading">优先关注</div>${priority.map(threadHtml).join('')}` : '';
+  let html = priority.length ? `<div class="group-heading">Working</div>${priority.map(threadHtml).join('')}` : '';
   let group = null;
   for (const thread of recent) {
     const nextGroup = dateGroup(thread.recencyAt ?? thread.updatedAt ?? thread.createdAt);
-    if (nextGroup !== group) html += `<div class="group-heading">最近 / ${escapeHtml(nextGroup)}</div>`;
+    if (nextGroup !== group) html += `<div class="group-heading">${state.order === 'priority' ? 'Ready' : '最近交互'} / ${escapeHtml(nextGroup)}</div>`;
     group = nextGroup;
     html += threadHtml(thread);
   }
   if (state.nextThreadCursor) html += '<div class="load-sentinel" id="thread-sentinel">向下滚动载入更多会话</div>';
   container.innerHTML = html;
   container.scrollTop = scroll;
-  if (element('agent-list')) element('agent-list').scrollTop = subScroll;
+  if (anchor) {
+    const nextAnchor = [...container.querySelectorAll('[data-thread-row]')].find(row => row.dataset.threadRow === anchor.dataset.threadRow);
+    if (nextAnchor) container.scrollTop += nextAnchor.getBoundingClientRect().top - container.getBoundingClientRect().top - anchorOffset;
+  }
+  const nextAgentList = element('agent-list');
+  if (nextAgentList) {
+    nextAgentList.scrollTop = subScroll;
+    if (subAnchor) {
+      const nextAnchor = [...nextAgentList.querySelectorAll('[data-agent]')].find(row => row.dataset.agent === subAnchor.dataset.agent);
+      if (nextAnchor) nextAgentList.scrollTop += nextAnchor.getBoundingClientRect().top - nextAgentList.getBoundingClientRect().top - subAnchorOffset;
+    }
+  }
   if (focusedThread || focusedAgent) {
     const buttons = container.querySelectorAll(focusedThread ? '[data-thread]' : '[data-agent]');
     const next = [...buttons].find(button => focusedThread ? button.dataset.thread === focusedThread : button.dataset.agent === focusedAgent);
@@ -252,10 +295,12 @@ function updateThreadRows() {
     const agent = agents.get(button.dataset.agent);
     if (!agent) continue;
     const mode = modePresentation(agent.mode);
+    const model = modelPresentation(agent);
     button.setAttribute('aria-pressed', String(agent.id === state.selectedAgentId));
-    button.querySelector('.agent-meta').textContent = `${agent.model || '未知模型'} / ${mode.label}`;
+    button.querySelector('.agent-meta').textContent = `${model.label} / ${mode.label}`;
     button.querySelector('.agent-rate b').textContent = tps(outputTps(agent));
-    button.querySelector('.agent-rate span').textContent = phasePresentation(agent.phase);
+    button.querySelector('.agent-rate span').textContent = phasePresentation(agent.activity);
+    button.querySelector('.agent-rate span').title = phasePresentation(agent.phase);
   }
   const thread = state.threadData?.thread ?? byId.get(state.openThreadId);
   if (element('thread-models') && thread) {
@@ -296,10 +341,15 @@ function updateInspector() {
   const agent = state.agentData?.agent ?? state.agents.find(item => item.id === state.selectedAgentId);
   if (!element('agent-name') || !agent) return;
   const mode = modePresentation(agent.mode);
+  const model = modelPresentation(agent);
   element('agent-name').textContent = isMain(agent) ? `主代理${agent.name && agent.name !== agent.id ? ` / ${agent.name}` : ''}`
     : agent.name && agent.name !== agent.id ? agent.name : `子代理 ${agent.id.slice(0, 8)}`;
-  element('agent-phase').textContent = `${phasePresentation(agent.phase)}${agent.phaseSource === 'log' ? ' / 日志推断' : ''}`;
-  element('agent-model').textContent = `${agent.model || '未知模型'} / ${agent.reasoningEffort || '推理强度未知'}`;
+  const phase = phasePresentation(agent.phase);
+  const activity = phasePresentation(agent.activity);
+  element('agent-phase').textContent = `${activity}${phase !== activity ? ` / ${phase}${agent.phaseSource === 'log' ? ' (日志)' : ''}` : ''}`;
+  element('agent-model').textContent = `${model.label} / ${model.effortLabel}`;
+  element('agent-configuration').hidden = !model.configuration;
+  element('agent-configuration').textContent = model.configuration || '';
   element('agent-rate').textContent = `${tps(outputTps(agent))} tok/s${agent.rate?.estimatedTps > 0 ? ' / 含估算' : ''}`;
   element('agent-mode').textContent = mode.label;
   element('agent-mode-evidence').textContent = mode.evidence;
@@ -316,21 +366,25 @@ function acceptSnapshot(snapshot, { complete = false } = {}) {
     renderHealth();
     return false;
   }
-  const oldIds = rows.items.map(item => item.id).join('\n');
+  const oldLayout = threadLayout();
   const oldCursor = state.nextThreadCursor;
   state.snapshot = snapshot;
   state.nextThreadCursor = snapshot.nextCursor ?? null;
-  rows.merge(snapshot.threads, { complete: complete && state.scope === 'active', preserveIds: [state.openThreadId] });
+  rows.merge(snapshot.threads, { complete, preserveIds: [state.openThreadId] });
   updateOverview();
-  if (oldIds !== rows.items.map(item => item.id).join('\n') || oldCursor !== state.nextThreadCursor) renderThreadList();
+  if (oldLayout !== threadLayout() || oldCursor !== state.nextThreadCursor) renderThreadList();
   else updateThreadRows();
   return true;
+}
+
+function threadLayout() {
+  return rows.items.map(thread => `${thread.id}:${state.order === 'priority' && thread.status === 'working' ? 'working' : dateGroup(thread.recencyAt ?? thread.updatedAt)}`).join('\n');
 }
 
 async function refreshSnapshot() {
   if (!state.connected || !panelVisible()) return false;
   const epoch = state.listEpoch;
-  const count = Math.max(10, rows.items.length);
+  const count = state.threadPrefixCount;
   const collected = new Map();
   const cursors = new Set();
   let snapshot;
@@ -344,15 +398,14 @@ async function refreshSnapshot() {
     if (cursor && cursors.has(cursor)) throw new Error('会话游标未向前推进');
     if (cursor) cursors.add(cursor);
   } while (cursor && collected.size < count);
-  return acceptSnapshot({ ...snapshot, threads: [...collected.values()], nextCursor: cursor }, { complete: !cursor });
+  return acceptSnapshot({ ...snapshot, threads: [...collected.values()], nextCursor: cursor }, { complete: true });
 }
 
 async function refreshSelection() {
   const threadId = state.openThreadId;
   const epoch = state.selectionEpoch;
   if (!threadId || !state.connected || !panelVisible() || health.inspect().kind !== 'live') return;
-  const agentId = state.selectedAgentId;
-  const count = Math.max(10, state.agents.length);
+  const count = state.agentPrefixCount;
   const collected = new Map();
   const cursors = new Set();
   let data;
@@ -362,37 +415,55 @@ async function refreshSelection() {
     if (epoch !== state.selectionEpoch || threadId !== state.openThreadId || !state.connected || !panelVisible()) {
       return;
     }
+    if (page.thread === null) {
+      rows.items = rows.items.filter(thread => thread.id !== threadId);
+      clearSelection();
+      renderThreadList();
+      renderHealth();
+      return;
+    }
     data ??= page;
     for (const agent of page.agents ?? []) collected.set(agent.id, agent);
     cursor = page.nextCursor ?? null;
     if (cursor && cursors.has(cursor)) throw new Error('代理游标未向前推进');
     if (cursor) cursors.add(cursor);
   } while (cursor && collected.size < count);
-  const detail = agentId ? await callTool('monitor_agent', { agentId }) : null;
   data = { ...data, agents: [...collected.values()], nextCursor: cursor };
   if (epoch !== state.selectionEpoch || threadId !== state.openThreadId || !panelVisible() || health.inspect().kind !== 'live') return;
   const previousIds = state.agents.map(agent => agent.id).join('\n');
+  const oldLayout = threadLayout();
   const oldCursor = state.nextAgentCursor;
   state.threadData = data;
   state.agents = mergeStableItems(state.agents, Array.isArray(data.agents) ? data.agents : [], {
-    complete: !data.nextCursor && state.agentScope !== 'all', preserveIds: [state.selectedAgentId],
-  });
+    complete: true, preserveIds: [state.selectedAgentId],
+  }).sort(compareAgents);
   if (data.thread) rows.merge([data.thread]);
   state.nextAgentCursor = data.nextCursor ?? null;
-  if (!state.selectedAgentId) state.selectedAgentId = state.agents.find(isMain)?.id ?? state.agents[0]?.id ?? null;
-  if (detail) {
+  if (!state.agents.some(agent => agent.id === state.selectedAgentId)) {
+    state.selectedAgentId = state.agents.find(isMain)?.id ?? state.agents[0]?.id ?? null;
+    state.agentData = null;
+  }
+  if (oldLayout !== threadLayout() || previousIds !== state.agents.map(agent => agent.id).join('\n') || oldCursor !== state.nextAgentCursor) renderThreadList();
+  else updateThreadRows();
+  if (state.selectedAgentId) {
+    const agentId = state.selectedAgentId;
+    const detail = await callTool('monitor_agent', { agentId });
+    if (epoch !== state.selectionEpoch || threadId !== state.openThreadId || !panelVisible() || health.inspect().kind !== 'live') return;
+    if (detail.agent === null) {
+      state.selectionEpoch++;
+      state.agents = state.agents.filter(agent => agent.id !== agentId);
+      state.selectedAgentId = null;
+      state.agentData = null;
+      state.detailError = null;
+      renderThreadList();
+      renderHealth();
+      return;
+    }
+    const oldIds = state.agents.map(agent => agent.id).join('\n');
     state.agentData = detail;
-    if (detail.agent) state.agents = mergeStableItems(state.agents, [detail.agent]);
-  }
-  else if (state.selectedAgentId) {
-    const initialDetail = await callTool('monitor_agent', { agentId: state.selectedAgentId });
-    if (epoch !== state.selectionEpoch || !panelVisible() || health.inspect().kind !== 'live') return;
-    state.agentData = initialDetail;
-  }
-  if (previousIds !== state.agents.map(agent => agent.id).join('\n') || oldCursor !== state.nextAgentCursor) renderThreadList();
-  else {
-    updateThreadRows();
-    updateInspector();
+    if (detail.agent) state.agents = mergeStableItems(state.agents, [detail.agent]).sort(compareAgents);
+    if (oldIds !== state.agents.map(agent => agent.id).join('\n')) renderThreadList();
+    else updateInspector();
   }
   state.detailError = null;
   renderHealth();
@@ -404,7 +475,7 @@ async function loadMoreThreads() {
   const epoch = state.listEpoch;
   try {
     const data = await callTool('monitor_snapshot', { limit: 10, cursor: state.nextThreadCursor, order: state.order, scope: state.scope });
-    if (epoch === state.listEpoch && panelVisible()) acceptSnapshot(data);
+    if (epoch === state.listEpoch && panelVisible() && acceptSnapshot(data)) state.threadPrefixCount += 10;
   } catch (error) {
     reportSnapshotError(error);
   } finally {
@@ -416,11 +487,20 @@ async function loadMoreAgents() {
   if (!state.openThreadId || !state.nextAgentCursor || state.loadingAgents || !panelVisible() || health.inspect().kind !== 'live') return;
   state.loadingAgents = true;
   const epoch = state.selectionEpoch;
+  const threadId = state.openThreadId;
   try {
-    const data = await callTool('monitor_thread', { threadId: state.openThreadId, limit: 10, cursor: state.nextAgentCursor, scope: state.agentScope });
+    const data = await callTool('monitor_thread', { threadId, limit: 10, cursor: state.nextAgentCursor, scope: state.agentScope });
     if (epoch !== state.selectionEpoch || !panelVisible() || health.inspect().kind !== 'live') return;
-    state.agents = mergeStableItems(state.agents, data.agents ?? []);
+    if (data.thread === null) {
+      rows.items = rows.items.filter(thread => thread.id !== threadId);
+      clearSelection();
+      renderThreadList();
+      renderHealth();
+      return;
+    }
+    state.agents = mergeStableItems(state.agents, data.agents ?? []).sort(compareAgents);
     state.nextAgentCursor = data.nextCursor ?? null;
+    state.agentPrefixCount += 10;
     renderThreadList();
   } catch (error) {
     reportDetailError(error);
@@ -438,6 +518,10 @@ function drawHistory() {
   const sorted = [...days].sort((a, b) => a.day.localeCompare(b.day));
   const total = sorted.reduce((sum, day) => sum + (day.outputTokens ?? 0), 0);
   element('history-summary').textContent = sorted.length ? `${sorted.length} 天 / 已记录输出 ${number(total)} tokens` : '尚无历史用量';
+  const partial = state.history?.coverage === 'sampled' || state.history?.historyComplete === false;
+  element('history-coverage').textContent = partial
+    ? '已采样数据按日聚合, 含既有记录; 非会话完整用量. 输出包含 reasoning.'
+    : '按日聚合 / 仅未压缩日志及既有采样 / 输出包含 reasoning';
   element('history-rows').innerHTML = [...sorted].reverse().map(day => `<tr><td>${escapeHtml(day.day)}</td><td>${number(day.inputTokens)}</td><td>${number(day.outputTokens)}</td><td>${number(day.requests)}</td><td>${tps(day.averageTps)}</td></tr>`).join('');
   const container = element('history-chart');
   if (!sorted.length) {
@@ -522,11 +606,14 @@ function resetThreadList() {
   state.selectionEpoch++;
   rows.reset(state.order);
   state.nextThreadCursor = null;
+  state.threadPrefixCount = 10;
   state.openThreadId = null;
   state.selectedAgentId = null;
   state.threadData = null;
   state.agents = [];
   state.agentData = null;
+  state.agentPrefixCount = 10;
+  state.detailError = null;
   renderThreadList();
   void refreshSnapshot().catch(reportSnapshotError);
 }
@@ -550,6 +637,7 @@ element('thread-list').addEventListener('click', event => {
     state.agents = [];
     state.agentData = null;
     state.nextAgentCursor = null;
+    state.agentPrefixCount = 10;
     state.agentScope = 'all';
     renderThreadList();
     void refreshSelection().catch(reportDetailError);
@@ -570,8 +658,9 @@ element('thread-list').addEventListener('change', event => {
   if (event.target.id !== 'agent-scope') return;
   state.selectionEpoch++;
   state.agentScope = event.target.value;
-  state.agents = state.agents.filter(isMain);
+  state.agents = state.agents.filter(agent => isMain(agent) || agent.id === state.selectedAgentId);
   state.nextAgentCursor = null;
+  state.agentPrefixCount = 10;
   renderThreadList();
   void refreshSelection().catch(reportDetailError);
 });
@@ -606,6 +695,7 @@ const visibilityObserver = new IntersectionObserver(entries => {
 visibilityObserver.observe(root);
 document.addEventListener('visibilitychange', updateVisibility);
 const resizeObserver = new ResizeObserver(() => {
+  if (!panelVisible()) return;
   drawAgentChart(state.agentData?.history ?? []);
   if (state.view === 'history') drawHistory();
 });

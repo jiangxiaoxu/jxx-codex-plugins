@@ -42,6 +42,8 @@ export class RolloutParser {
     this.project = null;
     this.model = null;
     this.reasoningEffort = null;
+    this.turnModel = null;
+    this.turnReasoningEffort = null;
     this.sessionMode = null;
     this.turnMode = null;
     this.agentPath = '/root';
@@ -89,9 +91,11 @@ export class RolloutParser {
     this.lastMs = Math.max(this.lastMs ?? ts, ts);
     if (row.type === 'turn_context') {
       this.mode.recorded = null;
+      this.turnModel = typeof p.model === 'string' ? p.model : null;
       if (typeof p.model === 'string') this.model = p.model;
       if (typeof p.cwd === 'string') this.project = projectName(p.cwd);
       const effort = p.effort ?? p.reasoning_effort ?? p.collaboration_mode?.settings?.reasoning_effort;
+      this.turnReasoningEffort = typeof effort === 'string' ? effort : null;
       if (typeof effort === 'string') this.reasoningEffort = effort;
       this.turnMode = normalizeMode(p.service_tier);
       this.mode.selected = this.turnMode ?? this.sessionMode;
@@ -178,7 +182,7 @@ export class RolloutParser {
     const duration = this.pendingStartMs === null ? null : endMs - this.pendingStartMs;
     const valid = duration !== null && duration >= 0 && duration <= 900000;
     const startMs = valid ? endMs - Math.max(500, duration) : null;
-    const accepted = this.onResponse({ key, agentId: this.id, model: this.model, startMs, endMs, tokens });
+    const accepted = this.onResponse({ key, agentId: this.id, model: this.turnModel ?? this.model, startMs, endMs, tokens });
     this.seenKeys.add(key);
     if (!accepted) return;
     this.mode.recorded = recordedMode;

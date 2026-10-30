@@ -1,22 +1,16 @@
-const runningStates = new Set(['generating', 'running', 'tools', 'tool', 'active']);
-
-export function isRunning(item) {
-  return runningStates.has(item?.status ?? item?.phase);
-}
-
-export function priorityRank(item) {
-  if (['input', 'approval', 'error', 'waiting'].includes(item?.attention)) return 0;
-  if (item?.attention === 'unread') return 1;
-  return isRunning(item) ? 2 : 3;
-}
-
 export function recency(item) {
   const value = Date.parse(item?.recencyAt ?? item?.updatedAt ?? item?.createdAt ?? '');
   return Number.isFinite(value) ? value : 0;
 }
 
-export function compareThreads(a, b, order = 'priority') {
-  return (order === 'priority' ? priorityRank(a) - priorityRank(b) : 0)
+export function compareThreads(a, b, order = 'recent') {
+  return (order === 'priority' ? Number(b.status === 'working') - Number(a.status === 'working') : 0)
+    || recency(b) - recency(a)
+    || String(a.id).localeCompare(String(b.id));
+}
+
+export function compareAgents(a, b) {
+  return Number(b.role === 'main') - Number(a.role === 'main')
     || recency(b) - recency(a)
     || String(a.id).localeCompare(String(b.id));
 }
@@ -34,35 +28,25 @@ export function mergeStableItems(previous, incoming, { complete = false, preserv
 }
 
 export class ThreadList {
-  constructor(order = 'priority') {
+  constructor(order = 'recent') {
     this.order = order;
     this.items = [];
-    this.groups = new Map();
   }
 
   reset(order = this.order) {
     this.order = order;
     this.items = [];
-    this.groups.clear();
   }
 
   merge(incoming, options) {
-    const ordered = [...incoming].sort((a, b) => compareThreads(a, b, this.order));
-    this.items = mergeStableItems(this.items, ordered, options);
-    const present = new Set(this.items.map(item => item.id));
-    for (const id of this.groups.keys()) if (!present.has(id)) this.groups.delete(id);
-    for (const item of ordered) {
-      if (!this.groups.has(item.id)) {
-        this.groups.set(item.id, this.order === 'priority' && priorityRank(item) < 3 ? 'priority' : 'recent');
-      }
-    }
+    this.items = mergeStableItems(this.items, incoming, options).sort((a, b) => compareThreads(a, b, this.order));
     return this.items;
   }
 
   sections() {
     return {
-      priority: this.items.filter(item => this.groups.get(item.id) === 'priority'),
-      recent: this.items.filter(item => this.groups.get(item.id) !== 'priority'),
+      priority: this.order === 'priority' ? this.items.filter(item => item.status === 'working') : [],
+      recent: this.items.filter(item => this.order !== 'priority' || item.status !== 'working'),
     };
   }
 }
@@ -75,17 +59,22 @@ export function modePresentation(mode = {}) {
   return { label: '未知', evidence: mode.configured ? `默认配置 ${display(mode.configured)}` : '缺少模式记录' };
 }
 
-export function phasePresentation(value) {
-  return ({
-    generating: '生成中', running: '运行中', active: '运行中', tools: '执行工具', tool: '执行工具',
-    waiting: '等待中', waiting_input: '等待输入', waiting_approval: '等待审批',
-    idle: '空闲', completed: '已结束', error: '异常', unknown: '未知',
-  })[value] ?? '未知';
+export function modelPresentation(agent = {}) {
+  const suffixes = { runtime_config: ' (配置)', log_metadata: ' (日志)' };
+  const label = agent.model ? `${agent.model}${suffixes[agent.modelSource] ?? ''}` : '未知模型';
+  const effortLabel = agent.reasoningEffort ? `${agent.reasoningEffort}${suffixes[agent.reasoningEffortSource] ?? ''}` : '推理强度未知';
+  const modelDiffers = agent.configuredModel && agent.configuredModel !== agent.model;
+  const effortDiffers = agent.configuredReasoningEffort && agent.configuredReasoningEffort !== agent.reasoningEffort;
+  const configuration = modelDiffers || effortDiffers
+    ? `配置: ${agent.configuredModel || '未知模型'}${agent.configuredReasoningEffort ? ` / ${agent.configuredReasoningEffort}` : ''}`
+    : null;
+  return { label, effortLabel, configuration };
 }
 
-export function threadPresentation(item) {
-  return ({ input: '等待输入', approval: '等待审批', error: '异常', waiting: '等待回应', unread: '未读结果' })[item.attention]
-    ?? phasePresentation(item.status);
+export function phasePresentation(value) {
+  return ({
+    generating: '生成中', tools: '执行工具', working: 'Working', ready: 'Ready', error: '异常', unknown: '未知',
+  })[value] ?? '未知';
 }
 
 export function dateGroup(timestamp, now = new Date()) {
@@ -118,7 +107,7 @@ export class SnapshotHealth {
     this.reportedLastSuccessAt = typeof collection.lastSuccessAt === 'string' ? collection.lastSuccessAt : null;
     if (!['ready', 'empty'].includes(collection.state)) {
       this.issue = collection.state === 'paused' ? '采集已暂停, 可见时将恢复'
-        : collection.state === 'scanning' ? '采集器正在扫描日志'
+        : collection.state === 'scanning' ? '正在读取运行中的线程'
         : (Array.isArray(collection.warnings) && collection.warnings.length ? collection.warnings.join(' / ') : '采集器尚未完成成功采样');
       return false;
     }
@@ -163,7 +152,8 @@ export class SnapshotHealth {
 }
 
 export function createVisiblePoller(task, {
-  intervalMs = 1000,
+  intervalMs = 500,
+  now = () => performance.now(),
   setTimer = setTimeout,
   clearTimer = clearTimeout,
   onError = () => {},
@@ -175,14 +165,16 @@ export function createVisiblePoller(task, {
 
   const run = async () => {
     if (!visible || stopped || pending) return;
+    timer = null;
     pending = true;
+    const startedAt = now();
     try {
       await task();
     } catch (error) {
       onError(error);
     } finally {
       pending = false;
-      if (visible && !stopped) timer = setTimer(run, intervalMs);
+      if (visible && !stopped) timer = setTimer(run, Math.max(0, intervalMs - (now() - startedAt)));
     }
   };
 

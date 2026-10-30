@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, appendFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, appendFile, readFile, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -19,9 +19,22 @@ async function setup(t, { clock } = {}) {
   const stateDir = path.join(folder, 'state');
   await mkdir(path.join(codexHome, 'sessions'), { recursive: true });
   let now = epoch;
-  const monitor = new Monitor({ codexHome, stateDir, now: clock ?? (() => now) });
+  const paths = new Set(), overrides = new Map();
+  const runtime = { paths, overrides, error: null, close() {}, assertConnected() { if (this.error) throw this.error; }, async list() {
+    if (this.error) throw this.error;
+    const threads = [];
+    for (const filePath of paths) {
+      let entry;
+      try { entry = filePath.endsWith('.zst') ? {} : JSON.parse((await readFile(filePath, 'utf8')).split('\n')[0]).payload; }
+      catch (error) { if (error.code === 'ENOENT') continue; throw error; }
+      const id = entry.id ?? path.basename(filePath);
+      threads.push({ id, path: filePath, parentThreadId: entry.parent_thread_id ?? null, status: { type: 'active', activeFlags: [] }, createdAt: (epoch - 20000) / 1000, updatedAt: epoch / 1000, recencyAt: epoch / 1000, ...overrides.get(id) });
+    }
+    return threads;
+  } };
+  const monitor = new Monitor({ codexHome, stateDir, runtime, now: clock ?? (() => now) });
   t.after(async () => { await monitor.stop(); await rm(folder, { recursive: true, force: true }); });
-  return { folder, codexHome, stateDir, monitor, setNow(value) { now = value; }, file(name) { return path.join(codexHome, 'sessions', name); } };
+  return { folder, codexHome, stateDir, monitor, runtime, setNow(value) { now = value; }, file(name) { const filePath = path.join(codexHome, 'sessions', name); paths.add(filePath); return filePath; } };
 }
 
 test('modern main and nested agents are counted once, copied context is excluded, and modes stay per agent', async t => {
@@ -31,7 +44,7 @@ test('modern main and nested agents are counted once, copied context is excluded
   const copied = line('token_usage_record', -4000, { response_id: 'inherited-fresh-timestamp', usage: { output_tokens: 8000 } }, 1);
   const child = meta('child-id', -5000, { parent_thread_id: 'root-id', thread_source: 'subagent', subagent_history_start_ordinal: 5 }) + copied + line('turn_context', -3500, { model: 'model-b' }, 5) + line('event_msg', -3000, { type: 'task_started' }, 6) + line('token_usage_record', -1000, { response_id: 'child-response', usage: { input_tokens: 50, output_tokens: 200 } }, 7) + usage('child-response', -500, 200);
   await writeFile(env.file('child.jsonl'), child);
-  await writeFile(path.join(env.codexHome, 'session_index.jsonl'), JSON.stringify({ id: 'root-id', thread_name: 'A real metadata title', updated_at: iso(0) }) + '\n');
+  env.runtime.overrides.set('root-id', { name: 'A real metadata title' });
   await env.monitor.start();
   const snapshot = await env.monitor.getSnapshot({ limit: 1 });
   assert.equal(snapshot.totals.outputTokens, 1200);
@@ -105,14 +118,14 @@ test('daily totals survive restarts and deleted logs without replay double count
   await writeFile(env.file('persisted.jsonl'), source);
   await env.monitor.start();
   await env.monitor.stop();
-  const reopened = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, now: () => epoch });
+  const reopened = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, runtime: env.runtime, now: () => epoch });
   t.after(() => reopened.stop());
   await reopened.start();
   assert.equal((await reopened.getSnapshot()).totals.outputTokens, 400);
   assert.equal((await reopened.getAgent({ agentId: 'persisted' })).agent.phase, 'tools');
   await reopened.stop();
   await rm(env.file('persisted.jsonl'));
-  const withoutLogs = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, now: () => epoch });
+  const withoutLogs = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, runtime: env.runtime, now: () => epoch });
   t.after(() => withoutLogs.stop());
   await withoutLogs.start();
   const history = await withoutLogs.getHistory();
@@ -127,6 +140,7 @@ test('compressed files are skipped without warnings or exposed threads while pla
   const compressedOnly = meta('compressed-only', -20000) + input(-10000) + usage('must-not-read', 0, 9000);
   await mkdir(path.join(env.codexHome, 'archived_sessions'));
   await writeFile(path.join(env.codexHome, 'archived_sessions', 'archive.jsonl.zst'), compressedOnly);
+  env.runtime.paths.add(path.join(env.codexHome, 'archived_sessions', 'archive.jsonl.zst'));
   await writeFile(env.file('broken.jsonl.zst'), Buffer.from('arbitrary broken compressed bytes'));
   await writeFile(env.file('healthy.jsonl'), meta('healthy-plain', -20000) + input(-10000) + usage('plain-response', 0, 600));
   await env.monitor.start();
@@ -138,7 +152,7 @@ test('compressed files are skipped without warnings or exposed threads while pla
   assert.equal(snapshot.threads[0].id, 'healthy-plain');
   assert.equal(snapshot.threads[0].agentCount, 1);
   assert.equal(snapshot.totals.outputTps, 60);
-  await assert.rejects(env.monitor.getAgent({ agentId: 'compressed-only' }), /Agent not found/);
+  assert.equal((await env.monitor.getAgent({ agentId: 'compressed-only' })).agent, null);
   await rm(env.file('healthy.jsonl'));
   await env.monitor.refresh();
   assert.equal((await env.monitor.getSnapshot()).totals.threadCount, 0);
@@ -155,6 +169,208 @@ test('scroll cursors limit visible rows without changing the totals', async t =>
   assert.notEqual(first.threads[0].id, second.threads[0].id);
   assert.equal(first.totals.outputTokens, 300);
   assert.deepEqual(first.totals, second.totals);
+});
+
+test('runtime Working and Ready alone are monitored, sorted by interaction recency, and retained on source failure', async t => {
+  const env = await setup(t);
+  for (const id of ['working', 'ready', 'approval', 'input', 'inactive', 'error']) {
+    await writeFile(env.file(`${id}.jsonl`), meta(id, -30000) + line('turn_context', -21000, { model: 'known-model' }) + input(-20000) + usage(`${id}-response`, -10000, 100) + input(-5000));
+  }
+  env.runtime.overrides.set('working', { recencyAt: (epoch - 2000) / 1000 });
+  env.runtime.overrides.set('ready', { status: { type: 'idle' }, recencyAt: (epoch - 1000) / 1000 });
+  env.runtime.overrides.set('approval', { status: { type: 'active', activeFlags: ['waitingOnApproval'] } });
+  env.runtime.overrides.set('input', { status: { type: 'active', activeFlags: ['waitingOnUserInput'] } });
+  env.runtime.overrides.set('inactive', { status: { type: 'notLoaded' } });
+  env.runtime.overrides.set('error', { status: { type: 'systemError' } });
+  await env.monitor.start();
+  const first = await env.monitor.getSnapshot();
+  assert.deepEqual(first.threads.map(thread => thread.id), ['ready', 'working']);
+  assert.equal(first.totals.outputTokens, 200);
+  assert.equal(first.totals.workingThreadCount, 1);
+  assert.equal(first.totals.readyThreadCount, 1);
+  assert.equal((await env.monitor.getAgent({ agentId: 'ready' })).agent.rate.estimatedTps, 0);
+  assert.equal((await env.monitor.getAgent({ agentId: 'working' })).agent.rate.estimatedTps, 10);
+  assert.deepEqual((await env.monitor.getSnapshot({ scope: 'working' })).threads.map(thread => thread.id), ['working']);
+  assert.deepEqual((await env.monitor.getSnapshot({ scope: 'ready' })).threads.map(thread => thread.id), ['ready']);
+  env.runtime.overrides.set('working', { recencyAt: epoch / 1000 });
+  await env.monitor.refresh();
+  assert.deepEqual((await env.monitor.getSnapshot()).threads.map(thread => thread.id), ['working', 'ready']);
+  env.runtime.error = Object.assign(new Error('Runtime unavailable'), { code: 'CONNECTION_CLOSED' });
+  env.setNow(epoch + 1000);
+  await env.monitor.refresh();
+  const failed = await env.monitor.getSnapshot();
+  assert.equal(failed.collection.state, 'error');
+  assert.equal(failed.collection.lastSuccessAt, first.collection.lastSuccessAt);
+  assert.equal(failed.totals.outputTokens, 200);
+  assert.equal(failed.totals.threadCount, 2);
+  env.runtime.error = null;
+  env.runtime.overrides.set('working', { status: { type: 'idle' }, recencyAt: epoch / 1000 });
+  await env.monitor.refresh();
+  const recovered = await env.monitor.getSnapshot();
+  assert.equal(recovered.collection.lastSuccessAt, iso(1000));
+  assert.equal(recovered.totals.workingThreadCount, 0);
+  assert.equal(recovered.totals.estimatedTps, 0);
+});
+
+test('loaded grandchildren stay in their runtime root when the intermediate parent is unloaded', async t => {
+  const env = await setup(t);
+  await writeFile(env.file('root.jsonl'), meta('root', -30000) + input(-10000) + usage('root-response', 0, 100));
+  await writeFile(env.file('middle.jsonl'), meta('middle', -25000, { parent_thread_id: 'root' }));
+  await writeFile(env.file('grandchild.jsonl'), meta('grandchild', -20000, { parent_thread_id: 'middle' }) + input(-5000) + usage('grandchild-response', 0, 50));
+  env.runtime.overrides.set('root', { sessionId: 'root', status: { type: 'idle' } });
+  env.runtime.overrides.set('middle', { sessionId: 'root', status: { type: 'notLoaded' } });
+  env.runtime.overrides.set('grandchild', { sessionId: 'root', parentThreadId: 'middle' });
+  await env.monitor.start();
+  const snapshot = await env.monitor.getSnapshot();
+  assert.equal(snapshot.totals.threadCount, 1);
+  assert.equal(snapshot.threads[0].id, 'root');
+  assert.equal(snapshot.threads[0].agentCount, 2);
+  assert.equal(snapshot.threads[0].tokens.output, 150);
+  const grandchild = (await env.monitor.getAgent({ agentId: 'grandchild' })).agent;
+  assert.equal(grandchild.parentId, 'middle');
+  assert.equal(grandchild.rootThreadId, 'root');
+});
+
+test('request model evidence stays separate from next-turn configuration and estimates require matching-model samples', async t => {
+  const env = await setup(t);
+  const filePath = env.file('model-evidence.jsonl');
+  await writeFile(filePath, meta('model-evidence', -30000) + line('turn_context', -21000, { model: 'model-a', effort: 'high' }) + input(-20000) + line('event_msg', -19000, { type: 'thread_settings_applied', thread_settings: { model: 'model-b', reasoning_effort: 'low' } }) + usage('sample-a', -10000, 500) + input(-5000));
+  await writeFile(env.file('config-only.jsonl'), meta('config-only', -10000) + input(-5000));
+  env.runtime.overrides.set('model-evidence', { model: 'model-b', reasoningEffort: 'low' });
+  env.runtime.overrides.set('config-only', { model: 'model-a' });
+  await env.monitor.start();
+  const running = (await env.monitor.getAgent({ agentId: 'model-evidence' })).agent;
+  assert.equal(running.model, 'model-a');
+  assert.equal(running.modelSource, 'turn_context');
+  assert.equal(running.configuredModel, 'model-b');
+  assert.equal(running.reasoningEffort, 'high');
+  assert.equal(running.configuredReasoningEffort, 'low');
+  assert.equal(running.rate.estimatedTps, 50);
+  const configOnly = (await env.monitor.getAgent({ agentId: 'config-only' })).agent;
+  assert.equal(configOnly.modelSource, 'runtime_config');
+  assert.equal(configOnly.rate.estimatedTps, 0);
+  const snapshot = await env.monitor.getSnapshot();
+  assert.equal(snapshot.models.find(model => model.model === 'model-a').estimatedTps, 50);
+  assert.equal(snapshot.models.find(model => model.model === 'model-b')?.estimatedTps ?? 0, 0);
+  env.runtime.overrides.set('model-evidence', { model: 'model-b', reasoningEffort: 'low', status: { type: 'idle' } });
+  await env.monitor.refresh();
+  const ready = (await env.monitor.getAgent({ agentId: 'model-evidence' })).agent;
+  assert.equal(ready.model, 'model-b');
+  assert.equal(ready.modelSource, 'runtime_config');
+  assert.equal(ready.reasoningEffort, 'low');
+  assert.equal(ready.rate.estimatedTps, 0);
+  env.runtime.overrides.set('model-evidence', { model: 'model-b', reasoningEffort: 'low' });
+  await appendFile(filePath, line('turn_context', 1000, { model: 'model-b', effort: 'low' }) + input(1000));
+  env.setNow(epoch + 4000);
+  await env.monitor.refresh();
+  const nextTurn = (await env.monitor.getAgent({ agentId: 'model-evidence' })).agent;
+  assert.equal(nextTurn.model, 'model-b');
+  assert.equal(nextTurn.modelSource, 'turn_context');
+  assert.equal(nextTurn.rate.estimatedTps, 0);
+});
+
+test('a loaded thread can wait for input then resume without collecting while excluded or replaying usage', async t => {
+  const env = await setup(t);
+  const filePath = env.file('waiting.jsonl');
+  await writeFile(filePath, meta('waiting', -20000) + input(-10000) + usage('before-input', 0, 100));
+  await env.monitor.start();
+  env.runtime.overrides.set('waiting', { status: { type: 'active', activeFlags: ['waitingOnUserInput'] } });
+  await appendFile(filePath, input(500) + usage('while-excluded', 1000, 50));
+  env.setNow(epoch + 1000);
+  await env.monitor.refresh();
+  assert.equal((await env.monitor.getSnapshot()).totals.outputTokens, 100);
+  assert.equal((await env.monitor.getSnapshot()).totals.threadCount, 0);
+  assert.equal((await env.monitor.getThread({ threadId: 'waiting' })).thread, null);
+  assert.equal((await env.monitor.getAgent({ agentId: 'waiting' })).agent, null);
+  env.runtime.overrides.set('waiting', { status: { type: 'active', activeFlags: [] } });
+  await env.monitor.refresh();
+  assert.equal((await env.monitor.getAgent({ agentId: 'waiting' })).agent.tokens.output, 150);
+  await env.monitor.refresh();
+  assert.equal((await env.monitor.getHistory()).days[0].requests, 2);
+  assert.equal((await env.monitor.getSnapshot()).totals.outputTokens, 150);
+});
+
+test('queries retain the last complete view while refreshing and a late source disconnect cannot publish partial data', async t => {
+  const env = await setup(t);
+  await writeFile(env.file('previous.jsonl'), meta('previous', -20000) + input(-10000) + usage('previous-response', 0, 100));
+  await env.monitor.start();
+  const previous = await env.monitor.getSnapshot();
+  env.runtime.overrides.set('previous', { status: { type: 'notLoaded' } });
+  await writeFile(env.file('replacement.jsonl'), meta('replacement', -20000) + input(0) + usage('replacement-response', 1000, 200));
+  env.setNow(epoch + 1000);
+  let releaseBefore, releaseAfter, reachedBefore, reachedAfter;
+  const before = new Promise(resolve => { releaseBefore = resolve; });
+  const after = new Promise(resolve => { releaseAfter = resolve; });
+  const beforeReached = new Promise(resolve => { reachedBefore = resolve; });
+  const afterReached = new Promise(resolve => { reachedAfter = resolve; });
+  const readFile = env.monitor.readFile.bind(env.monitor);
+  env.monitor.readFile = async file => {
+    reachedBefore();
+    await before;
+    const changed = await readFile(file);
+    reachedAfter();
+    await after;
+    return changed;
+  };
+  const refreshing = env.monitor.refresh();
+  try {
+    await beforeReached;
+    const duringDiscovery = await env.monitor.getSnapshot();
+    assert.equal(duringDiscovery.collection.state, 'ready');
+    assert.deepEqual(duringDiscovery.threads.map(thread => thread.id), ['previous']);
+    assert.ok(duringDiscovery.totals.outputTps > 0);
+    assert.equal((await env.monitor.getThread({ threadId: 'previous' })).thread.id, 'previous');
+    assert.equal((await env.monitor.getAgent({ agentId: 'replacement' })).agent, null);
+    releaseBefore();
+    await afterReached;
+    assert.equal((await env.monitor.getSnapshot()).totals.outputTokens, 100);
+    assert.equal((await env.monitor.getAgent({ agentId: 'previous' })).agent.tokens.output, 100);
+    env.runtime.error = Object.assign(new Error('Connection lost after metadata read'), { code: 'CONNECTION_CLOSED' });
+    releaseAfter();
+    await refreshing;
+    const failed = await env.monitor.getSnapshot();
+    assert.equal(failed.collection.state, 'error');
+    assert.equal(failed.collection.lastSuccessAt, previous.collection.lastSuccessAt);
+    assert.equal(failed.totals.outputTokens, 100);
+    assert.deepEqual(failed.threads.map(thread => thread.id), ['previous']);
+  } finally {
+    releaseBefore();
+    releaseAfter();
+    await refreshing;
+    env.monitor.readFile = readFile;
+    env.runtime.error = null;
+  }
+  await env.monitor.refresh();
+  const recovered = await env.monitor.getSnapshot();
+  assert.equal(recovered.collection.lastSuccessAt, iso(1000));
+  assert.deepEqual(recovered.threads.map(thread => thread.id), ['replacement']);
+  assert.equal(recovered.totals.outputTokens, 300);
+  assert.equal((await env.monitor.getAgent({ agentId: 'replacement' })).agent.tokens.output, 200);
+  await appendFile(env.file('replacement.jsonl'), line('event_msg', 1500, { type: 'thread_settings_applied', thread_settings: { service_tier: 'priority' } }) + input(1500));
+  env.setNow(epoch + 2500);
+  let releaseMode, reachedMode;
+  const modeGate = new Promise(resolve => { releaseMode = resolve; });
+  const modeReached = new Promise(resolve => { reachedMode = resolve; });
+  env.monitor.readFile = async file => {
+    const changed = await readFile(file);
+    reachedMode();
+    await modeGate;
+    return changed;
+  };
+  const modeRefresh = env.monitor.refresh();
+  try {
+    await modeReached;
+    const duringModeRead = await env.monitor.getAgent({ agentId: 'replacement' });
+    assert.equal(duringModeRead.agent.mode.selected, null);
+    assert.equal(duringModeRead.agent.phase, 'tools');
+  } finally {
+    releaseMode();
+    await modeRefresh;
+    env.monitor.readFile = readFile;
+  }
+  const afterModeRead = await env.monitor.getAgent({ agentId: 'replacement' });
+  assert.equal(afterModeRead.agent.mode.selected, 'fast');
+  assert.equal(afterModeRead.agent.phase, 'generating');
 });
 
 test('invalid usage records are skipped while later complete records continue to be collected', async t => {
@@ -208,7 +424,11 @@ test('plain reader consumer failures recover the same responses without terminat
     import path from 'node:path';
     import { Monitor } from ${JSON.stringify(new URL('../src/monitor/index.mjs', import.meta.url).href)};
     let currentTime = ${epoch + 2000};
-    const monitor = new Monitor({ codexHome: process.argv[1], stateDir: process.argv[2], now: () => currentTime });
+    const runtime = { close() {}, async list() { return [
+      { id: 'consumer-failure', path: path.join(process.argv[1], 'sessions', '00-consumer-failure.jsonl'), status: { type: 'active', activeFlags: [] }, recencyAt: ${epoch / 1000} },
+      { id: 'healthy', path: process.argv[3], status: { type: 'active', activeFlags: [] }, recencyAt: ${epoch / 1000} },
+    ]; } };
+    const monitor = new Monitor({ codexHome: process.argv[1], stateDir: process.argv[2], runtime, now: () => currentTime });
     const before = await monitor.getSnapshot();
     await monitor.start();
     const writer = new DatabaseSync(path.join(process.argv[2], 'metrics.sqlite'));
@@ -233,7 +453,7 @@ test('plain reader consumer failures recover the same responses without terminat
       await monitor.refresh();
       await new Promise(resolve => setImmediate(resolve));
       const second = await monitor.getSnapshot();
-      console.log(JSON.stringify({ first: first.totals.outputTokens, second: second.totals.outputTokens, before: before.collection.lastSuccessAt, failed: failed.collection.lastSuccessAt, failedState: failed.collection.state, staleSuccess: stale.collection.lastSuccessAt, staleSampledAt: stale.sampledAt, recovered: second.collection.lastSuccessAt, warnings: second.collection.warnings }));
+      console.log(JSON.stringify({ first: first.totals.outputTokens, second: second.totals.outputTokens, before: before.collection.lastSuccessAt, failed: failed.collection.lastSuccessAt, failedState: failed.collection.state, staleSuccess: stale.collection.lastSuccessAt, staleSampledAt: stale.sampledAt, recovered: second.collection.lastSuccessAt }));
     } finally { await monitor.stop(); }
     await new Promise(resolve => setTimeout(resolve, 25));
   `;
@@ -256,7 +476,6 @@ test('plain reader consumer failures recover the same responses without terminat
   assert.equal(report.staleSuccess, iso(2000));
   assert.equal(report.staleSampledAt, iso(3000));
   assert.equal(report.recovered, iso(3000));
-  assert.ok(report.warnings.some(warning => warning.includes('99-healthy.jsonl')));
 });
 
 test('panel activity leases lazily initialize, pause reads and resume appended records without replay', async t => {
@@ -321,7 +540,7 @@ test('an expired lease interrupts a large incomplete record and resumes its buff
   const paused = await until(snapshot => snapshot.collection.state === 'paused');
   assert.equal(paused.collection.lastSuccessAt, null);
   assert.equal(paused.totals.outputTokens, 0);
-  assert.equal(paused.threads[0].id, 'large-thread');
+  assert.deepEqual(paused.threads, []);
   let completed;
   for (let attempt = 0; attempt < 8; attempt++) {
     env.monitor.activate();

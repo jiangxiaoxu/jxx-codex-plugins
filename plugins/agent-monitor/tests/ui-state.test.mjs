@@ -1,59 +1,87 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  SnapshotHealth, ThreadList, createVisiblePoller, mergeStableItems, modePresentation,
+  SnapshotHealth, ThreadList, compareAgents, createVisiblePoller, mergeStableItems, modePresentation, modelPresentation, phasePresentation,
 } from '../ui/state.mjs';
 
-const item = (id, recencyAt, extra = {}) => ({ id, recencyAt, status: 'completed', attention: null, ...extra });
+const item = (id, recencyAt, extra = {}) => ({ id, recencyAt, status: 'ready', attention: null, ...extra });
 const timestamp = seconds => new Date(Date.UTC(2026, 9, 30, 0, 0, seconds)).toISOString();
 
-test('activity ordering prioritizes attention while preserving existing positions as output updates', () => {
+test('working priority follows current runtime status and newest interaction within each group', () => {
   const list = new ThreadList('priority');
   list.merge([
-    item('recent-idle', timestamp(50)),
-    item('running', timestamp(30), { status: 'running' }),
-    item('approval', timestamp(10), { attention: 'approval', status: 'running' }),
-    item('unread', timestamp(40), { attention: 'unread' }),
+    item('recent-ready', timestamp(50)),
+    item('working', timestamp(30), { status: 'working' }),
+    item('older-working', timestamp(10), { status: 'working' }),
   ]);
-  assert.deepEqual(list.items.map(row => row.id), ['approval', 'unread', 'running', 'recent-idle']);
-  assert.deepEqual(list.sections().priority.map(row => row.id), ['approval', 'unread', 'running']);
+  assert.deepEqual(list.items.map(row => row.id), ['working', 'older-working', 'recent-ready']);
+  assert.deepEqual(list.sections().priority.map(row => row.id), ['working', 'older-working']);
 
   list.merge([
-    item('running', timestamp(59), { status: 'running', rate: { outputTps: 140 } }),
-    item('approval', timestamp(10), { attention: null, status: 'completed' }),
-    item('new-thread', timestamp(58), { status: 'running' }),
+    item('working', timestamp(59), { status: 'working', rate: { outputTps: 140 } }),
+    item('older-working', timestamp(10), { status: 'ready' }),
+    item('new-thread', timestamp(58), { status: 'working' }),
   ]);
-  assert.deepEqual(list.items.map(row => row.id), ['approval', 'unread', 'running', 'recent-idle', 'new-thread']);
-  assert.equal(list.items.find(row => row.id === 'running').rate.outputTps, 140);
-  assert.deepEqual(list.sections().priority.map(row => row.id), ['approval', 'unread', 'running', 'new-thread']);
+  assert.deepEqual(list.items.map(row => row.id), ['working', 'new-thread', 'recent-ready', 'older-working']);
+  assert.equal(list.items.find(row => row.id === 'working').rate.outputTps, 140);
+  assert.deepEqual(list.sections().priority.map(row => row.id), ['working', 'new-thread']);
+  assert.equal(phasePresentation('ready'), 'Ready');
 });
 
-test('changing to recent order starts a fresh recency-ordered view', () => {
-  const list = new ThreadList('priority');
-  const rows = [item('older-approval', timestamp(1), { attention: 'approval' }), item('recent', timestamp(50))];
-  list.merge(rows);
-  list.reset('recent');
-  list.merge(rows);
-  assert.deepEqual(list.items.map(row => row.id), ['recent', 'older-approval']);
+test('recent ordering moves updated and new threads to the front without treating output rate as recency', () => {
+  const list = new ThreadList();
+  list.merge([item('older', timestamp(1), { status: 'working' }), item('recent', timestamp(50))]);
+  assert.deepEqual(list.items.map(row => row.id), ['recent', 'older']);
+  list.merge([item('older', timestamp(59), { status: 'working' }), item('new', timestamp(58))]);
+  assert.deepEqual(list.items.map(row => row.id), ['older', 'new', 'recent']);
+  list.merge([item('recent', timestamp(50), { rate: { outputTps: 999 } })]);
+  assert.deepEqual(list.items.map(row => row.id), ['older', 'new', 'recent']);
   assert.equal(list.sections().priority.length, 0);
 });
 
-test('overlapping scroll pages update known agents without duplicate rows or losing selection data', () => {
+test('overlapping scroll pages update and reorder agents by interaction while pinning the main agent', () => {
   const first = [item('main', timestamp(1), { role: 'main' }), item('child-1', timestamp(2)), item('child-2', timestamp(3))];
-  const second = [item('child-2', timestamp(4), { phase: 'completed' }), item('child-3', timestamp(5))];
-  const merged = mergeStableItems(first, second);
-  assert.deepEqual(merged.map(row => row.id), ['main', 'child-1', 'child-2', 'child-3']);
-  assert.equal(merged.find(row => row.id === 'child-2').phase, 'completed');
+  const second = [item('child-2', timestamp(4), { phase: 'ready' }), item('child-3', timestamp(5))];
+  const merged = mergeStableItems(first, second).sort(compareAgents);
+  assert.deepEqual(merged.map(row => row.id), ['main', 'child-3', 'child-2', 'child-1']);
+  assert.equal(merged.find(row => row.id === 'child-2').phase, 'ready');
   assert.equal(first[2].phase, undefined);
 });
 
-test('a complete filtered refresh removes finished rows but retains the selected agent', () => {
+test('a complete refresh removes threads that leave the monitored runtime set', () => {
   const previous = [item('still-running', timestamp(1)), item('finished', timestamp(2)), item('selected', timestamp(3))];
   const current = [item('still-running', timestamp(4), { phase: 'generating' })];
-  const merged = mergeStableItems(previous, current, { complete: true, preserveIds: ['selected'] });
-  assert.deepEqual(merged.map(row => row.id), ['still-running', 'selected']);
+  const merged = mergeStableItems(previous, current, { complete: true });
+  assert.deepEqual(merged.map(row => row.id), ['still-running']);
   assert.equal(merged[0].phase, 'generating');
   assert.equal(mergeStableItems(previous, current).length, 3);
+});
+
+test('a refreshed prefix retains only its selected row while keeping the main agent first', () => {
+  const list = new ThreadList();
+  list.merge([item('opened', timestamp(1)), item('outside', timestamp(2))]);
+  for (let update = 0; update < 4; update++) {
+    const prefix = Array.from({ length: 10 }, (_, index) => item(`prefix-${update}-${index}`, timestamp(50 - index)));
+    list.merge(prefix, { complete: true, preserveIds: ['opened'] });
+    assert.equal(list.items.length, 11);
+    assert.equal(list.items.at(-1).id, 'opened');
+    assert.equal(list.items.some(row => row.id === 'outside'), false);
+  }
+  list.merge([item('opened', timestamp(59), { status: 'working' })]);
+  assert.equal(list.items[0].id, 'opened');
+  assert.equal(list.items.length, 11);
+  list.merge([item('latest', timestamp(60))], { complete: true });
+  assert.deepEqual(list.items.map(row => row.id), ['latest']);
+
+  let agents = [item('main', timestamp(0), { role: 'main' }), item('selected-child', timestamp(1)), item('old-child', timestamp(2))];
+  for (let update = 0; update < 4; update++) {
+    const prefix = [item('main', timestamp(0), { role: 'main' }), ...Array.from({ length: 9 }, (_, index) => item(`child-${update}-${index}`, timestamp(50 - index)))];
+    agents = mergeStableItems(agents, prefix, { complete: true, preserveIds: ['selected-child'] }).sort(compareAgents);
+    assert.equal(agents.length, 11);
+    assert.equal(agents[0].id, 'main');
+    assert.equal(agents.at(-1).id, 'selected-child');
+    assert.equal(agents.some(agent => agent.id === 'old-child'), false);
+  }
 });
 
 test('default configuration never becomes an asserted execution mode', () => {
@@ -63,16 +91,35 @@ test('default configuration never becomes an asserted execution mode', () => {
   assert.deepEqual(modePresentation({}), { label: '未知', evidence: '缺少模式记录' });
 });
 
+test('model configuration is distinguished from request evidence and a different future configuration', () => {
+  assert.deepEqual(modelPresentation({ model: 'model-b', configuredModel: 'model-b', modelSource: 'runtime_config' }), {
+    label: 'model-b (配置)', effortLabel: '推理强度未知', configuration: null,
+  });
+  assert.deepEqual(modelPresentation({
+    model: 'model-a', modelSource: 'turn_context', reasoningEffort: 'high',
+    configuredModel: 'model-b', configuredReasoningEffort: 'ultra',
+  }), { label: 'model-a', effortLabel: 'high', configuration: '配置: model-b / ultra' });
+  assert.deepEqual(modelPresentation({ model: 'model-a', modelSource: 'log_metadata' }), {
+    label: 'model-a (日志)', effortLabel: '推理强度未知', configuration: null,
+  });
+  assert.deepEqual(modelPresentation({ model: 'model-a', modelSource: 'turn_context', reasoningEffort: 'high', reasoningEffortSource: 'runtime_config' }), {
+    label: 'model-a', effortLabel: 'high (配置)', configuration: null,
+  });
+});
+
 test('visible polling pauses when hidden, resumes immediately, and never overlaps an unfinished request', async () => {
   const timers = new Map();
   let nextTimer = 0;
   let calls = 0;
+  let now = 0;
+  let delay;
   let finish;
   const poller = createVisiblePoller(() => {
     calls++;
     return new Promise(resolve => { finish = resolve; });
   }, {
-    setTimer: callback => { timers.set(++nextTimer, callback); return nextTimer; },
+    now: () => now,
+    setTimer: (callback, milliseconds) => { delay = milliseconds; timers.set(++nextTimer, callback); return nextTimer; },
     clearTimer: id => timers.delete(id),
   });
 
@@ -81,14 +128,17 @@ test('visible polling pauses when hidden, resumes immediately, and never overlap
   poller.setVisible(false);
   poller.setVisible(true);
   assert.equal(calls, 1);
+  now = 300;
   finish();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(timers.size, 1);
+  assert.equal(delay, 200);
 
   poller.setVisible(false);
   assert.equal(timers.size, 0);
   poller.setVisible(true);
   assert.equal(calls, 2);
+  now = 900;
   poller.stop();
   finish();
   await new Promise(resolve => setImmediate(resolve));

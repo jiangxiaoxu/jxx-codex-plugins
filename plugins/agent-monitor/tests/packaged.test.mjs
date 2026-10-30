@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import packageInfo from '../package.json' with { type: 'json' };
 
 test('bundled stdio runtime starts outside the repository without node_modules', async (t) => {
   const temporary = await mkdtemp(join(tmpdir(), 'agent-monitor-packed-'));
@@ -36,7 +37,7 @@ test('bundled stdio runtime starts outside the repository without node_modules',
   assert.notEqual(opened.isError, true, stderr);
   assert.equal(opened.structuredContent.totals.outputTps, 0);
   const diagnostics = await client.callTool({ name: 'monitor_diagnostics', arguments: {} });
-  assert.equal(diagnostics.structuredContent.version, '0.1.1');
+  assert.equal(diagnostics.structuredContent.version, packageInfo.version);
   assert.ok(diagnostics.structuredContent.logPath.startsWith(join(temporary, 'state')));
   assert.ok(diagnostics.structuredContent.events.some((event) => event.event === 'mcp.initialized'));
   assert.ok(diagnostics.structuredContent.events.some((event) => event.event === 'mcp.entrypoint_opened'));
