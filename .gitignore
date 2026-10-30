@@ -1,17 +1,8 @@
 node_modules/
 dist/
 
-# Figma Workspace ships a curated generated runtime; its package-local rules select the files.
-!plugins/figma-workspace/cli-runtime/dist/
-!plugins/figma-workspace/cli-runtime/dist/**
-
-# Codex Agent Metrics ships its bundled MCP server and single-file UI.
-!plugins/codex-agent-metrics/dist/
-!plugins/codex-agent-metrics/dist/**
-
 downloads/
 tmp/
-.figma-workspace/
 /task-memory/
 *.log
 
