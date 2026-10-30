@@ -62,9 +62,10 @@ export class Monitor {
     this.responses = new Map();
     this.tokens = new Map();
     this.responseCursor = null;
+    this.rateSamples = new Map();
     this.estimates = new Map();
     this.catalog = new Map();
-    this.published = { agents: new Map(), responses: new Map(), tokens: new Map(), estimates: new Map(), catalog: new Map(), today: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 }, skippedCompressedFiles: 0, skippedUnavailableThreads: 0, excluded: {} };
+    this.published = { agents: new Map(), responses: new Map(), tokens: new Map(), estimates: new Map(), catalog: new Map(), modelTierRates: [], today: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 }, skippedCompressedFiles: 0, skippedUnavailableThreads: 0, excluded: {} };
     this.warnings = new Set();
     this.collectionState = 'paused';
     this.lastSuccessAt = null;
@@ -267,6 +268,7 @@ export class Monitor {
         responses: new Map(this.responses),
         tokens: new Map([...agents.keys()].map(id => [id, this.tokens.get(id) ?? zeroTokens()])),
         estimates: new Map(this.estimates),
+        modelTierRates: this.modelTierRates(),
         catalog: new Map([...this.catalog].map(([id, thread]) => [id, { name: thread.name, parentThreadId: thread.parentThreadId, recencyAt: thread.recencyAt, updatedAt: thread.updatedAt }])),
         today, skippedCompressedFiles: this.skippedCompressedFiles, skippedUnavailableThreads: this.skippedUnavailableThreads, excluded: { ...this.runtime.exclusions },
       };
@@ -356,14 +358,33 @@ export class Monitor {
   }
 
   syncMetrics(now) {
-    const { cursor, totals, responses, today } = this.store.readMetrics(this.responseCursor, now);
+    const { cursor, totals, responses, today, rateSamples } = this.store.readMetrics(this.responseCursor, now);
     if (totals) this.tokens = totals;
     for (const response of responses) {
       if (!totals) this.tokens.set(response.agentId, sumTokens(this.tokens.get(response.agentId) ?? zeroTokens(), response.tokens));
       if (response.endMs >= now - 1800000) this.responses.set(response.key, response);
     }
     this.responseCursor = cursor;
+    for (const response of rateSamples ?? responses) {
+      if (!Number.isFinite(response.startMs) || !Number.isFinite(response.endMs)
+        || response.endMs <= response.startMs || response.endMs - response.startMs > 900000) continue;
+      const key = JSON.stringify([response.model ?? null, response.serviceTier ?? null]);
+      const previous = this.rateSamples.get(key) ?? [];
+      const lastMs = Math.max(response.endMs, ...previous.map(sample => sample.endMs));
+      this.rateSamples.set(key, [...previous, response].filter(sample => sample.endMs >= lastMs - HISTORY_MS));
+    }
     return today;
+  }
+
+  modelTierRates() {
+    return [...this.rateSamples.values()].map(samples => {
+      const latest = samples.reduce((a, b) => a.endMs > b.endMs ? a : b);
+      const outputTokens = samples.reduce((sum, sample) => sum + sample.output, 0);
+      const activeDurationMs = samples.reduce((sum, sample) => sum + sample.endMs - sample.startMs, 0);
+      return { model: latest.model ?? null, serviceTier: latest.serviceTier ?? null,
+        measuredTps: outputTokens * 1000 / activeDurationMs, sampleCount: samples.length, outputTokens, activeDurationMs,
+        lastSampleAt: date(latest.endMs), windowStartAt: date(latest.endMs - HISTORY_MS) };
+    }).sort((a, b) => (a.model ?? '').localeCompare(b.model ?? '') || (a.serviceTier ?? '').localeCompare(b.serviceTier ?? ''));
   }
 
   agents() {
@@ -494,22 +515,23 @@ export class Monitor {
   }
 
   agentCounts(agents) {
-    const models = new Map(), serviceTiers = new Map();
-    for (const agent of agents) {
+    const working = agents.filter(agent => agent.activity === 'working');
+    const combinations = new Map();
+    for (const agent of working) {
       const model = agent.model || null;
-      const modelEntry = models.get(model) ?? { model, count: 0, sources: { turn_context: 0, runtime_config: 0, log_metadata: 0, unknown: 0 } };
-      modelEntry.count++;
-      modelEntry.sources[model && Object.hasOwn(modelEntry.sources, agent.modelSource) ? agent.modelSource : 'unknown']++;
-      models.set(model, modelEntry);
       const source = agent.mode.selected ? 'selected' : agent.mode.recorded ? 'recorded' : 'unknown';
-      const tier = source === 'unknown' ? null : normalizeMode(agent.mode[source]);
-      const tierEntry = serviceTiers.get(tier) ?? { tier, count: 0, sources: { selected: 0, recorded: 0, unknown: 0 } };
-      tierEntry.count++;
-      tierEntry.sources[source]++;
-      serviceTiers.set(tier, tierEntry);
+      const serviceTier = source === 'unknown' ? null : normalizeMode(agent.mode[source]);
+      const key = JSON.stringify([model, serviceTier]);
+      const entry = combinations.get(key) ?? { model, serviceTier, count: 0,
+        modelSources: { turn_context: 0, runtime_config: 0, log_metadata: 0, unknown: 0 },
+        tierSources: { selected: 0, recorded: 0, unknown: 0 } };
+      entry.count++;
+      entry.modelSources[model && Object.hasOwn(entry.modelSources, agent.modelSource) ? agent.modelSource : 'unknown']++;
+      entry.tierSources[source]++;
+      combinations.set(key, entry);
     }
-    const order = key => (a, b) => b.count - a.count || String(a[key] ?? '').localeCompare(String(b[key] ?? ''));
-    return { total: agents.length, models: [...models.values()].sort(order('model')), serviceTiers: [...serviceTiers.values()].sort(order('tier')) };
+    return { total: working.length, combinations: [...combinations.values()].sort((a, b) => b.count - a.count
+      || String(a.model ?? '').localeCompare(String(b.model ?? '')) || String(a.serviceTier ?? '').localeCompare(String(b.serviceTier ?? ''))) };
   }
 
   async getSnapshot({ limit = 10, cursor = null, order = 'recent', scope = 'all' } = {}) {
@@ -521,18 +543,18 @@ export class Monitor {
     const rate = summaries.map(a => a.rate).reduce(sumRate, zeroRate());
     return { schemaVersion: 1, sampledAt: date(now), hostName: hostname(), collection: { state: this.collectionState, source: 'app-server', backgroundEnabled: this.backgroundEnabled, coverage: 'sampled', historyComplete: false, lastSuccessAt: this.lastSuccessAt, skippedCompressedFiles: view.skippedCompressedFiles, skippedUnavailableThreads: view.skippedUnavailableThreads, excluded: { ...view.excluded }, warnings: [...this.warnings] },
       totals: { ...rate, ...view.today, generatingCount: summaries.filter(a => a.phase === 'generating').length, toolCount: summaries.filter(a => a.phase === 'tools').length, threadCount: allThreads.length, workingThreadCount: allThreads.filter(thread => thread.status === 'working').length, readyThreadCount: allThreads.filter(thread => thread.status === 'ready').length },
-      models: this.modelRates([...agents.values()], now, view), agentCounts: this.agentCounts(summaries), history: this.rateHistory(new Set(agents.keys()), now, view), threads: result.items, nextCursor: result.nextCursor };
+      models: this.modelRates([...agents.values()], now, view), modelTierRates: view.modelTierRates, agentCounts: this.agentCounts(summaries), history: this.rateHistory(new Set(agents.keys()), now, view), threads: result.items, nextCursor: result.nextCursor };
   }
 
   async getThread({ threadId, limit = 20, cursor = null, scope = 'all' } = {}) {
     const now = this.now(), view = this.published, agents = view.agents;
     const thread = this.threads(agents, now, view).find(t => t.id === threadId);
-    if (!thread) return { thread: null, agents: [], nextCursor: null, coverage: 'sampled', historyComplete: false, sampledAt: date(now) };
+    if (!thread) return { thread: null, agents: [], history: [], nextCursor: null, coverage: 'sampled', historyComplete: false, sampledAt: date(now) };
     const members = [...agents.values()].filter(a => this.rootId(a, agents, view) === threadId).map(a => this.summarizeAgent(a, agents, now, view));
     const filtered = members.filter(a => a.id === threadId || scope === 'all' || a.activity === scope);
     filtered.sort((a, b) => Number(b.id === threadId) - Number(a.id === threadId) || Date.parse(b.recencyAt) - Date.parse(a.recencyAt) || a.id.localeCompare(b.id));
     const result = page(filtered, limit, cursor, `${threadId}:${scope}`);
-    return { thread, agents: result.items, nextCursor: result.nextCursor, coverage: 'sampled', historyComplete: false, sampledAt: date(now) };
+    return { thread, agents: result.items, history: this.rateHistory(new Set(members.map(agent => agent.id)), now, view), nextCursor: result.nextCursor, coverage: 'sampled', historyComplete: false, sampledAt: date(now) };
   }
 
   async getAgent({ agentId } = {}) {

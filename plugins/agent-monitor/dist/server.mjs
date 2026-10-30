@@ -32501,7 +32501,7 @@ var RolloutParser = class {
     const duration3 = this.pendingStartMs === null ? null : endMs - this.pendingStartMs;
     const valid = duration3 !== null && duration3 >= 0 && duration3 <= 9e5;
     const startMs = valid ? endMs - Math.max(500, duration3) : null;
-    const accepted = this.onResponse({ key, agentId: this.id, model: this.turnModel ?? this.model, startMs, endMs, tokens });
+    const accepted = this.onResponse({ key, agentId: this.id, model: this.turnModel ?? this.model, serviceTier: recordedMode, startMs, endMs, tokens });
     this.seenKeys.add(key);
     if (!accepted) return;
     this.mode.recorded = recordedMode;
@@ -32538,17 +32538,28 @@ var MetricsStore = class {
       CREATE INDEX IF NOT EXISTS response_end ON responses(end_ms);
       CREATE INDEX IF NOT EXISTS response_agent ON responses(agent_id, end_ms);
       CREATE INDEX IF NOT EXISTS response_day ON responses(day);
+      CREATE TABLE IF NOT EXISTS response_service_tiers(response_key TEXT PRIMARY KEY, service_tier TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS peaks(day TEXT PRIMARY KEY, tps REAL NOT NULL);`);
       this.insert = this.db.prepare("INSERT OR IGNORE INTO responses VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+      this.insertTier = this.db.prepare("INSERT INTO response_service_tiers VALUES(?, ?)");
     } catch (error62) {
       this.db.close();
       throw error62;
     }
   }
   add(response) {
-    const { key, agentId, model, startMs, endMs, tokens } = response;
-    const result = this.insert.run(key, agentId, model, startMs, endMs, localDay(endMs), tokens.input, tokens.cachedInput, tokens.output, tokens.reasoning);
-    return Number(result.changes) !== 0;
+    const { key, agentId, model, serviceTier, startMs, endMs, tokens } = response;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.insert.run(key, agentId, model, startMs, endMs, localDay(endMs), tokens.input, tokens.cachedInput, tokens.output, tokens.reasoning);
+      const inserted = Number(result.changes) !== 0;
+      if (inserted && typeof serviceTier === "string" && serviceTier) this.insertTier.run(key, serviceTier);
+      this.db.exec("COMMIT");
+      return inserted;
+    } catch (error62) {
+      this.db.exec("ROLLBACK");
+      throw error62;
+    }
   }
   owner(key) {
     return this.db.prepare("SELECT agent_id AS id FROM responses WHERE response_key = ?").get(key)?.id ?? null;
@@ -32559,14 +32570,25 @@ var MetricsStore = class {
       const initial = afterRowId === null;
       const cursor = this.db.prepare("SELECT COALESCE(MAX(rowid), 0) AS value FROM responses").get().value;
       const totals = initial ? new Map(this.db.prepare("SELECT agent_id AS id, SUM(input_tokens) AS input, SUM(cached_tokens) AS cachedInput, SUM(output_tokens) AS output, SUM(reasoning_tokens) AS reasoning FROM responses GROUP BY agent_id").all().map((row) => [row.id, { input: row.input, cachedInput: row.cachedInput, output: row.output, reasoning: row.reasoning }])) : null;
-      const rows = this.db.prepare(`SELECT rowid AS rowId, response_key AS key, agent_id AS agentId, model,
+      const rows = this.db.prepare(`SELECT r.rowid AS rowId, r.response_key AS key, agent_id AS agentId, model, t.service_tier AS serviceTier,
         start_ms AS startMs, end_ms AS endMs, input_tokens AS input, cached_tokens AS cachedInput,
-        output_tokens AS output, reasoning_tokens AS reasoning FROM responses
-        WHERE ${initial ? "end_ms >= ?" : "rowid > ?"} ORDER BY rowid`).all(initial ? nowMs - 18e5 : afterRowId);
+        output_tokens AS output, reasoning_tokens AS reasoning FROM responses r
+        LEFT JOIN response_service_tiers t ON t.response_key=r.response_key
+        WHERE ${initial ? "end_ms >= ?" : "r.rowid > ?"} ORDER BY r.rowid`).all(initial ? nowMs - 18e5 : afterRowId);
       const responses = rows.map(({ input: input2, cachedInput, output: output2, reasoning, ...response }) => ({ ...response, output: output2, tokens: { input: input2, cachedInput, output: output2, reasoning } }));
+      const rateSamples = initial ? this.db.prepare(`WITH latest AS (
+        SELECT model, t.service_tier AS tier, MAX(end_ms) AS last_ms FROM responses r
+        LEFT JOIN response_service_tiers t ON t.response_key=r.response_key
+        WHERE start_ms IS NOT NULL AND end_ms>start_ms AND end_ms-start_ms<=900000
+        GROUP BY model, t.service_tier)
+        SELECT r.response_key AS key, r.model, t.service_tier AS serviceTier,
+          r.start_ms AS startMs, r.end_ms AS endMs, r.output_tokens AS output
+        FROM latest l JOIN responses r ON r.model IS l.model AND r.end_ms>=l.last_ms-300000 AND r.end_ms<=l.last_ms
+        LEFT JOIN response_service_tiers t ON t.response_key=r.response_key
+        WHERE t.service_tier IS l.tier AND r.start_ms IS NOT NULL AND r.end_ms>r.start_ms AND r.end_ms-r.start_ms<=900000`).all() : null;
       const today = this.today(nowMs);
       this.db.exec("COMMIT");
-      return { cursor, totals, responses, today };
+      return { cursor, totals, responses, today, rateSamples };
     } catch (error62) {
       this.db.exec("ROLLBACK");
       throw error62;
@@ -32613,7 +32635,7 @@ var wrapper_default = import_websocket.default;
 // package.json
 var package_default = {
   name: "@jxx-codex-plugins/agent-monitor",
-  version: "0.1.4",
+  version: "0.1.5",
   private: true,
   description: "Read-only Codex agent speed and activity monitoring through MCP Apps.",
   type: "module",
@@ -33042,9 +33064,10 @@ var Monitor = class {
     this.responses = /* @__PURE__ */ new Map();
     this.tokens = /* @__PURE__ */ new Map();
     this.responseCursor = null;
+    this.rateSamples = /* @__PURE__ */ new Map();
     this.estimates = /* @__PURE__ */ new Map();
     this.catalog = /* @__PURE__ */ new Map();
-    this.published = { agents: /* @__PURE__ */ new Map(), responses: /* @__PURE__ */ new Map(), tokens: /* @__PURE__ */ new Map(), estimates: /* @__PURE__ */ new Map(), catalog: /* @__PURE__ */ new Map(), today: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 }, skippedCompressedFiles: 0, skippedUnavailableThreads: 0, excluded: {} };
+    this.published = { agents: /* @__PURE__ */ new Map(), responses: /* @__PURE__ */ new Map(), tokens: /* @__PURE__ */ new Map(), estimates: /* @__PURE__ */ new Map(), catalog: /* @__PURE__ */ new Map(), modelTierRates: [], today: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 }, skippedCompressedFiles: 0, skippedUnavailableThreads: 0, excluded: {} };
     this.warnings = /* @__PURE__ */ new Set();
     this.collectionState = "paused";
     this.lastSuccessAt = null;
@@ -33272,6 +33295,7 @@ var Monitor = class {
         responses: new Map(this.responses),
         tokens: new Map([...agents.keys()].map((id) => [id, this.tokens.get(id) ?? zeroTokens()])),
         estimates: new Map(this.estimates),
+        modelTierRates: this.modelTierRates(),
         catalog: new Map([...this.catalog].map(([id, thread]) => [id, { name: thread.name, parentThreadId: thread.parentThreadId, recencyAt: thread.recencyAt, updatedAt: thread.updatedAt }])),
         today,
         skippedCompressedFiles: this.skippedCompressedFiles,
@@ -33367,14 +33391,38 @@ var Monitor = class {
     return true;
   }
   syncMetrics(now) {
-    const { cursor, totals, responses, today } = this.store.readMetrics(this.responseCursor, now);
+    const { cursor, totals, responses, today, rateSamples } = this.store.readMetrics(this.responseCursor, now);
     if (totals) this.tokens = totals;
     for (const response of responses) {
       if (!totals) this.tokens.set(response.agentId, sumTokens(this.tokens.get(response.agentId) ?? zeroTokens(), response.tokens));
       if (response.endMs >= now - 18e5) this.responses.set(response.key, response);
     }
     this.responseCursor = cursor;
+    for (const response of rateSamples ?? responses) {
+      if (!Number.isFinite(response.startMs) || !Number.isFinite(response.endMs) || response.endMs <= response.startMs || response.endMs - response.startMs > 9e5) continue;
+      const key = JSON.stringify([response.model ?? null, response.serviceTier ?? null]);
+      const previous = this.rateSamples.get(key) ?? [];
+      const lastMs = Math.max(response.endMs, ...previous.map((sample) => sample.endMs));
+      this.rateSamples.set(key, [...previous, response].filter((sample) => sample.endMs >= lastMs - HISTORY_MS));
+    }
     return today;
+  }
+  modelTierRates() {
+    return [...this.rateSamples.values()].map((samples) => {
+      const latest = samples.reduce((a, b) => a.endMs > b.endMs ? a : b);
+      const outputTokens = samples.reduce((sum, sample) => sum + sample.output, 0);
+      const activeDurationMs = samples.reduce((sum, sample) => sum + sample.endMs - sample.startMs, 0);
+      return {
+        model: latest.model ?? null,
+        serviceTier: latest.serviceTier ?? null,
+        measuredTps: outputTokens * 1e3 / activeDurationMs,
+        sampleCount: samples.length,
+        outputTokens,
+        activeDurationMs,
+        lastSampleAt: date5(latest.endMs),
+        windowStartAt: date5(latest.endMs - HISTORY_MS)
+      };
+    }).sort((a, b) => (a.model ?? "").localeCompare(b.model ?? "") || (a.serviceTier ?? "").localeCompare(b.serviceTier ?? ""));
   }
   agents() {
     const agents = /* @__PURE__ */ new Map();
@@ -33517,22 +33565,26 @@ var Monitor = class {
     });
   }
   agentCounts(agents) {
-    const models = /* @__PURE__ */ new Map(), serviceTiers = /* @__PURE__ */ new Map();
-    for (const agent of agents) {
+    const working = agents.filter((agent) => agent.activity === "working");
+    const combinations = /* @__PURE__ */ new Map();
+    for (const agent of working) {
       const model = agent.model || null;
-      const modelEntry = models.get(model) ?? { model, count: 0, sources: { turn_context: 0, runtime_config: 0, log_metadata: 0, unknown: 0 } };
-      modelEntry.count++;
-      modelEntry.sources[model && Object.hasOwn(modelEntry.sources, agent.modelSource) ? agent.modelSource : "unknown"]++;
-      models.set(model, modelEntry);
       const source = agent.mode.selected ? "selected" : agent.mode.recorded ? "recorded" : "unknown";
-      const tier = source === "unknown" ? null : normalizeMode(agent.mode[source]);
-      const tierEntry = serviceTiers.get(tier) ?? { tier, count: 0, sources: { selected: 0, recorded: 0, unknown: 0 } };
-      tierEntry.count++;
-      tierEntry.sources[source]++;
-      serviceTiers.set(tier, tierEntry);
+      const serviceTier = source === "unknown" ? null : normalizeMode(agent.mode[source]);
+      const key = JSON.stringify([model, serviceTier]);
+      const entry = combinations.get(key) ?? {
+        model,
+        serviceTier,
+        count: 0,
+        modelSources: { turn_context: 0, runtime_config: 0, log_metadata: 0, unknown: 0 },
+        tierSources: { selected: 0, recorded: 0, unknown: 0 }
+      };
+      entry.count++;
+      entry.modelSources[model && Object.hasOwn(entry.modelSources, agent.modelSource) ? agent.modelSource : "unknown"]++;
+      entry.tierSources[source]++;
+      combinations.set(key, entry);
     }
-    const order = (key) => (a, b) => b.count - a.count || String(a[key] ?? "").localeCompare(String(b[key] ?? ""));
-    return { total: agents.length, models: [...models.values()].sort(order("model")), serviceTiers: [...serviceTiers.values()].sort(order("tier")) };
+    return { total: working.length, combinations: [...combinations.values()].sort((a, b) => b.count - a.count || String(a.model ?? "").localeCompare(String(b.model ?? "")) || String(a.serviceTier ?? "").localeCompare(String(b.serviceTier ?? ""))) };
   }
   async getSnapshot({ limit = 10, cursor = null, order = "recent", scope = "all" } = {}) {
     const now = this.now(), view = this.published, agents = view.agents;
@@ -33548,6 +33600,7 @@ var Monitor = class {
       collection: { state: this.collectionState, source: "app-server", backgroundEnabled: this.backgroundEnabled, coverage: "sampled", historyComplete: false, lastSuccessAt: this.lastSuccessAt, skippedCompressedFiles: view.skippedCompressedFiles, skippedUnavailableThreads: view.skippedUnavailableThreads, excluded: { ...view.excluded }, warnings: [...this.warnings] },
       totals: { ...rate, ...view.today, generatingCount: summaries.filter((a) => a.phase === "generating").length, toolCount: summaries.filter((a) => a.phase === "tools").length, threadCount: allThreads.length, workingThreadCount: allThreads.filter((thread) => thread.status === "working").length, readyThreadCount: allThreads.filter((thread) => thread.status === "ready").length },
       models: this.modelRates([...agents.values()], now, view),
+      modelTierRates: view.modelTierRates,
       agentCounts: this.agentCounts(summaries),
       history: this.rateHistory(new Set(agents.keys()), now, view),
       threads: result.items,
@@ -33557,12 +33610,12 @@ var Monitor = class {
   async getThread({ threadId, limit = 20, cursor = null, scope = "all" } = {}) {
     const now = this.now(), view = this.published, agents = view.agents;
     const thread = this.threads(agents, now, view).find((t) => t.id === threadId);
-    if (!thread) return { thread: null, agents: [], nextCursor: null, coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
+    if (!thread) return { thread: null, agents: [], history: [], nextCursor: null, coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
     const members2 = [...agents.values()].filter((a) => this.rootId(a, agents, view) === threadId).map((a) => this.summarizeAgent(a, agents, now, view));
     const filtered = members2.filter((a) => a.id === threadId || scope === "all" || a.activity === scope);
     filtered.sort((a, b) => Number(b.id === threadId) - Number(a.id === threadId) || Date.parse(b.recencyAt) - Date.parse(a.recencyAt) || a.id.localeCompare(b.id));
     const result = page(filtered, limit, cursor, `${threadId}:${scope}`);
-    return { thread, agents: result.items, nextCursor: result.nextCursor, coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
+    return { thread, agents: result.items, history: this.rateHistory(new Set(members2.map((agent) => agent.id)), now, view), nextCursor: result.nextCursor, coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
   }
   async getAgent({ agentId } = {}) {
     const now = this.now(), view = this.published, agents = view.agents, agent = agents.get(agentId);
@@ -41875,13 +41928,19 @@ var EMPTY_COMPLETION_RESULT = {
 var VERSION = package_default.version;
 var UI_URI = "ui://agent-monitor/dashboard";
 var mimeType = "text/html;profile=mcp-app";
+var iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><path d="M3 13h4l3-7 4 14 3-9h4" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+var icons = [{
+  src: `data:image/svg+xml;base64,${Buffer.from(iconSvg).toString("base64")}`,
+  mimeType: "image/svg+xml",
+  sizes: ["any"]
+}];
 var readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 var listSchema = {
   limit: external_exports.number().int().min(1).max(100).optional(),
   cursor: external_exports.string().nullable().optional()
 };
 function createServer(monitor, { uiUrl = new URL("../dist/dashboard.html", import.meta.url), diagnostics: diagnostics2 } = {}) {
-  const server = new McpServer({ name: "agent-monitor", version: VERSION });
+  const server = new McpServer({ name: "agent-monitor", version: VERSION, icons });
   let html;
   const result = (data, text = "Agent Monitor data.") => ({
     content: [{ type: "text", text }],

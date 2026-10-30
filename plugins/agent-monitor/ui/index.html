@@ -15,20 +15,14 @@
   <div class="notice" id="notice" hidden role="status"></div>
   <section class="overview" aria-label="Working 和 Ready 会话速率总览">
     <div class="overview-line">
-      <div><span class="muted">总输出速率</span> <strong id="total-rate" class="total-rate">-</strong><span class="muted"> tok/s</span></div>
+      <div title="最近 3 秒的总输出速率; 数字经短暂平滑, 图表显示原始采样."><span class="muted">总输出速率</span> <strong id="total-rate" class="total-rate">-</strong><span class="muted"> tok/s</span></div>
       <span class="muted" id="activity-summary">正在读取 Codex 数据</span>
     </div>
-    <div class="agent-count-line"><span class="muted">模型</span><div class="agent-counts" id="model-counts">正在读取</div></div>
-    <div class="agent-count-line"><span class="muted">Service tier</span><div class="agent-counts" id="tier-counts">正在读取</div></div>
-    <div class="coverage-info">模型含当前配置及执行证据; 档位来自选择或请求记录, 不代表后端实际服务档位.</div>
-    <div class="overview-foot"><span>最近 3 秒 / Working + Ready / 未压缩</span><span id="rate-parts">已测 - / 估算 - tok/s</span></div>
-    <div class="coverage-info">速率数字经 0.5 秒平滑; 图表保留原始样本. 代理数量短暂稳定后更新.</div>
-    <div class="coverage-info" id="sample-coverage" hidden></div>
-    <div class="freshness-info" id="data-freshness" role="status">尚无成功采样</div>
-    <label class="background-control" title="保持当前插件后台进程持续采集. 不保存此开关, 后台进程重启后关闭."><input type="checkbox" id="background-enabled" disabled><span>后台持续采集</span><span class="muted" id="background-status">正在读取</span></label>
-    <div class="global-timeline-heading"><strong>全局输出时间线</strong><span>当前 Working + Ready 集合 / 不随列表筛选变化</span></div>
+    <div class="agent-count-line" title="仅统计 Working 代理, 按模型和档位组合分组."><span class="muted">活跃模型</span><div class="agent-counts" id="model-counts">正在读取</div></div>
+    <div class="agent-count-line model-rate-line" id="model-rate-row" hidden><span class="muted" title="各组最近样本之前 5 分钟的有效请求均速; 空闲时保留上次统计.">近期均速</span><div class="model-rates" id="model-rates"></div></div>
+    <div class="freshness-info" id="data-freshness" role="status" hidden></div>
+    <div class="global-timeline-heading"><strong title="当前 Working + Ready 集合的最近 5 分钟速率, 不随列表筛选变化; 已离开监视范围的代理不计入.">全局时间线</strong><label class="background-control" title="隐藏页面后继续采集. 此开关仅作用于当前后台进程, 重启后关闭."><input type="checkbox" id="background-enabled" disabled><span>后台采集</span><span class="sr-only" id="background-status">正在读取</span></label></div>
     <div id="global-rate-chart"></div>
-    <div class="coverage-info">回看按当前成员汇总, 已离开监视范围的代理不计入.</div>
   </section>
   <div class="view-bar">
     <div class="tabs" role="tablist" aria-label="监视视图">
@@ -42,13 +36,13 @@
   <section id="live-view" role="tabpanel" aria-labelledby="live-tab">
     <div id="thread-list" class="thread-list" aria-label="根会话列表"></div>
     <div id="thread-empty" class="empty" hidden>没有符合范围的 Working / Ready 会话</div>
-    <div class="list-foot"><span id="thread-count">-</span><span>每 0.25 秒自动更新 / 最近交互在前</span></div>
+    <div class="list-foot"><span id="thread-count">-</span></div>
   </section>
   <section id="history-view" role="tabpanel" aria-labelledby="history-tab" hidden>
     <div class="history-summary" id="history-summary">正在读取历史用量</div>
     <div class="history-chart" id="history-chart"></div>
     <div class="history-table-wrap"><table class="history-table"><thead><tr><th scope="col">日期</th><th scope="col">输入 tokens</th><th scope="col">输出 tokens</th><th scope="col">请求</th><th scope="col">均速 tok/s</th></tr></thead><tbody id="history-rows"></tbody></table></div>
-    <div class="history-foot" id="history-coverage">按日聚合 / 仅未压缩日志及既有采样 / 输出包含 reasoning</div>
+    <div class="history-foot" id="history-coverage">按日采样 · 含 reasoning</div>
   </section>
   <section id="diagnostics-view" role="tabpanel" aria-labelledby="diagnostics-tab" hidden>
     <dl class="diagnostics-facts"><dt>日志路径</dt><dd id="diagnostics-path">尚未取得</dd><dt>后端版本 / 等级</dt><dd id="diagnostics-version">-</dd><dt>日志写入</dt><dd id="diagnostics-write">-</dd><dt>跳过压缩文件</dt><dd id="diagnostics-skipped">-</dd></dl>

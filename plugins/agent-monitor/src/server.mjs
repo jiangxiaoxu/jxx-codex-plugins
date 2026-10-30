@@ -6,6 +6,12 @@ import packageInfo from '../package.json' with { type: 'json' };
 export const VERSION = packageInfo.version;
 export const UI_URI = 'ui://agent-monitor/dashboard';
 const mimeType = 'text/html;profile=mcp-app';
+const iconSvg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"><path d="M3 13h4l3-7 4 14 3-9h4" stroke="#000" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+const icons = [{
+  src: `data:image/svg+xml;base64,${Buffer.from(iconSvg).toString('base64')}`,
+  mimeType: 'image/svg+xml',
+  sizes: ['any']
+}];
 const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const listSchema = {
   limit: z.number().int().min(1).max(100).optional(),
@@ -13,7 +19,7 @@ const listSchema = {
 };
 
 export function createServer(monitor, { uiUrl = new URL('../dist/dashboard.html', import.meta.url), diagnostics } = {}) {
-  const server = new McpServer({ name: 'agent-monitor', version: VERSION });
+  const server = new McpServer({ name: 'agent-monitor', version: VERSION, icons });
   let html;
   const result = (data, text = 'Agent Monitor data.') => ({
     content: [{ type: 'text', text }],

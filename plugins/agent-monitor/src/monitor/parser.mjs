@@ -182,7 +182,7 @@ export class RolloutParser {
     const duration = this.pendingStartMs === null ? null : endMs - this.pendingStartMs;
     const valid = duration !== null && duration >= 0 && duration <= 900000;
     const startMs = valid ? endMs - Math.max(500, duration) : null;
-    const accepted = this.onResponse({ key, agentId: this.id, model: this.turnModel ?? this.model, startMs, endMs, tokens });
+    const accepted = this.onResponse({ key, agentId: this.id, model: this.turnModel ?? this.model, serviceTier: recordedMode, startMs, endMs, tokens });
     this.seenKeys.add(key);
     if (!accepted) return;
     this.mode.recorded = recordedMode;

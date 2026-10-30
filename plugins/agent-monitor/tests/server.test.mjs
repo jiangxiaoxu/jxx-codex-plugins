@@ -27,6 +27,10 @@ test('MCP discovery opens an app resource and supports independent read-only ref
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   t.after(() => client.close());
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  const [icon] = client.getServerVersion().icons;
+  assert.equal(icon.mimeType, 'image/svg+xml');
+  assert.match(icon.src, /^data:image\/svg\+xml;base64,/);
+  assert.match(Buffer.from(icon.src.split(',')[1], 'base64').toString('utf8'), /<svg\b[^>]*xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
   const { tools } = await client.listTools();
   const open = tools.find((tool) => tool.name === 'monitor_open');
   assert.equal(open._meta.ui.resourceUri, UI_URI);

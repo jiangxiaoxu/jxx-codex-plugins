@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "agent-monitor",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Read-only Codex agent rates, token usage, models, execution modes and activity in a live MCP App.",
   "author": { "name": "jiangxiaoxu" },
   "extensions": {
