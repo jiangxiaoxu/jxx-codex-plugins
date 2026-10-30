@@ -6,7 +6,7 @@ import { RateChart, rateChartHtml } from './rate-chart.mjs';
 
 const root = document.getElementById('monitor');
 const element = id => document.getElementById(id);
-const app = new App({ name: 'Codex Agent Metrics', version: '0.1.6' }, {});
+const app = new App({ name: 'Codex Agent Metrics', version: '0.1.7' }, {});
 const rows = new ThreadList();
 const health = new SnapshotHealth();
 const threadRateChart = new RateChart();
