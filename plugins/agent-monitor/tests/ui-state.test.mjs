@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  SnapshotHealth, ThreadList, compareAgents, createVisiblePoller, mergeStableItems, modePresentation, modelPresentation, phasePresentation,
+  DisplayRates, SnapshotHealth, StableCounts, ThreadList, compareAgents, createVisiblePoller, mergeStableItems, modePresentation, modelPresentation, phasePresentation,
 } from '../ui/state.mjs';
 
 const item = (id, recencyAt, extra = {}) => ({ id, recencyAt, status: 'ready', attention: null, ...extra });
@@ -128,11 +128,11 @@ test('visible polling pauses when hidden, resumes immediately, and never overlap
   poller.setVisible(false);
   poller.setVisible(true);
   assert.equal(calls, 1);
-  now = 300;
+  now = 100;
   finish();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(timers.size, 1);
-  assert.equal(delay, 200);
+  assert.equal(delay, 150);
 
   poller.setVisible(false);
   assert.equal(timers.size, 0);
@@ -150,6 +150,52 @@ test('visible polling pauses when hidden, resumes immediately, and never overlap
 const snapshot = (sampledAt, lastSuccessAt, outputTps, collectionState = 'ready') => ({
   schemaVersion: 1, sampledAt, collection: { state: collectionState, lastSuccessAt, warnings: [] },
   totals: { measuredTps: outputTps, estimatedTps: 0, outputTps }, models: [], threads: [],
+});
+
+test('agent counts ignore short fluctuations, settle sustained changes and bound continuous update delay', () => {
+  let now = 0;
+  const counts = new StableCounts({ now: () => now });
+  const a = { model: 1 }, b = { model: 2 }, c = { model: 3 };
+  assert.deepEqual(counts.update(a), a);
+  now = 250;
+  assert.deepEqual(counts.update(b), a);
+  now = 500;
+  assert.deepEqual(counts.update(a), a);
+  now = 750;
+  assert.deepEqual(counts.update(b), a);
+  now = 1250;
+  assert.deepEqual(counts.update(b), b);
+  now = 1500;
+  assert.deepEqual(counts.update(c), b);
+  now = 1900;
+  assert.deepEqual(counts.update(a), b);
+  now = 2300;
+  assert.deepEqual(counts.update(c), b);
+  now = 2500;
+  assert.deepEqual(counts.update(a), a);
+});
+
+test('displayed rates smooth new trusted samples per entity without altering raw samples or mixing selections', () => {
+  let now = 0;
+  const rates = new DisplayRates({ now: () => now });
+  const initial = { measuredTps: 100, estimatedTps: 20, outputTps: 120 };
+  const zero = { measuredTps: 0, estimatedTps: 0, outputTps: 0 };
+  assert.deepEqual(rates.read('agent-a', initial, 'a1'), initial);
+  now = 250;
+  const smoothed = rates.read('agent-a', zero, 'a2');
+  assert.ok(smoothed.outputTps > 0 && smoothed.outputTps < 120);
+  assert.equal(smoothed.outputTps, smoothed.measuredTps + smoothed.estimatedTps);
+  assert.deepEqual(zero, { measuredTps: 0, estimatedTps: 0, outputTps: 0 });
+  now = 300;
+  assert.equal(rates.read('agent-a', zero, 'a2'), smoothed);
+  assert.deepEqual(rates.read('agent-b', zero, 'b1'), zero);
+  const health = new SnapshotHealth({ now: () => now });
+  health.accept(snapshot(timestamp(1), timestamp(1), 100));
+  health.fail(new Error('Disconnected'));
+  assert.equal(health.inspect().kind, 'stale');
+  assert.equal(rates.read('agent-a', zero, 'a2'), smoothed);
+  now = 6000;
+  assert.deepEqual(rates.read('agent-a', initial, 'a3'), initial);
 });
 
 test('initial scanning and incomplete counts never become a trusted zero sample', () => {

@@ -32613,7 +32613,7 @@ var wrapper_default = import_websocket.default;
 // package.json
 var package_default = {
   name: "@jxx-codex-plugins/agent-monitor",
-  version: "0.1.3",
+  version: "0.1.4",
   private: true,
   description: "Read-only Codex agent speed and activity monitoring through MCP Apps.",
   type: "module",
@@ -33056,6 +33056,7 @@ var Monitor = class {
     this.pendingFileIndex = 0;
     this.running = false;
     this.continuous = false;
+    this.backgroundEnabled = false;
     this.activityDeadline = 0;
     this.closed = false;
     this.timer = null;
@@ -33083,7 +33084,13 @@ var Monitor = class {
     this.schedule(0);
   }
   hasDemand() {
-    return this.continuous || this.now() < this.activityDeadline;
+    return this.continuous || this.backgroundEnabled || this.now() < this.activityDeadline;
+  }
+  setBackgroundCollection({ enabled }) {
+    if (this.closed) throw new Error("Monitor is closed");
+    this.backgroundEnabled = enabled;
+    this.activate();
+    return { backgroundEnabled: this.backgroundEnabled, scope: "process" };
   }
   pause() {
     this.running = false;
@@ -33095,7 +33102,7 @@ var Monitor = class {
     const currentFile = this.pendingFiles?.[this.pendingFileIndex];
     this.diagnostics?.write("info", "collection.pause", { files: this.files.size, pendingFiles: this.pendingFiles?.length ?? null, fileIndex: this.pendingFileIndex, file: currentFile ? path4.basename(currentFile.path) : null, offset: currentFile?.offset ?? null, lastSuccessAt: this.lastSuccessAt });
   }
-  schedule(delay = 250) {
+  schedule(delay = 100) {
     if (!this.running || this.closed) return;
     this.timer = setTimeout(async () => {
       if (!this.running || this.closed) return;
@@ -33114,6 +33121,7 @@ var Monitor = class {
   }
   async stop() {
     this.running = false;
+    this.backgroundEnabled = false;
     clearTimeout(this.timer);
     if (this.refreshPromise) await this.refreshPromise;
     if (!this.closed) {
@@ -33498,6 +33506,34 @@ var Monitor = class {
       };
     });
   }
+  rateHistory(agentIds, now, view) {
+    const records = [...view.responses.values()].filter((response) => agentIds.has(response.agentId) && response.endMs >= now - HISTORY_MS);
+    const estimates = [...agentIds].map((id) => view.estimates.get(id)).filter(Boolean);
+    return Array.from({ length: 300 }, (_, index) => {
+      const time3 = Math.floor(now / 1e3) * 1e3 - (299 - index) * 1e3;
+      const measuredTps = records.reduce((total, response) => total + contribution(response, time3 - 1e3, time3), 0);
+      const estimatedTps = estimates.reduce((total, estimate) => total + (estimate.points.get(time3) ?? 0), 0);
+      return { time: date5(time3), measuredTps, estimatedTps, outputTps: measuredTps + estimatedTps };
+    });
+  }
+  agentCounts(agents) {
+    const models = /* @__PURE__ */ new Map(), serviceTiers = /* @__PURE__ */ new Map();
+    for (const agent of agents) {
+      const model = agent.model || null;
+      const modelEntry = models.get(model) ?? { model, count: 0, sources: { turn_context: 0, runtime_config: 0, log_metadata: 0, unknown: 0 } };
+      modelEntry.count++;
+      modelEntry.sources[model && Object.hasOwn(modelEntry.sources, agent.modelSource) ? agent.modelSource : "unknown"]++;
+      models.set(model, modelEntry);
+      const source = agent.mode.selected ? "selected" : agent.mode.recorded ? "recorded" : "unknown";
+      const tier = source === "unknown" ? null : normalizeMode(agent.mode[source]);
+      const tierEntry = serviceTiers.get(tier) ?? { tier, count: 0, sources: { selected: 0, recorded: 0, unknown: 0 } };
+      tierEntry.count++;
+      tierEntry.sources[source]++;
+      serviceTiers.set(tier, tierEntry);
+    }
+    const order = (key) => (a, b) => b.count - a.count || String(a[key] ?? "").localeCompare(String(b[key] ?? ""));
+    return { total: agents.length, models: [...models.values()].sort(order("model")), serviceTiers: [...serviceTiers.values()].sort(order("tier")) };
+  }
   async getSnapshot({ limit = 10, cursor = null, order = "recent", scope = "all" } = {}) {
     const now = this.now(), view = this.published, agents = view.agents;
     const allThreads = this.threads(agents, now, view);
@@ -33509,9 +33545,11 @@ var Monitor = class {
       schemaVersion: 1,
       sampledAt: date5(now),
       hostName: hostname3(),
-      collection: { state: this.collectionState, source: "app-server", coverage: "sampled", historyComplete: false, lastSuccessAt: this.lastSuccessAt, skippedCompressedFiles: view.skippedCompressedFiles, skippedUnavailableThreads: view.skippedUnavailableThreads, excluded: { ...view.excluded }, warnings: [...this.warnings] },
+      collection: { state: this.collectionState, source: "app-server", backgroundEnabled: this.backgroundEnabled, coverage: "sampled", historyComplete: false, lastSuccessAt: this.lastSuccessAt, skippedCompressedFiles: view.skippedCompressedFiles, skippedUnavailableThreads: view.skippedUnavailableThreads, excluded: { ...view.excluded }, warnings: [...this.warnings] },
       totals: { ...rate, ...view.today, generatingCount: summaries.filter((a) => a.phase === "generating").length, toolCount: summaries.filter((a) => a.phase === "tools").length, threadCount: allThreads.length, workingThreadCount: allThreads.filter((thread) => thread.status === "working").length, readyThreadCount: allThreads.filter((thread) => thread.status === "ready").length },
       models: this.modelRates([...agents.values()], now, view),
+      agentCounts: this.agentCounts(summaries),
+      history: this.rateHistory(new Set(agents.keys()), now, view),
       threads: result.items,
       nextCursor: result.nextCursor
     };
@@ -33529,14 +33567,7 @@ var Monitor = class {
   async getAgent({ agentId } = {}) {
     const now = this.now(), view = this.published, agents = view.agents, agent = agents.get(agentId);
     if (!agent) return { agent: null, history: [], coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
-    const records = [...view.responses.values()].filter((r) => r.agentId === agentId && r.endMs >= now - HISTORY_MS);
-    const estimate = view.estimates.get(agentId);
-    const history = Array.from({ length: 300 }, (_, index) => {
-      const time3 = Math.floor(now / 1e3) * 1e3 - (299 - index) * 1e3;
-      const measuredTps = records.reduce((total, r) => total + contribution(r, time3 - 1e3, time3), 0);
-      const estimatedTps = estimate?.points.get(time3) ?? 0;
-      return { time: date5(time3), measuredTps, estimatedTps, outputTps: measuredTps + estimatedTps };
-    });
+    const history = this.rateHistory(/* @__PURE__ */ new Set([agentId]), now, view);
     return { agent: this.summarizeAgent(agent, agents, now, view), history, coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
   }
   async getHistory({ from, to } = {}) {
@@ -41856,11 +41887,11 @@ function createServer(monitor, { uiUrl = new URL("../dist/dashboard.html", impor
     content: [{ type: "text", text }],
     structuredContent: data
   });
-  const tool = (name, description, inputSchema, run) => {
+  const tool = (name, description, inputSchema, run, annotations = readOnly) => {
     server.registerTool(name, {
       description,
       inputSchema,
-      annotations: readOnly,
+      annotations,
       _meta: { ui: { visibility: ["app"] } }
     }, async (args) => {
       const started = performance.now();
@@ -41932,6 +41963,9 @@ function createServer(monitor, { uiUrl = new URL("../dist/dashboard.html", impor
     from: external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     to: external_exports.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
   }, (args) => monitor.getHistory(args));
+  tool("monitor_background", "Set temporary background collection for this server process. Shared app windows use the same setting; it resets when the process restarts. Collection requires the host to keep this process alive.", {
+    enabled: external_exports.boolean()
+  }, (args) => monitor.setBackgroundCollection(args), { ...readOnly, readOnlyHint: false });
   tool("monitor_diagnostics", "Read local diagnostic metadata and recent service events. Conversation bodies and credentials are excluded.", {}, () => ({
     version: VERSION,
     ...diagnostics2?.snapshot() ?? { logPath: null, level: null, events: [], writeFailed: false }

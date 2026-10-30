@@ -1,6 +1,6 @@
 {
   "name": "agent-monitor",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Read-only Codex agent speed, usage, models and execution modes in a live MCP App.",
   "author": { "name": "jiangxiaoxu" },
   "mcpServers": "./.mcp.json",

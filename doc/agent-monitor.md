@@ -2,7 +2,7 @@
 
 Agent Monitor is a local Codex MCP App that sends only read-only data requests to an existing Codex daemon. It monitors Working and Ready threads with available uncompressed `.jsonl` rollouts, displaying output speed by model, root conversations, subagents, recorded token usage, acceleration evidence and daily usage history. Needs you, Inactive, compressed and unavailable-log threads are excluded. The global and thread entrypoints open the same dashboard.
 
-Version 0.1.3 adds interactive rate-chart inspection, conversation overviews and task-based subagent names. It also synchronizes shared database facts across monitor processes and stores default state under `<CODEX_HOME>/state/agent-monitor`.
+Version 0.1.4 adds a global rate chart, model and service-tier counts, smoother displayed rates and a process-local background collection switch. The dashboard refreshes more frequently while visible, and chart samples remain unsmoothed.
 
 For the previous 0.1.2 baseline, verification evidence and cross-machine continuation checklist, see the [2026-10-30 handoff](agent-monitor-handoff.md).
 
@@ -58,21 +58,22 @@ Only structured usage and session metadata are retained. Prompts, assistant text
 
 ## Data API
 
-All data responses use MCP `structuredContent`. The model-visible `monitor_open` opens the App and returns its initial snapshot; the App queries the remaining read-only tools directly.
+All data responses use MCP `structuredContent`. The model-visible `monitor_open` opens the App and returns its initial snapshot; the App calls the remaining tools directly.
 
 | Tool | Data |
 | --- | --- |
-| `monitor_snapshot` | Monitored-set rates and model contributions, plus a cursor page of root conversations. `order` is `recent` (default) or `priority`; `scope` is `all`, `working` or `ready`. Priority puts Working first. |
+| `monitor_snapshot` | Monitored-set rates, rate history, model and service-tier counts, plus a cursor page of root conversations. `order` is `recent` (default) or `priority`; `scope` is `all`, `working` or `ready`. Priority puts Working first. |
 | `monitor_thread` | Root conversation summary and a cursor page of agents. Requires `threadId`; `scope` is `all`, `working` or `ready`. |
 | `monitor_agent` | One agent's metadata, own token totals, rate evidence and recent curve. Requires `agentId`. |
 | `monitor_history` | Daily aggregates for `from` through `to`, using host-local `YYYY-MM-DD` dates. Defaults to the last seven days. |
 | `monitor_diagnostics` | Current plugin version, local log path, log level and up to 100 recent sanitized service events. |
+| `monitor_background` | Set process-local background collection on or off. The switch resets to off when the plugin process restarts. |
 
 List requests accept `limit` from 1 through 100 and an opaque `cursor`. UI filtering and loading fewer rows do not change monitored-set rates. Stored token totals and daily history retain earlier recorded facts, including facts from threads that subsequently leave the monitored set. They are sampled observations, not complete host or thread lifetime usage. `collection.coverage` is `sampled` and `historyComplete` is false. `tokens.output` includes `tokens.reasoning`; the latter is a breakdown. Rates expose `measuredTps`, `estimatedTps` and their sum `outputTps` separately.
 
 Threads and agents that normally leave the monitored set return `thread:null` or `agent:null` with empty detail data. This is not an MCP transport/tool error. The UI removes the vanished selection without invalidating the aggregate snapshot.
 
-Collection reads candidate-file increments with a 250 ms delay after each completed cycle. Cycles do not overlap. The loaded-ID catalog is reconciled at most once per second, thread status notifications update known entries immediately, and metadata/default mode configuration is refreshed every ten seconds. Initial parsing reads eligible plaintext files from the beginning. A generating/tool phase without new log evidence for 300 seconds becomes unknown; runtime Working/Ready remains separately identified. No global rollout directory scan is performed.
+Collection reads candidate-file increments with a 100 ms delay after each completed cycle. Cycles do not overlap. The loaded-ID catalog is reconciled at most once per second, thread status notifications update known entries immediately, and metadata/default mode configuration is refreshed every ten seconds. Initial parsing reads eligible plaintext files from the beginning. A generating/tool phase without new log evidence for 300 seconds becomes unknown; runtime Working/Ready remains separately identified. No global rollout directory scan is performed.
 
 Multiple monitor processes can share the same state directory. Each process synchronizes newly committed response facts from the shared database before publishing a collection cycle, so duplicate parsing does not double-count and facts recorded by another process become visible. Samples can still differ briefly with collection timing and in-flight estimates. SQLite waits briefly for competing writers; a longer contention failure follows the normal collection error and retry path.
 
@@ -88,11 +89,11 @@ An expanded conversation opens on its aggregate overview, followed by the main a
 
 Subagent names use the recorded task path when available, then the thread title or a stable ID. Generated agent nicknames are not used as task names.
 
-Lists use bounded scrolling regions and cursor-based incremental loading rather than page buttons. While visible, the dashboard targets a 500 ms start-to-start refresh interval, subtracting the previous refresh's duration. Slow refreshes finish before another begins and do not create a backlog. Hidden views stop both metric requests and the UI freshness timer; an already-sent request may finish, but hidden views do not continue the next page or detail request.
+Lists use bounded scrolling regions and cursor-based incremental loading rather than page buttons. While visible, the dashboard targets a 250 ms start-to-start refresh interval, subtracting the previous refresh's duration. Slow refreshes finish before another begins and do not create a backlog. Hidden views stop both metric requests and the UI freshness timer; an already-sent request may finish, but hidden views do not continue the next page or detail request. Displayed rate numbers use a short smoothing window and model/tier counts briefly stabilize before changing; chart samples remain unsmoothed.
 
-The agent rate chart supports selecting a time range, zooming and panning, and inspecting individual samples. A historical view holds its captured five-minute window steady while live updates continue; returning to live follows the latest samples again. The tooltip reports measured and estimated rates, not historical runtime status or configuration, which are not recorded as a timeline. The chart cannot reconstruct older per-second history from the daily aggregates.
+The global and agent rate charts support selecting a time range, zooming and panning, and inspecting individual samples. The global chart sums the current monitored members regardless of list filters or pagination; its past values can change when membership changes. A historical view holds its captured five-minute window steady while live updates continue; returning to live follows the latest samples again. The tooltip reports measured and estimated rates, not historical runtime status or configuration, which are not recorded as a timeline. The charts cannot reconstruct older per-second history from the daily aggregates.
 
-MCP discovery and resource reads only register the App and serve its files. They do not open the metrics database or connect to the daemon. Data requests activate the collector and renew a five-second activity lease. With no further requests, background collection pauses after the current cycle and no later cycle is scheduled. The observer proxy and read-only catalog database close on pause; the Codex daemon remains running. Parsed offsets and plugin metrics remain cached for resume. Diagnostics requests alone do not activate collection. The MCP subprocess remains available; paused does not mean that Codex has unloaded the plugin.
+MCP discovery and resource reads only register the App and serve its files. They do not open the metrics database or connect to the daemon. Data requests activate the collector and renew a five-second activity lease. With no further requests, collection pauses after the current cycle unless the background switch is on. The switch is process-local, shared by windows using that process, and resets to off when the process restarts; it cannot keep a process alive if the host terminates it. The observer proxy and read-only catalog database close on pause; the Codex daemon remains running. Parsed offsets and plugin metrics remain cached for resume. Diagnostics requests alone do not activate collection. The MCP subprocess remains available; paused does not mean that Codex has unloaded the plugin.
 
 Disconnected, failed, initial-scanning or stale samples do not replace a valid reading with zero. The UI retains the last trusted values with an expired/retrying indication. Before any trusted sample exists it displays `-`. A fresh successful sample restores the live view, including genuine zero readings. Reader freshness uses server-relative timestamps plus elapsed UI time so remote clock offsets are not treated as failure.
 
