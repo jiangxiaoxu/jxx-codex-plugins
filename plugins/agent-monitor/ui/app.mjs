@@ -3,12 +3,14 @@ import {
   SnapshotHealth, ThreadList, compareAgents, createVisiblePoller, dateGroup, mergeStableItems,
   modePresentation, modelPresentation, phasePresentation,
 } from './state.mjs';
+import { RateChart, rateChartHtml } from './rate-chart.mjs';
 
 const root = document.getElementById('monitor');
 const element = id => document.getElementById(id);
-const app = new App({ name: 'Agent Monitor', version: '0.1.2' }, {});
+const app = new App({ name: 'Agent Monitor', version: '0.1.3' }, {});
 const rows = new ThreadList();
 const health = new SnapshotHealth();
+const rateChart = new RateChart();
 const state = {
   snapshot: null, order: 'recent', scope: 'all', view: 'live', nextThreadCursor: null, threadPrefixCount: 10,
   openThreadId: null, selectedAgentId: null, threadData: null, agents: [], agentData: null,
@@ -217,17 +219,27 @@ function detailHtml() {
   const scopeOptions = [['all', 'Working + Ready'], ['working', 'Working'], ['ready', 'Ready']]
     .map(([value, label]) => `<option value="${value}"${value === state.agentScope ? ' selected' : ''}>${label}</option>`).join('');
   return `<div class="thread-detail">
-    <div class="thread-models" id="thread-models"></div>
     <div class="agent-layout"><div class="agent-column">
+      <button type="button" class="agent-row thread-overview-row" data-overview aria-pressed="${state.selectedAgentId === null}"><span><span class="agent-name">线程总览</span><span class="agent-meta" id="thread-overview-meta">正在读取线程</span></span><span class="agent-rate"><b id="thread-overview-rate">-</b><span>合计 tok/s</span></span></button>
+      <div class="agent-section-label">主代理</div>
       <div class="main-agent">${main ? agentHtml(main) : `<span class="muted">${state.threadData ? '主代理不在当前监视范围' : '正在读取主代理'}</span>`}</div>
       <div class="sub-head"><span>子代理 / 最近交互</span><select id="agent-scope" aria-label="子代理范围">${scopeOptions}</select></div>
       <div class="agent-list" id="agent-list">${children.map(agentHtml).join('')}<div class="load-sentinel" id="agent-sentinel">${state.nextAgentCursor ? '向下滚动载入更多' : `${children.length} 个子代理`}</div></div>
-    </div><aside class="inspector" aria-label="所选代理详情">
+    </div><aside class="inspector" aria-label="线程与代理详情">
+      <div id="thread-inspector"${state.selectedAgentId === null ? '' : ' hidden'}>
+        <div class="inspector-head"><strong>线程总览</strong><span class="muted" id="thread-overview-status"></span></div>
+        <div class="inspector-model" id="thread-overview-title"></div>
+        <dl class="facts"><dt>合计输出</dt><dd id="thread-total-rate">-</dd><dt>已测 / 估算</dt><dd id="thread-rate-parts">-</dd><dt>监视中的代理</dt><dd id="thread-agent-count">-</dd><dt>Working / Ready</dt><dd id="thread-agent-statuses">-</dd><dt>已采样输出</dt><dd id="thread-output">-</dd><dt>已采样输入 / 缓存</dt><dd id="thread-input">-</dd><dt>其中 reasoning</dt><dd id="thread-reasoning">-</dd></dl>
+        <div class="agent-section-label">模型输出贡献</div><div class="thread-models" id="thread-models"></div>
+        <p class="inspector-note">汇总线程全部可监视代理, 包含未加载的列表行. Token 为已采样累计.</p>
+      </div>
+      <div id="agent-inspector"${state.selectedAgentId === null ? ' hidden' : ''}>
       <div class="inspector-head"><strong id="agent-name">${state.selectedAgentId || !state.threadData ? '正在读取代理' : '请选择代理'}</strong><span class="muted" id="agent-phase"></span></div>
       <div class="inspector-model" id="agent-model"></div>
       <div class="inspector-configuration" id="agent-configuration" hidden></div>
       <dl class="facts"><dt>当前输出</dt><dd id="agent-rate">-</dd><dt>加速模式</dt><dd id="agent-mode">-</dd><dt>模式依据</dt><dd id="agent-mode-evidence">-</dd><dt>父代理</dt><dd id="agent-parent">-</dd><dt>已采样输出</dt><dd id="agent-output">-</dd><dt>已采样输入 / 缓存</dt><dd id="agent-input">-</dd></dl>
-      <div class="agent-curve" id="agent-curve"></div><div class="curve-foot"><span>近 5 分钟 / tok/s</span><span>实线已测 / 虚线估算</span></div>
+      ${rateChartHtml}
+      </div>
     </aside></div>
   </div>`;
 }
@@ -246,6 +258,7 @@ function renderThreadList() {
   const focus = document.activeElement;
   const focusedThread = focus?.dataset?.thread;
   const focusedAgent = focus?.dataset?.agent;
+  const focusedOverview = focus?.hasAttribute('data-overview');
   const { priority, recent } = rows.sections();
   let html = priority.length ? `<div class="group-heading">Working</div>${priority.map(threadHtml).join('')}` : '';
   let group = null;
@@ -275,6 +288,7 @@ function renderThreadList() {
     const next = [...buttons].find(button => focusedThread ? button.dataset.thread === focusedThread : button.dataset.agent === focusedAgent);
     next?.focus({ preventScroll: true });
   }
+  if (focusedOverview) container.querySelector('[data-overview]')?.focus({ preventScroll: true });
   element('thread-empty').hidden = rows.items.length > 0 || state.snapshot?.collection?.state === 'scanning';
   element('thread-count').textContent = `已显示 ${rows.items.length} 个根会话${state.nextThreadCursor ? ' / 继续滚动载入' : ''}`;
   updateThreadRows();
@@ -297,12 +311,29 @@ function updateThreadRows() {
     const mode = modePresentation(agent.mode);
     const model = modelPresentation(agent);
     button.setAttribute('aria-pressed', String(agent.id === state.selectedAgentId));
+    button.querySelector('.agent-name').textContent = isMain(agent) ? `主代理${agent.name && agent.name !== agent.id ? ` / ${agent.name}` : ''}`
+      : agent.name && agent.name !== agent.id ? agent.name : `子代理 ${agent.id.slice(0, 8)}`;
     button.querySelector('.agent-meta').textContent = `${model.label} / ${mode.label}`;
     button.querySelector('.agent-rate b').textContent = tps(outputTps(agent));
     button.querySelector('.agent-rate span').textContent = phasePresentation(agent.activity);
     button.querySelector('.agent-rate span').title = phasePresentation(agent.phase);
   }
-  const thread = state.threadData?.thread ?? byId.get(state.openThreadId);
+  const thread = byId.get(state.openThreadId) ?? state.threadData?.thread;
+  const overview = element('thread-list').querySelector('[data-overview]');
+  overview?.setAttribute('aria-pressed', String(state.selectedAgentId === null));
+  if (thread && overview) {
+    element('thread-overview-meta').textContent = `${phasePresentation(thread.status)} / ${number(thread.agentCount)} 个代理`;
+    element('thread-overview-rate').textContent = tps(outputTps(thread));
+    element('thread-overview-title').textContent = thread.title || thread.id;
+    element('thread-overview-status').textContent = phasePresentation(thread.status);
+    element('thread-total-rate').textContent = `${tps(outputTps(thread))} tok/s`;
+    element('thread-rate-parts').textContent = `${tps(thread.rate?.measuredTps)} / ${tps(thread.rate?.estimatedTps)} tok/s`;
+    element('thread-agent-count').textContent = number(thread.agentCount);
+    element('thread-agent-statuses').textContent = `${number(thread.activeAgentCount)} / ${number(finite(thread.agentCount) && finite(thread.activeAgentCount) ? thread.agentCount - thread.activeAgentCount : null)}`;
+    element('thread-output').textContent = `${number(thread.tokens?.output)} tokens`;
+    element('thread-input').textContent = `${number(thread.tokens?.input)} / ${number(thread.tokens?.cachedInput)}`;
+    element('thread-reasoning').textContent = `${number(thread.tokens?.reasoning)} tokens`;
+  }
   if (element('thread-models') && thread) {
     const models = Array.isArray(thread.modelRates) ? thread.modelRates : [];
     element('thread-models').textContent = models.map(model => `${model.model || '未知模型'} ${tps(model.outputTps)} tok/s`).join(' / ')
@@ -311,33 +342,12 @@ function updateThreadRows() {
 }
 
 function drawAgentChart(history = []) {
-  const container = element('agent-curve');
-  if (!container) return;
-  const width = Math.max(220, container.clientWidth);
-  const height = 110;
-  const left = 33, right = width - 5, top = 8, bottom = 87;
-  const points = history.map(point => ({ time: Date.parse(point.time), measured: point.measuredTps, estimated: point.estimatedTps }))
-    .filter(point => Number.isFinite(point.time) && finite(point.measured) && finite(point.estimated)).sort((a, b) => a.time - b.time);
-  if (!points.length) {
-    container.innerHTML = '<svg role="img" aria-label="尚无速率历史"><text x="0" y="50" fill="var(--monitor-muted)" font-size="12">尚无速率历史</text></svg>';
-    return;
-  }
-  const end = points.at(-1).time;
-  const start = end - 300_000;
-  const visible = points.filter(point => point.time >= start);
-  const max = Math.max(1, ...visible.flatMap(point => [point.measured, point.estimated])) * 1.15;
-  const x = time => left + Math.max(0, Math.min(1, (time - start) / (end - start))) * (right - left);
-  const y = value => bottom - value / max * (bottom - top);
-  const path = key => visible.map((point, index) => `${index ? 'L' : 'M'}${x(point.time).toFixed(2)},${y(point[key]).toFixed(2)}`).join(' ');
-  let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="所选代理的已测和估算输出速率">`;
-  for (const value of [0, max / 2, max]) {
-    svg += `<line x1="${left}" x2="${right}" y1="${y(value)}" y2="${y(value)}" stroke="var(--monitor-line)"/><text x="${left - 5}" y="${y(value) + 4}" text-anchor="end" fill="var(--monitor-muted)" font-size="11">${number(value)}</text>`;
-  }
-  svg += `<path d="${path('measured')}" fill="none" stroke="var(--monitor-blue)" stroke-width="1.6"/><path d="${path('estimated')}" fill="none" stroke="var(--monitor-purple)" stroke-width="1.6" stroke-dasharray="3 3"/><text x="${left}" y="106" fill="var(--monitor-muted)" font-size="11">-5 分钟</text><text x="${right}" y="106" text-anchor="end" fill="var(--monitor-muted)" font-size="11">现在</text></svg>`;
-  container.innerHTML = svg;
+  rateChart.update(element('rate-timeline'), state.selectedAgentId, history);
 }
 
 function updateInspector() {
+  if (element('thread-inspector')) element('thread-inspector').hidden = state.selectedAgentId !== null;
+  if (element('agent-inspector')) element('agent-inspector').hidden = state.selectedAgentId === null;
   const agent = state.agentData?.agent ?? state.agents.find(item => item.id === state.selectedAgentId);
   if (!element('agent-name') || !agent) return;
   const mode = modePresentation(agent.mode);
@@ -439,12 +449,13 @@ async function refreshSelection() {
   }).sort(compareAgents);
   if (data.thread) rows.merge([data.thread]);
   state.nextAgentCursor = data.nextCursor ?? null;
-  if (!state.agents.some(agent => agent.id === state.selectedAgentId)) {
-    state.selectedAgentId = state.agents.find(isMain)?.id ?? state.agents[0]?.id ?? null;
+  if (state.selectedAgentId && !state.agents.some(agent => agent.id === state.selectedAgentId)) {
+    state.selectedAgentId = null;
     state.agentData = null;
   }
   if (oldLayout !== threadLayout() || previousIds !== state.agents.map(agent => agent.id).join('\n') || oldCursor !== state.nextAgentCursor) renderThreadList();
   else updateThreadRows();
+  updateInspector();
   if (state.selectedAgentId) {
     const agentId = state.selectedAgentId;
     const detail = await callTool('monitor_agent', { agentId });
@@ -641,6 +652,14 @@ element('thread-list').addEventListener('click', event => {
     state.agentScope = 'all';
     renderThreadList();
     void refreshSelection().catch(reportDetailError);
+    return;
+  }
+  if (event.target.closest('[data-overview]')) {
+    state.selectionEpoch++;
+    state.selectedAgentId = null;
+    state.agentData = null;
+    updateThreadRows();
+    updateInspector();
     return;
   }
   const agentButton = event.target.closest('[data-agent]');

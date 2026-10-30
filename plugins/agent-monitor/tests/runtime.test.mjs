@@ -25,7 +25,7 @@ test('observer excludes compressed paths before metadata reads, projects metadat
   db.close();
   const fixturePath = join(home, 'fixture.json');
   await writeFile(fixturePath, JSON.stringify({ home, threads: [
-    { id: 'plain', status: { type: 'active', activeFlags: [] }, path: plain, name: 'Fixture thread', model: 'model-a', preview: 'PRIVATE_MESSAGE', turns: [{ text: 'PRIVATE_MESSAGE' }] },
+    { id: 'plain', status: { type: 'active', activeFlags: [] }, path: plain, name: 'Fixture thread', model: 'model-a', source: { subAgent: { thread_spawn: { agent_path: '/root/worker_timeline_ui', private: 'PRIVATE_MESSAGE' } } }, preview: 'PRIVATE_MESSAGE', turns: [{ text: 'PRIVATE_MESSAGE' }] },
     { id: 'compressed', forbidden: true }, { id: 'missing', forbidden: true },
   ] }));
   runtime = new RuntimeClient({ codexHome: home, socketPath, command: [process.execPath, fileURLToPath(new URL('./fixtures/runtime-proxy.mjs', import.meta.url)), fixturePath] });
@@ -33,6 +33,7 @@ test('observer excludes compressed paths before metadata reads, projects metadat
   assert.deepEqual(threads.map(thread => thread.id), ['plain']);
   assert.equal(threads[0].status.type, 'active');
   assert.equal(threads[0].model, 'model-a');
+  assert.equal(threads[0].agentPath, '/root/worker_timeline_ui');
   assert.ok(!JSON.stringify(threads).includes('PRIVATE_MESSAGE'));
   assert.equal(runtime.skippedCompressedFiles, 1);
   assert.equal(runtime.exclusions.missingMetadata, 1);

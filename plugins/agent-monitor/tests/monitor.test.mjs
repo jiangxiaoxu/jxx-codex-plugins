@@ -33,8 +33,9 @@ async function setup(t, { clock } = {}) {
     return threads;
   } };
   const monitor = new Monitor({ codexHome, stateDir, runtime, now: clock ?? (() => now) });
-  t.after(async () => { await monitor.stop(); await rm(folder, { recursive: true, force: true }); });
-  return { folder, codexHome, stateDir, monitor, runtime, setNow(value) { now = value; }, file(name) { const filePath = path.join(codexHome, 'sessions', name); paths.add(filePath); return filePath; } };
+  const monitors = [monitor];
+  t.after(async () => { await Promise.all(monitors.map(item => item.stop())); await rm(folder, { recursive: true, force: true }); });
+  return { folder, codexHome, stateDir, monitor, monitors, runtime, setNow(value) { now = value; }, file(name) { const filePath = path.join(codexHome, 'sessions', name); paths.add(filePath); return filePath; } };
 }
 
 test('modern main and nested agents are counted once, copied context is excluded, and modes stay per agent', async t => {
@@ -63,6 +64,29 @@ test('modern main and nested agents are counted once, copied context is excluded
   assert.equal(childResult.agent.mode.configured, 'fast');
   assert.equal(childResult.agent.mode.selected, null);
   assert.equal(childResult.agent.parentId, 'root-id');
+});
+
+test('agent labels use structured task paths and titles without random nicknames or message bodies', async t => {
+  const env = await setup(t);
+  const cases = [
+    ['root', { title: 'Root metadata title' }, { agentNickname: 'Plato' }, 'Root metadata title'],
+    ['task', { parent_thread_id: 'root', agent_path: '/root/worker_timeline_ui', agent_nickname: 'Banach' }, {}, 'Worker timeline ui'],
+    ['runtime-task', { parent_thread_id: 'root', agent_path: '/root/old_task' }, { agentPath: '/root/explorer_timeline_data', agentNickname: 'McClintock' }, 'Explorer timeline data'],
+    ['titled', { parent_thread_id: 'root' }, { name: 'Review parser', agentNickname: 'Plato' }, 'Review parser'],
+    ['untitled', { parent_thread_id: 'root', agent_nickname: 'Banach' }, {}, 'Agent untitled'],
+  ];
+  for (const [id, metadata, runtime, expected] of cases) {
+    await writeFile(env.file(`${id}.jsonl`), meta(id, -20000, metadata) + line('response_item', -10000, { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'PRIVATE TITLE' }] }));
+    env.runtime.overrides.set(id, runtime);
+  }
+  await env.monitor.start();
+  const result = await env.monitor.getThread({ threadId: 'root' });
+  assert.equal(result.thread.title, 'Root metadata title');
+  for (const [id, , , expected] of cases) {
+    assert.equal(result.agents.find(agent => agent.id === id).name, expected);
+    assert.equal((await env.monitor.getAgent({ agentId: id })).agent.name, expected);
+  }
+  assert.ok(!JSON.stringify(result).includes('PRIVATE TITLE'));
 });
 
 test('legacy cumulative token counters use deltas, skip duplicates and do not count modern mirror events', async t => {
@@ -133,6 +157,124 @@ test('daily totals survive restarts and deleted logs without replay double count
   assert.equal(history.days[0].requests, 1);
   assert.equal((await withoutLogs.getSnapshot()).totals.threadCount, 0);
   await withoutLogs.stop();
+});
+
+test('independent collectors reconcile shared facts through duplicate reads, pause and restart', async t => {
+  const env = await setup(t);
+  const filePath = env.file('shared.jsonl');
+  const replicaPath = path.join(env.codexHome, 'replica.jsonl');
+  const source = meta('shared', -7200000) + input(-3601000) + usage('old-shared', -3600000, 40)
+    + line('turn_context', -20000, { model: 'shared-model' });
+  await writeFile(filePath, source);
+  await writeFile(replicaPath, source);
+  const replicaRuntime = { close() {}, async list() {
+    return [{ id: 'shared', path: replicaPath, status: { type: 'active', activeFlags: [] }, recencyAt: epoch / 1000 }];
+  } };
+  const second = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, runtime: replicaRuntime, now: () => epoch });
+  env.monitors.push(second);
+  await env.monitor.refresh();
+  await second.refresh();
+  const firstUsage = input(-3000) + usage('new-shared', 0, 300);
+  await appendFile(filePath, firstUsage);
+  await appendFile(replicaPath, firstUsage);
+  await env.monitor.refresh();
+  await second.refresh();
+  const compare = async (left, right, expected) => {
+    const a = await left.getAgent({ agentId: 'shared' }), b = await right.getAgent({ agentId: 'shared' });
+    assert.equal(a.agent.tokens.output, expected);
+    assert.deepEqual(a.agent.tokens, b.agent.tokens);
+    assert.deepEqual(a.agent.rate, b.agent.rate);
+    assert.deepEqual(a.history, b.history);
+    assert.ok(a.agent.rate.measuredTps > 0);
+    assert.deepEqual((await left.getSnapshot()).totals, (await right.getSnapshot()).totals);
+  };
+  await compare(env.monitor, second, 340);
+  env.monitor.pause();
+  const nextUsage = input(-1000) + usage('replica-only', 0, 60);
+  await appendFile(replicaPath, nextUsage);
+  await second.refresh();
+  // The resumed collector has no access to the replica's extra log records.
+  await env.monitor.refresh();
+  await compare(env.monitor, second, 400);
+  await appendFile(filePath, nextUsage);
+  await env.monitor.refresh();
+  await compare(env.monitor, second, 400);
+  await env.monitor.stop();
+  const reopened = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, runtime: env.runtime, now: () => epoch });
+  env.monitors.push(reopened);
+  await reopened.refresh();
+  await compare(reopened, second, 400);
+  assert.equal((await reopened.getHistory()).days[0].requests, 3);
+});
+
+test('collection waits for a separate process to release a short metrics write transaction', async t => {
+  const env = await setup(t);
+  const filePath = env.file('contended.jsonl');
+  await writeFile(filePath, meta('contended', -20000));
+  await env.monitor.refresh();
+  await appendFile(filePath, input(-1000) + usage('after-contention', 0, 90));
+  const script = `
+    import { DatabaseSync } from 'node:sqlite';
+    const db = new DatabaseSync(process.argv[1]);
+    db.exec('BEGIN IMMEDIATE');
+    process.send('locked');
+    setTimeout(() => { db.exec('COMMIT'); db.close(); process.disconnect(); }, 250);
+  `;
+  const child = spawn(process.execPath, ['--input-type=module', '--eval', script, path.join(env.stateDir, 'metrics.sqlite')], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] });
+  let stderr = '';
+  child.stderr.setEncoding('utf8').on('data', chunk => { stderr += chunk; });
+  const exited = new Promise((resolve, reject) => {
+    child.once('error', reject);
+    child.once('close', code => resolve(code));
+  });
+  t.after(() => { if (child.exitCode === null) child.kill(); });
+  await new Promise((resolve, reject) => {
+    child.once('message', resolve);
+    child.once('error', reject);
+    child.once('exit', code => reject(new Error(`Writer exited before locking (${code}): ${stderr}`)));
+  });
+  await env.monitor.refresh();
+  assert.equal(await exited, 0, stderr);
+  const snapshot = await env.monitor.getSnapshot();
+  assert.equal(snapshot.collection.state, 'ready');
+  assert.equal(snapshot.totals.outputTokens, 90);
+  assert.equal((await env.monitor.getAgent({ agentId: 'contended' })).agent.tokens.output, 90);
+});
+
+test('a completion collected by another instance replaces stale estimates and preserves the next request', async t => {
+  const env = await setup(t);
+  const filePath = env.file('pending.jsonl'), replicaPath = path.join(env.codexHome, 'pending-replica.jsonl');
+  const source = meta('pending', -20000) + line('turn_context', -15000, { model: 'shared-model' })
+    + input(-10000) + usage('pending-sample', -5000, 500) + input(-3000);
+  await writeFile(filePath, source);
+  await writeFile(replicaPath, source);
+  let now = epoch;
+  const second = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, now: () => now,
+    runtime: { close() {}, async list() { return [{ id: 'pending', path: replicaPath, status: { type: 'active', activeFlags: [] } }]; } } });
+  env.monitors.push(second);
+  await env.monitor.refresh();
+  await second.refresh();
+  assert.equal((await env.monitor.getAgent({ agentId: 'pending' })).agent.rate.estimatedTps, 100);
+  await appendFile(replicaPath, usage('completed-elsewhere', 0, 300));
+  await second.refresh();
+  await env.monitor.refresh();
+  const staleParser = await env.monitor.getAgent({ agentId: 'pending' });
+  const completedParser = await second.getAgent({ agentId: 'pending' });
+  assert.deepEqual(staleParser.agent.rate, completedParser.agent.rate);
+  assert.equal(staleParser.agent.rate.measuredTps, 100);
+  assert.equal(staleParser.agent.rate.estimatedTps, 0);
+  assert.ok(staleParser.history.every(point => point.estimatedTps === 0));
+  // A new request may start at exactly the preceding completion's timestamp.
+  await appendFile(filePath, input(0));
+  await appendFile(replicaPath, input(0));
+  now += 1000;
+  env.setNow(now);
+  await env.monitor.refresh();
+  await second.refresh();
+  const next = await env.monitor.getAgent({ agentId: 'pending' });
+  assert.ok(next.agent.rate.estimatedTps > 0);
+  assert.deepEqual(next.agent.rate, (await second.getAgent({ agentId: 'pending' })).agent.rate);
+  assert.deepEqual(next.history.filter(point => point.estimatedTps > 0).map(point => point.time), [iso(1000)]);
 });
 
 test('compressed files are skipped without warnings or exposed threads while plain rollouts remain readable', async t => {
@@ -431,6 +573,7 @@ test('plain reader consumer failures recover the same responses without terminat
     const monitor = new Monitor({ codexHome: process.argv[1], stateDir: process.argv[2], runtime, now: () => currentTime });
     const before = await monitor.getSnapshot();
     await monitor.start();
+    monitor.store.db.exec('PRAGMA busy_timeout=0');
     const writer = new DatabaseSync(path.join(process.argv[2], 'metrics.sqlite'));
     writer.exec('BEGIN IMMEDIATE');
     try {

@@ -15,7 +15,9 @@ function metadata(thread) {
   const result = Object.fromEntries(metadataFields.map(key => [key, thread[key] ?? null]));
   result.status = { type: thread.status.type, activeFlags: Array.isArray(thread.status.activeFlags) ? [...thread.status.activeFlags] : [] };
   // SessionSource's subagent payload can contain more than identity metadata.
-  result.source = typeof thread.source === 'string' ? thread.source : thread.source?.subagent ? 'subagent' : null;
+  result.source = typeof thread.source === 'string' ? thread.source : thread.source?.subAgent ? 'subagent' : null;
+  const spawn = thread.source?.subAgent?.thread_spawn;
+  result.agentPath = typeof spawn?.agent_path === 'string' ? spawn.agent_path : null;
   return result;
 }
 

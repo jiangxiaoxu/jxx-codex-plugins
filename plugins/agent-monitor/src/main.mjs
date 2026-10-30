@@ -6,7 +6,8 @@ import { Diagnostics } from './diagnostics.mjs';
 import { createServer, VERSION } from './server.mjs';
 
 const codexHome = process.env.CODEX_HOME || join(homedir(), '.codex');
-const stateDir = process.env.AGENT_MONITOR_STATE_DIR || join(homedir(), '.local', 'state', 'agent-monitor');
+const stateDir = process.env.AGENT_MONITOR_STATE_DIR || join(codexHome, 'state', 'agent-monitor');
+const legacyStateDir = process.env.AGENT_MONITOR_STATE_DIR ? null : join(homedir(), '.local', 'state', 'agent-monitor');
 const diagnostics = new Diagnostics({ stateDir, version: VERSION });
 diagnostics.write('info', 'service.start', { nodeVersion: process.version, source: codexHome });
 process.on('uncaughtExceptionMonitor', (error) => diagnostics.write('error', 'process.uncaught_exception', { error }));
@@ -15,7 +16,7 @@ process.once('exit', (code) => {
   diagnostics.close();
 });
 try {
-  const monitor = new Monitor({ codexHome, stateDir, diagnostics });
+  const monitor = new Monitor({ codexHome, stateDir, legacyStateDir, diagnostics });
   const server = createServer(monitor, { diagnostics });
   const transport = new StdioServerTransport();
   server.server.oninitialized = () => diagnostics.write('info', 'mcp.initialized');
