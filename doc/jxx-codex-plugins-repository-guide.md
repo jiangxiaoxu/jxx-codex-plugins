@@ -8,6 +8,7 @@ This repository is a local Codex plugin marketplace. It has no root-level packag
 | --- | --- | --- |
 | `task-memory` | `plugins/task-memory/skills/`, `src/`, and `scripts/commands/` | Run the plugin test suite and packed-artifact check. |
 | `figma-workspace` | `plugins/figma-workspace/skills/`, `cli-runtime/src/`, `scripts/`, and focused tests | Run plugin-root and CLI-package validation. |
+| `agent-monitor` | `plugins/agent-monitor/src/`, `ui/`, and `scripts/` | Run the plugin test suite, build, generated-artifact check, manifest validation, and packed-artifact check. |
 | `context-window-rollover-reminder` | `plugins/context-window-rollover-reminder/hooks/`, `skills/`, `scripts/`, and `tests/` | Run Python unittest discovery, the audit skill validator, and the plugin manifest validator. |
 
 For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, marketplace entry, and root README inventory aligned when plugin identity, placement, or availability changes.
@@ -22,6 +23,7 @@ For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, market
 | Figma agent workflow or documentation | [Figma Workspace AI Agent Development](figma-workspace-ai-agent-development.md), the fixed leaf-command help, and focused tests. |
 | Figma CLI/runtime, OAuth, bridge, or packaging | `plugins/figma-workspace/cli-runtime/src/`, owning tests, package scripts, and generated `dist/`. |
 | Figma upstream MCP contract drift | Capture an ignored candidate with the CLI-runtime maintenance commands, use its semantic report to adapt wrappers and tests, then explicitly promote the reviewed candidate. Do not edit the accepted fixture directly. |
+| Agent Monitor collection, metrics, UI, MCP or packaging | [Agent Monitor](agent-monitor.md), plugin package scripts, `src/monitor/`, `src/server.mjs`, `ui/`, and owning tests. |
 
 ### Figma corpus ownership
 
@@ -71,6 +73,21 @@ From `plugins/task-memory`:
 npm test
 npm pack --dry-run --json
 ```
+
+### `agent-monitor`
+
+From `plugins/agent-monitor`:
+
+```text
+npm ci
+npm run build
+npm test
+npm run check:dist
+npm run validate
+npm pack --dry-run --json
+```
+
+The tracked `dist/` contains the bundled server and single-file MCP App. Repository validation does not require loading the plugin in a client. See [Agent Monitor](agent-monitor.md) for the metric contract, source map, runtime requirements and boundaries.
 
 ### `figma-workspace`
 

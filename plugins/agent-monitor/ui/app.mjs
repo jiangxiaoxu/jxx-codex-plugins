@@ -1,0 +1,642 @@
+import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
+import {
+  SnapshotHealth, ThreadList, createVisiblePoller, dateGroup, mergeStableItems,
+  modePresentation, phasePresentation, threadPresentation,
+} from './state.mjs';
+
+const root = document.getElementById('monitor');
+const element = id => document.getElementById(id);
+const app = new App({ name: 'Agent Monitor', version: '0.1.1' }, {});
+const rows = new ThreadList();
+const health = new SnapshotHealth();
+const state = {
+  snapshot: null, order: 'priority', scope: 'all', view: 'live', nextThreadCursor: null,
+  openThreadId: null, selectedAgentId: null, threadData: null, agents: [], agentData: null,
+  nextAgentCursor: null, agentScope: 'all', history: null, listEpoch: 0, selectionEpoch: 0,
+  loadingThreads: false, loadingAgents: false, connected: false, inViewport: true, detailError: null,
+  diagnostics: null, clientEvents: [],
+  lastRefreshDurationMs: null,
+};
+let freshnessTimer = null;
+const seriesColors = ['var(--monitor-blue)', 'var(--monitor-purple)', 'var(--monitor-green)', 'var(--monitor-orange)'];
+const modelColors = new Map();
+
+const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+const finite = value => typeof value === 'number' && Number.isFinite(value);
+const number = (value, digits = 0) => finite(value) ? value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '-';
+const tps = value => number(value, 1);
+const outputTps = item => finite(item?.rate?.outputTps) ? item.rate.outputTps : null;
+const isMain = agent => agent.role === 'main' || agent.id === state.openThreadId;
+const panelVisible = () => state.inViewport && document.visibilityState !== 'hidden';
+
+function colorForModel(model) {
+  const key = model || '未知模型';
+  if (!modelColors.has(key)) modelColors.set(key, seriesColors[modelColors.size % seriesColors.length]);
+  return modelColors.get(key);
+}
+
+function setNotice(message, error = false) {
+  element('notice').textContent = message;
+  element('notice').hidden = !message;
+  element('notice').dataset.error = String(error);
+}
+
+function renderHealth() {
+  if (!panelVisible()) return;
+  const current = health.inspect();
+  const visible = panelVisible();
+  root.dataset.health = current.kind;
+  if (state.connected) element('connection').textContent = !visible ? '显示已暂停'
+    : current.collectionState === 'paused' ? '采集已暂停 / 正在恢复'
+      : current.kind === 'live' ? '自动更新' : current.kind === 'stale' ? '数据已过期 / 正在重试' : '等待成功采样 / 正在重试';
+  element('data-freshness').textContent = current.lastSuccessAt
+    ? `${current.kind === 'stale' ? '数据已过期 / ' : ''}最后成功采样 ${new Date(current.lastSuccessAt).toLocaleString('zh-CN', { hour12: false })} / ${Math.floor(current.ageMs / 1000)} 秒前`
+    : '尚无成功采样 / 数值暂不可用';
+  const warnings = state.snapshot?.collection?.warnings;
+  if (current.kind !== 'live') setNotice(`${current.issue || '正在读取日志'}. ${health.snapshot ? '保留最后成功数据.' : '尚无可用数据.'} 将自动重试.`, current.kind === 'stale' || current.collectionState === 'error');
+  else if (state.detailError) setNotice(`部分详情数据已过期: ${state.detailError}. 将自动重试.`, true);
+  else if (Array.isArray(warnings) && warnings.length) setNotice(warnings.join(' / '));
+  else setNotice('');
+  if (!rows.items.length) {
+    element('thread-empty').hidden = false;
+    element('thread-empty').textContent = current.kind === 'live' ? '尚未发现 Codex 会话' : current.collectionState === 'scanning' ? '正在扫描 Codex 日志' : '等待采集恢复';
+  }
+  if (state.view === 'diagnostics') renderDiagnostics();
+}
+
+function reportSnapshotError(error) {
+  recordClientError('snapshot', error);
+  health.fail(error);
+  renderHealth();
+}
+
+function reportDetailError(error) {
+  recordClientError(state.view, error);
+  state.detailError = error.message;
+  renderHealth();
+}
+
+function recordClientError(area, error) {
+  state.clientEvents.push({ time: new Date().toISOString(), area, message: String(error.message ?? error).slice(0, 2000) });
+  if (state.clientEvents.length > 100) state.clientEvents.splice(0, state.clientEvents.length - 100);
+}
+
+function renderDiagnostics() {
+  const data = state.diagnostics;
+  const current = health.inspect();
+  element('diagnostics-path').textContent = data?.logPath || '尚未取得';
+  element('diagnostics-version').textContent = `${data?.version || '-'} / ${data?.level || '-'}`;
+  element('diagnostics-write').textContent = data?.writeFailed === true ? '写入失败' : data?.writeFailed === false ? '正常' : '-';
+  element('diagnostics-skipped').textContent = number(state.snapshot?.collection?.skippedCompressedFiles);
+  element('diagnostics-clock').textContent = JSON.stringify({
+    state: current.kind,
+    lastGoodCollectorAt: current.lastSuccessAt,
+    latestReaderSuccessAt: current.reportedLastSuccessAt,
+    latestQueryAt: current.querySampledAt,
+    lastGoodUiReceivedAt: health.receivedAt === null ? null : new Date(health.receivedAt).toISOString(),
+    ageMs: current.ageMs,
+    lastRefreshDurationMs: state.lastRefreshDurationMs,
+    loadedThreadCount: rows.items.length,
+    loadedAgentCount: state.agents.length,
+    visible: panelVisible(),
+  }, null, 2);
+  const client = element('diagnostics-client');
+  const backend = element('diagnostics-backend');
+  const clientScroll = client.scrollTop, backendScroll = backend.scrollTop;
+  client.textContent = state.clientEvents.length ? state.clientEvents.map(event => JSON.stringify(event)).join('\n') : '暂无错误';
+  backend.textContent = Array.isArray(data?.events) ? data.events.map(event => JSON.stringify(event)).join('\n') || '暂无后端事件' : '尚未取得后端诊断';
+  client.scrollTop = clientScroll;
+  backend.scrollTop = backendScroll;
+}
+
+function relativeTime(timestamp) {
+  const time = Date.parse(timestamp ?? '');
+  if (!Number.isFinite(time)) return '更新时间未知';
+  const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
+  if (seconds < 60) return seconds < 3 ? '刚刚更新' : `${seconds} 秒前更新`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前更新`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前更新`;
+  return new Date(time).toLocaleDateString('zh-CN');
+}
+
+async function callTool(name, args = {}) {
+  const result = await app.callServerTool({ name, arguments: args });
+  if (result.isError) {
+    const message = result.content?.find(item => item.type === 'text')?.text;
+    throw new Error(message || '监视工具返回错误');
+  }
+  if (!result.structuredContent || typeof result.structuredContent !== 'object') {
+    throw new Error('监视工具未返回结构化数据');
+  }
+  return result.structuredContent;
+}
+
+function applyHostContext(context) {
+  if (context?.theme) applyDocumentTheme(context.theme);
+  if (context?.styles?.variables) applyHostStyleVariables(context.styles.variables);
+  if (context?.safeAreaInsets) {
+    const insets = context.safeAreaInsets;
+    root.style.padding = ['top', 'right', 'bottom', 'left']
+      .map(side => `${finite(insets[side]) ? Math.max(0, insets[side]) : 0}px`).join(' ');
+  }
+}
+
+function updateOverview() {
+  const snapshot = state.snapshot;
+  if (!snapshot) return;
+  const totals = snapshot.totals;
+  const rate = totals.outputTps;
+  element('host-name').textContent = snapshot.hostName || '当前插件宿主';
+  element('total-rate').textContent = tps(totals.outputTps);
+  element('activity-summary').textContent = `${number(totals.threadCount)} 个根会话 / ${number(totals.generatingCount)} 个代理生成中 / ${number(totals.toolCount)} 个执行工具`;
+  element('estimated-share').textContent = rate > 0
+    ? `${Math.round(totals.estimatedTps / rate * 100)}% 为生成中估算`
+    : '当前没有输出速率';
+  const models = (Array.isArray(snapshot.models) ? snapshot.models : [])
+    .filter(model => finite(model.outputTps) && model.outputTps > 0);
+  element('model-stack').hidden = models.length === 0;
+  element('model-stack').innerHTML = models.map(model => `<span style="width:${rate > 0 ? Math.max(0, model.outputTps / rate * 100) : 0}%;background:${colorForModel(model.model)}"></span>`).join('');
+  element('model-legend').innerHTML = models.length
+    ? models.map(model => `<span class="model-entry"><i class="model-dot" style="background:${colorForModel(model.model)}"></i><span>${escapeHtml(model.model || '未知模型')}</span><span class="model-number">${tps(model.outputTps)} / ${rate > 0 ? Math.round(model.outputTps / rate * 100) : 0}%</span></span>`).join('')
+    : '<span class="muted">无当前输出</span>';
+  renderHealth();
+}
+
+function threadMeta(thread) {
+  return `${threadPresentation(thread)} / ${number(thread.agentCount)} 个代理 / ${relativeTime(thread.recencyAt ?? thread.updatedAt)}`;
+}
+
+function threadHtml(thread) {
+  const expanded = thread.id === state.openThreadId;
+  return `<section class="thread-row" data-thread-row="${escapeHtml(thread.id)}">
+    <button type="button" class="thread-toggle" data-thread="${escapeHtml(thread.id)}" aria-expanded="${expanded}">
+      <span><span class="thread-name">${escapeHtml(thread.title || thread.id)}</span><span class="thread-meta">${escapeHtml(threadMeta(thread))}</span></span>
+      <span class="thread-rate"><b>${tps(outputTps(thread))}</b> <small>tok/s</small></span><span aria-hidden="true">${expanded ? '-' : '+'}</span>
+    </button>${expanded ? detailHtml() : ''}</section>`;
+}
+
+function agentHtml(agent) {
+  const mode = modePresentation(agent.mode);
+  const phase = phasePresentation(agent.phase);
+  const name = isMain(agent) ? `主代理${agent.name && agent.name !== agent.id ? ` / ${agent.name}` : ''}`
+    : agent.name && agent.name !== agent.id ? agent.name : `子代理 ${agent.id.slice(0, 8)}`;
+  return `<button type="button" class="agent-row" data-agent="${escapeHtml(agent.id)}" aria-pressed="${agent.id === state.selectedAgentId}">
+    <span><span class="agent-name">${escapeHtml(name)}</span><span class="agent-meta">${escapeHtml(agent.model || '未知模型')} / ${escapeHtml(mode.label)}</span></span>
+    <span class="agent-rate"><b>${tps(outputTps(agent))}</b><span>${escapeHtml(phase)}</span></span>
+  </button>`;
+}
+
+function detailHtml() {
+  const main = state.agents.find(isMain);
+  const children = state.agents.filter(agent => !isMain(agent));
+  const scopeOptions = [['all', '全部子代理'], ['active', '进行中'], ['completed', '已结束']]
+    .map(([value, label]) => `<option value="${value}"${value === state.agentScope ? ' selected' : ''}>${label}</option>`).join('');
+  return `<div class="thread-detail">
+    <div class="thread-models" id="thread-models"></div>
+    <div class="agent-layout"><div class="agent-column">
+      <div class="main-agent">${main ? agentHtml(main) : '<span class="muted">正在读取主代理</span>'}</div>
+      <div class="sub-head"><span>子代理 / 最近更新</span><select id="agent-scope" aria-label="子代理范围">${scopeOptions}</select></div>
+      <div class="agent-list" id="agent-list">${children.map(agentHtml).join('')}<div class="load-sentinel" id="agent-sentinel">${state.nextAgentCursor ? '向下滚动载入更多' : `${children.length} 个子代理`}</div></div>
+    </div><aside class="inspector" aria-label="所选代理详情">
+      <div class="inspector-head"><strong id="agent-name">正在读取代理</strong><span class="muted" id="agent-phase"></span></div>
+      <div class="inspector-model" id="agent-model"></div>
+      <dl class="facts"><dt>当前输出</dt><dd id="agent-rate">-</dd><dt>加速模式</dt><dd id="agent-mode">-</dd><dt>模式依据</dt><dd id="agent-mode-evidence">-</dd><dt>父代理</dt><dd id="agent-parent">-</dd><dt>该代理输出</dt><dd id="agent-output">-</dd><dt>输入 / 缓存输入</dt><dd id="agent-input">-</dd></dl>
+      <div class="agent-curve" id="agent-curve"></div><div class="curve-foot"><span>近 5 分钟 / tok/s</span><span>实线已测 / 虚线估算</span></div>
+    </aside></div>
+  </div>`;
+}
+
+function renderThreadList() {
+  const container = element('thread-list');
+  const oldAgentList = element('agent-list');
+  const scroll = container.scrollTop;
+  const subScroll = oldAgentList?.scrollTop ?? 0;
+  const focus = document.activeElement;
+  const focusedThread = focus?.dataset?.thread;
+  const focusedAgent = focus?.dataset?.agent;
+  const { priority, recent } = rows.sections();
+  let html = priority.length ? `<div class="group-heading">优先关注</div>${priority.map(threadHtml).join('')}` : '';
+  let group = null;
+  for (const thread of recent) {
+    const nextGroup = dateGroup(thread.recencyAt ?? thread.updatedAt ?? thread.createdAt);
+    if (nextGroup !== group) html += `<div class="group-heading">最近 / ${escapeHtml(nextGroup)}</div>`;
+    group = nextGroup;
+    html += threadHtml(thread);
+  }
+  if (state.nextThreadCursor) html += '<div class="load-sentinel" id="thread-sentinel">向下滚动载入更多会话</div>';
+  container.innerHTML = html;
+  container.scrollTop = scroll;
+  if (element('agent-list')) element('agent-list').scrollTop = subScroll;
+  if (focusedThread || focusedAgent) {
+    const buttons = container.querySelectorAll(focusedThread ? '[data-thread]' : '[data-agent]');
+    const next = [...buttons].find(button => focusedThread ? button.dataset.thread === focusedThread : button.dataset.agent === focusedAgent);
+    next?.focus({ preventScroll: true });
+  }
+  element('thread-empty').hidden = rows.items.length > 0 || state.snapshot?.collection?.state === 'scanning';
+  element('thread-count').textContent = `已显示 ${rows.items.length} 个根会话${state.nextThreadCursor ? ' / 继续滚动载入' : ''}`;
+  updateThreadRows();
+  updateInspector();
+}
+
+function updateThreadRows() {
+  const byId = new Map(rows.items.map(thread => [thread.id, thread]));
+  for (const row of element('thread-list').querySelectorAll('[data-thread-row]')) {
+    const thread = byId.get(row.dataset.threadRow);
+    if (!thread) continue;
+    row.querySelector('.thread-name').textContent = thread.title || thread.id;
+    row.querySelector('.thread-meta').textContent = threadMeta(thread);
+    row.querySelector('.thread-rate b').textContent = tps(outputTps(thread));
+  }
+  const agents = new Map(state.agents.map(agent => [agent.id, agent]));
+  for (const button of element('thread-list').querySelectorAll('[data-agent]')) {
+    const agent = agents.get(button.dataset.agent);
+    if (!agent) continue;
+    const mode = modePresentation(agent.mode);
+    button.setAttribute('aria-pressed', String(agent.id === state.selectedAgentId));
+    button.querySelector('.agent-meta').textContent = `${agent.model || '未知模型'} / ${mode.label}`;
+    button.querySelector('.agent-rate b').textContent = tps(outputTps(agent));
+    button.querySelector('.agent-rate span').textContent = phasePresentation(agent.phase);
+  }
+  const thread = state.threadData?.thread ?? byId.get(state.openThreadId);
+  if (element('thread-models') && thread) {
+    const models = Array.isArray(thread.modelRates) ? thread.modelRates : [];
+    element('thread-models').textContent = models.map(model => `${model.model || '未知模型'} ${tps(model.outputTps)} tok/s`).join(' / ')
+      || `当前会话合计 ${tps(outputTps(thread))} tok/s`;
+  }
+}
+
+function drawAgentChart(history = []) {
+  const container = element('agent-curve');
+  if (!container) return;
+  const width = Math.max(220, container.clientWidth);
+  const height = 110;
+  const left = 33, right = width - 5, top = 8, bottom = 87;
+  const points = history.map(point => ({ time: Date.parse(point.time), measured: point.measuredTps, estimated: point.estimatedTps }))
+    .filter(point => Number.isFinite(point.time) && finite(point.measured) && finite(point.estimated)).sort((a, b) => a.time - b.time);
+  if (!points.length) {
+    container.innerHTML = '<svg role="img" aria-label="尚无速率历史"><text x="0" y="50" fill="var(--monitor-muted)" font-size="12">尚无速率历史</text></svg>';
+    return;
+  }
+  const end = points.at(-1).time;
+  const start = end - 300_000;
+  const visible = points.filter(point => point.time >= start);
+  const max = Math.max(1, ...visible.flatMap(point => [point.measured, point.estimated])) * 1.15;
+  const x = time => left + Math.max(0, Math.min(1, (time - start) / (end - start))) * (right - left);
+  const y = value => bottom - value / max * (bottom - top);
+  const path = key => visible.map((point, index) => `${index ? 'L' : 'M'}${x(point.time).toFixed(2)},${y(point[key]).toFixed(2)}`).join(' ');
+  let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="所选代理的已测和估算输出速率">`;
+  for (const value of [0, max / 2, max]) {
+    svg += `<line x1="${left}" x2="${right}" y1="${y(value)}" y2="${y(value)}" stroke="var(--monitor-line)"/><text x="${left - 5}" y="${y(value) + 4}" text-anchor="end" fill="var(--monitor-muted)" font-size="11">${number(value)}</text>`;
+  }
+  svg += `<path d="${path('measured')}" fill="none" stroke="var(--monitor-blue)" stroke-width="1.6"/><path d="${path('estimated')}" fill="none" stroke="var(--monitor-purple)" stroke-width="1.6" stroke-dasharray="3 3"/><text x="${left}" y="106" fill="var(--monitor-muted)" font-size="11">-5 分钟</text><text x="${right}" y="106" text-anchor="end" fill="var(--monitor-muted)" font-size="11">现在</text></svg>`;
+  container.innerHTML = svg;
+}
+
+function updateInspector() {
+  const agent = state.agentData?.agent ?? state.agents.find(item => item.id === state.selectedAgentId);
+  if (!element('agent-name') || !agent) return;
+  const mode = modePresentation(agent.mode);
+  element('agent-name').textContent = isMain(agent) ? `主代理${agent.name && agent.name !== agent.id ? ` / ${agent.name}` : ''}`
+    : agent.name && agent.name !== agent.id ? agent.name : `子代理 ${agent.id.slice(0, 8)}`;
+  element('agent-phase').textContent = `${phasePresentation(agent.phase)}${agent.phaseSource === 'log' ? ' / 日志推断' : ''}`;
+  element('agent-model').textContent = `${agent.model || '未知模型'} / ${agent.reasoningEffort || '推理强度未知'}`;
+  element('agent-rate').textContent = `${tps(outputTps(agent))} tok/s${agent.rate?.estimatedTps > 0 ? ' / 含估算' : ''}`;
+  element('agent-mode').textContent = mode.label;
+  element('agent-mode-evidence').textContent = mode.evidence;
+  element('agent-parent').textContent = agent.parentId ? agent.parentId.slice(0, 12) : '-';
+  element('agent-parent').title = agent.parentId || '根会话';
+  element('agent-output').textContent = `${number(agent.tokens?.output)} tokens`;
+  element('agent-input').textContent = `${number(agent.tokens?.input)} / ${number(agent.tokens?.cachedInput)}`;
+  drawAgentChart(state.agentData?.history ?? []);
+}
+
+function acceptSnapshot(snapshot, { complete = false } = {}) {
+  if (!Array.isArray(snapshot.threads)) throw new Error('会话数据格式不完整');
+  if (!health.accept(snapshot)) {
+    renderHealth();
+    return false;
+  }
+  const oldIds = rows.items.map(item => item.id).join('\n');
+  const oldCursor = state.nextThreadCursor;
+  state.snapshot = snapshot;
+  state.nextThreadCursor = snapshot.nextCursor ?? null;
+  rows.merge(snapshot.threads, { complete: complete && state.scope === 'active', preserveIds: [state.openThreadId] });
+  updateOverview();
+  if (oldIds !== rows.items.map(item => item.id).join('\n') || oldCursor !== state.nextThreadCursor) renderThreadList();
+  else updateThreadRows();
+  return true;
+}
+
+async function refreshSnapshot() {
+  if (!state.connected || !panelVisible()) return false;
+  const epoch = state.listEpoch;
+  const count = Math.max(10, rows.items.length);
+  const collected = new Map();
+  const cursors = new Set();
+  let snapshot;
+  let cursor = null;
+  do {
+    const page = await callTool('monitor_snapshot', { limit: Math.min(100, count - collected.size), cursor, order: state.order, scope: state.scope });
+    if (epoch !== state.listEpoch || !state.connected || !panelVisible()) return false;
+    snapshot = page;
+    for (const thread of page.threads ?? []) collected.set(thread.id, thread);
+    cursor = page.nextCursor ?? null;
+    if (cursor && cursors.has(cursor)) throw new Error('会话游标未向前推进');
+    if (cursor) cursors.add(cursor);
+  } while (cursor && collected.size < count);
+  return acceptSnapshot({ ...snapshot, threads: [...collected.values()], nextCursor: cursor }, { complete: !cursor });
+}
+
+async function refreshSelection() {
+  const threadId = state.openThreadId;
+  const epoch = state.selectionEpoch;
+  if (!threadId || !state.connected || !panelVisible() || health.inspect().kind !== 'live') return;
+  const agentId = state.selectedAgentId;
+  const count = Math.max(10, state.agents.length);
+  const collected = new Map();
+  const cursors = new Set();
+  let data;
+  let cursor = null;
+  do {
+    const page = await callTool('monitor_thread', { threadId, limit: Math.min(100, count - collected.size), cursor, scope: state.agentScope });
+    if (epoch !== state.selectionEpoch || threadId !== state.openThreadId || !state.connected || !panelVisible()) {
+      return;
+    }
+    data ??= page;
+    for (const agent of page.agents ?? []) collected.set(agent.id, agent);
+    cursor = page.nextCursor ?? null;
+    if (cursor && cursors.has(cursor)) throw new Error('代理游标未向前推进');
+    if (cursor) cursors.add(cursor);
+  } while (cursor && collected.size < count);
+  const detail = agentId ? await callTool('monitor_agent', { agentId }) : null;
+  data = { ...data, agents: [...collected.values()], nextCursor: cursor };
+  if (epoch !== state.selectionEpoch || threadId !== state.openThreadId || !panelVisible() || health.inspect().kind !== 'live') return;
+  const previousIds = state.agents.map(agent => agent.id).join('\n');
+  const oldCursor = state.nextAgentCursor;
+  state.threadData = data;
+  state.agents = mergeStableItems(state.agents, Array.isArray(data.agents) ? data.agents : [], {
+    complete: !data.nextCursor && state.agentScope !== 'all', preserveIds: [state.selectedAgentId],
+  });
+  if (data.thread) rows.merge([data.thread]);
+  state.nextAgentCursor = data.nextCursor ?? null;
+  if (!state.selectedAgentId) state.selectedAgentId = state.agents.find(isMain)?.id ?? state.agents[0]?.id ?? null;
+  if (detail) {
+    state.agentData = detail;
+    if (detail.agent) state.agents = mergeStableItems(state.agents, [detail.agent]);
+  }
+  else if (state.selectedAgentId) {
+    const initialDetail = await callTool('monitor_agent', { agentId: state.selectedAgentId });
+    if (epoch !== state.selectionEpoch || !panelVisible() || health.inspect().kind !== 'live') return;
+    state.agentData = initialDetail;
+  }
+  if (previousIds !== state.agents.map(agent => agent.id).join('\n') || oldCursor !== state.nextAgentCursor) renderThreadList();
+  else {
+    updateThreadRows();
+    updateInspector();
+  }
+  state.detailError = null;
+  renderHealth();
+}
+
+async function loadMoreThreads() {
+  if (!state.nextThreadCursor || state.loadingThreads || !panelVisible()) return;
+  state.loadingThreads = true;
+  const epoch = state.listEpoch;
+  try {
+    const data = await callTool('monitor_snapshot', { limit: 10, cursor: state.nextThreadCursor, order: state.order, scope: state.scope });
+    if (epoch === state.listEpoch && panelVisible()) acceptSnapshot(data);
+  } catch (error) {
+    reportSnapshotError(error);
+  } finally {
+    state.loadingThreads = false;
+  }
+}
+
+async function loadMoreAgents() {
+  if (!state.openThreadId || !state.nextAgentCursor || state.loadingAgents || !panelVisible() || health.inspect().kind !== 'live') return;
+  state.loadingAgents = true;
+  const epoch = state.selectionEpoch;
+  try {
+    const data = await callTool('monitor_thread', { threadId: state.openThreadId, limit: 10, cursor: state.nextAgentCursor, scope: state.agentScope });
+    if (epoch !== state.selectionEpoch || !panelVisible() || health.inspect().kind !== 'live') return;
+    state.agents = mergeStableItems(state.agents, data.agents ?? []);
+    state.nextAgentCursor = data.nextCursor ?? null;
+    renderThreadList();
+  } catch (error) {
+    reportDetailError(error);
+  } finally {
+    state.loadingAgents = false;
+  }
+}
+
+function nearEnd(container) {
+  return container.scrollTop + container.clientHeight >= container.scrollHeight - 45;
+}
+
+function drawHistory() {
+  const days = Array.isArray(state.history?.days) ? state.history.days : [];
+  const sorted = [...days].sort((a, b) => a.day.localeCompare(b.day));
+  const total = sorted.reduce((sum, day) => sum + (day.outputTokens ?? 0), 0);
+  element('history-summary').textContent = sorted.length ? `${sorted.length} 天 / 已记录输出 ${number(total)} tokens` : '尚无历史用量';
+  element('history-rows').innerHTML = [...sorted].reverse().map(day => `<tr><td>${escapeHtml(day.day)}</td><td>${number(day.inputTokens)}</td><td>${number(day.outputTokens)}</td><td>${number(day.requests)}</td><td>${tps(day.averageTps)}</td></tr>`).join('');
+  const container = element('history-chart');
+  if (!sorted.length) {
+    container.innerHTML = '';
+    return;
+  }
+  const width = Math.max(260, container.clientWidth - 28), height = 132, left = 52, right = width - 8, top = 12, bottom = 108;
+  const max = Math.max(1, ...sorted.map(day => day.outputTokens ?? 0));
+  const step = (right - left) / sorted.length;
+  const barWidth = Math.max(1, Math.min(28, step * .72));
+  const maximumLabel = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(max);
+  let svg = `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="每日输出 token 用量"><text x="${left - 7}" y="12" text-anchor="end" fill="var(--monitor-muted)" font-size="11">${maximumLabel}</text><text x="${left - 7}" y="${bottom}" text-anchor="end" fill="var(--monitor-muted)" font-size="11">0</text><line x1="${left}" x2="${right}" y1="${bottom}" y2="${bottom}" stroke="var(--monitor-line)"/>`;
+  sorted.forEach((day, index) => {
+    const barHeight = (day.outputTokens ?? 0) / max * (bottom - top);
+    const x = left + step * (index + .5) - barWidth / 2;
+    svg += `<rect x="${x}" y="${bottom - barHeight}" width="${barWidth}" height="${barHeight}" fill="var(--monitor-blue)"><title>${escapeHtml(day.day)}: ${number(day.outputTokens)} tokens</title></rect>`;
+  });
+  svg += `<text x="${left}" y="129" fill="var(--monitor-muted)" font-size="11">${escapeHtml(sorted[0].day)}</text><text x="${right}" y="129" text-anchor="end" fill="var(--monitor-muted)" font-size="11">${escapeHtml(sorted.at(-1).day)}</text></svg>`;
+  container.innerHTML = svg;
+}
+
+async function refreshHistory() {
+  if (!state.connected || !panelVisible() || health.inspect().kind !== 'live') return;
+  const history = await callTool('monitor_history');
+  if (state.view === 'history' && panelVisible() && health.inspect().kind === 'live') {
+    state.history = history;
+    drawHistory();
+    state.detailError = null;
+    renderHealth();
+  }
+}
+
+async function refreshDiagnostics() {
+  if (!state.connected || !panelVisible()) return;
+  const data = await callTool('monitor_diagnostics');
+  if (state.view === 'diagnostics' && panelVisible()) {
+    state.diagnostics = data;
+    state.detailError = null;
+    renderHealth();
+  }
+}
+
+async function refreshVisible() {
+  if (!state.connected || !panelVisible()) return;
+  const started = performance.now();
+  try {
+    if (state.view === 'diagnostics') {
+      const [sample, diagnostic] = await Promise.allSettled([refreshSnapshot(), refreshDiagnostics()]);
+      if (sample.status === 'rejected') reportSnapshotError(sample.reason);
+      if (diagnostic.status === 'rejected') reportDetailError(diagnostic.reason);
+      return;
+    }
+    const accepted = await refreshSnapshot();
+    if (accepted && panelVisible()) {
+      try {
+        await (state.view === 'history' ? refreshHistory() : refreshSelection());
+      } catch (error) {
+        reportDetailError(error);
+      }
+    }
+  } finally {
+    state.lastRefreshDurationMs = Math.round((performance.now() - started) * 10) / 10;
+    renderHealth();
+  }
+}
+
+const poller = createVisiblePoller(refreshVisible, { onError: reportSnapshotError });
+
+function updateVisibility() {
+  const visible = state.connected && panelVisible();
+  poller.setVisible(visible);
+  if (visible && freshnessTimer === null) freshnessTimer = setInterval(renderHealth, 1000);
+  else if (!visible && freshnessTimer !== null) {
+    clearInterval(freshnessTimer);
+    freshnessTimer = null;
+  }
+  renderHealth();
+}
+
+function resetThreadList() {
+  state.listEpoch++;
+  state.selectionEpoch++;
+  rows.reset(state.order);
+  state.nextThreadCursor = null;
+  state.openThreadId = null;
+  state.selectedAgentId = null;
+  state.threadData = null;
+  state.agents = [];
+  state.agentData = null;
+  renderThreadList();
+  void refreshSnapshot().catch(reportSnapshotError);
+}
+
+element('thread-order').addEventListener('change', event => {
+  state.order = event.target.value;
+  resetThreadList();
+});
+element('thread-scope').addEventListener('change', event => {
+  state.scope = event.target.value;
+  resetThreadList();
+});
+
+element('thread-list').addEventListener('click', event => {
+  const threadButton = event.target.closest('[data-thread]');
+  if (threadButton) {
+    state.selectionEpoch++;
+    state.openThreadId = state.openThreadId === threadButton.dataset.thread ? null : threadButton.dataset.thread;
+    state.selectedAgentId = null;
+    state.threadData = null;
+    state.agents = [];
+    state.agentData = null;
+    state.nextAgentCursor = null;
+    state.agentScope = 'all';
+    renderThreadList();
+    void refreshSelection().catch(reportDetailError);
+    return;
+  }
+  const agentButton = event.target.closest('[data-agent]');
+  if (agentButton) {
+    state.selectionEpoch++;
+    state.selectedAgentId = agentButton.dataset.agent;
+    state.agentData = null;
+    updateThreadRows();
+    updateInspector();
+    void refreshSelection().catch(reportDetailError);
+  }
+});
+
+element('thread-list').addEventListener('change', event => {
+  if (event.target.id !== 'agent-scope') return;
+  state.selectionEpoch++;
+  state.agentScope = event.target.value;
+  state.agents = state.agents.filter(isMain);
+  state.nextAgentCursor = null;
+  renderThreadList();
+  void refreshSelection().catch(reportDetailError);
+});
+
+element('thread-list').addEventListener('scroll', event => {
+  if (!nearEnd(event.target)) return;
+  if (event.target.id === 'thread-list') void loadMoreThreads();
+  else if (event.target.id === 'agent-list') void loadMoreAgents();
+}, true);
+
+function setView(view) {
+  state.view = view;
+  for (const name of ['live', 'history', 'diagnostics']) {
+    element(`${name}-tab`).setAttribute('aria-selected', String(view === name));
+    element(`${name}-view`).hidden = view !== name;
+  }
+  for (const control of root.querySelectorAll('.live-control')) control.hidden = view !== 'live';
+  if (view === 'history') void refreshHistory().catch(reportDetailError);
+  if (view === 'diagnostics') {
+    renderDiagnostics();
+    void refreshDiagnostics().catch(reportDetailError);
+  }
+}
+element('live-tab').addEventListener('click', () => setView('live'));
+element('history-tab').addEventListener('click', () => setView('history'));
+element('diagnostics-tab').addEventListener('click', () => setView('diagnostics'));
+
+const visibilityObserver = new IntersectionObserver(entries => {
+  state.inViewport = entries.some(entry => entry.isIntersecting);
+  updateVisibility();
+}, { threshold: 0 });
+visibilityObserver.observe(root);
+document.addEventListener('visibilitychange', updateVisibility);
+const resizeObserver = new ResizeObserver(() => {
+  drawAgentChart(state.agentData?.history ?? []);
+  if (state.view === 'history') drawHistory();
+});
+resizeObserver.observe(root);
+
+function stop() {
+  state.connected = false;
+  state.inViewport = false;
+  poller.stop();
+  clearInterval(freshnessTimer);
+  freshnessTimer = null;
+  visibilityObserver.disconnect();
+  resizeObserver.disconnect();
+}
+window.addEventListener('pagehide', stop, { once: true });
+app.onteardown = async () => { stop(); return {}; };
+app.onhostcontextchanged = applyHostContext;
+app.ontoolresult = result => {
+  if (result.structuredContent?.schemaVersion === 1 && !state.snapshot) {
+    try { acceptSnapshot(result.structuredContent); }
+    catch (error) { reportSnapshotError(error); }
+  }
+};
+
+async function start() {
+  await app.connect();
+  state.connected = true;
+  applyHostContext(app.getHostContext());
+  updateVisibility();
+}
+start().catch(error => {
+  element('connection').textContent = '无法连接宿主';
+  reportSnapshotError(new Error(`MCP App 连接失败: ${error.message}`));
+});

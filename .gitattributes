@@ -3,3 +3,6 @@
 *.bat text eol=crlf
 *.cmd text eol=crlf
 *.reg text eol=crlf
+
+# Preserve whitespace inside bundled dependency template strings and license text.
+plugins/agent-monitor/dist/* -whitespace
