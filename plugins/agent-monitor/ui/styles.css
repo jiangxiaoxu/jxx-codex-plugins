@@ -35,7 +35,7 @@ strong, b { font-weight: 600; }
 .model-dot { display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex-shrink: 0; }
 .model-number { font-variant-numeric: tabular-nums; }
 .overview-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px; margin-top: 7px; color: var(--monitor-muted); font-size: 11px; }
-.freshness-info { margin-top: 4px; color: var(--monitor-muted); font-size: 11px; }
+.freshness-info, .coverage-info { margin-top: 4px; color: var(--monitor-muted); font-size: 11px; }
 #monitor[data-health="stale"] .total-rate, #monitor[data-health="stale"] .thread-rate, #monitor[data-health="stale"] .agent-rate { color: var(--monitor-muted); }
 #monitor[data-health="stale"] .freshness-info { color: var(--color-text-warning, light-dark(#8a5b22, #e1ba87)); }
 .view-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px; padding: 7px 14px; background: var(--monitor-soft); border-block: 1px solid var(--monitor-line); }
@@ -69,6 +69,7 @@ strong, b { font-weight: 600; }
 .inspector { min-width: 0; padding-left: 12px; border-left: 1px solid var(--monitor-line); }
 .inspector-head { display: flex; justify-content: space-between; gap: 8px; align-items: start; font-size: 12px; }
 .inspector-model { margin: 4px 0 8px; font-size: 12px; overflow-wrap: anywhere; }
+.inspector-configuration { margin: -4px 0 8px; color: var(--monitor-muted); font-size: 11px; overflow-wrap: anywhere; }
 .facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px 10px; margin: 0; font-size: 11px; }
 .facts dt { color: var(--monitor-muted); }
 .facts dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

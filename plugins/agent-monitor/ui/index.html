@@ -13,14 +13,15 @@
     <span class="connection" id="connection" role="status">正在连接</span>
   </header>
   <div class="notice" id="notice" hidden role="status"></div>
-  <section class="overview" aria-label="全部会话速率总览">
+  <section class="overview" aria-label="Working 和 Ready 会话速率总览">
     <div class="overview-line">
       <div><span class="muted">总输出速率</span> <strong id="total-rate" class="total-rate">-</strong><span class="muted"> tok/s</span></div>
       <span class="muted" id="activity-summary">正在读取 Codex 数据</span>
     </div>
     <div class="model-stack" id="model-stack" aria-label="当前模型速率占比"></div>
     <div class="model-legend" id="model-legend"></div>
-    <div class="overview-foot"><span>最近 3 秒 / 未压缩日志</span><span id="estimated-share">估算占比 -</span></div>
+    <div class="overview-foot"><span>最近 3 秒 / Working + Ready / 未压缩</span><span id="estimated-share">估算占比 -</span></div>
+    <div class="coverage-info" id="sample-coverage" hidden></div>
     <div class="freshness-info" id="data-freshness" role="status">尚无成功采样</div>
   </section>
   <div class="view-bar">
@@ -29,19 +30,19 @@
       <button type="button" id="history-tab" role="tab" aria-selected="false" aria-controls="history-view">用量历史</button>
       <button type="button" id="diagnostics-tab" role="tab" aria-selected="false" aria-controls="diagnostics-view">诊断</button>
     </div>
-    <label class="live-control"><span class="sr-only">会话范围</span><select id="thread-scope"><option value="all">全部会话</option><option value="active">进行中</option></select></label>
-    <label class="live-control"><span class="sr-only">会话排序</span><select id="thread-order"><option value="priority">优先关注</option><option value="recent">最近更新</option></select></label>
+    <label class="live-control"><span class="sr-only">会话范围</span><select id="thread-scope"><option value="all">Working + Ready</option><option value="working">Working</option><option value="ready">Ready</option></select></label>
+    <label class="live-control"><span class="sr-only">会话排序</span><select id="thread-order"><option value="recent">最近交互</option><option value="priority">Working 优先</option></select></label>
   </div>
   <section id="live-view" role="tabpanel" aria-labelledby="live-tab">
     <div id="thread-list" class="thread-list" aria-label="根会话列表"></div>
-    <div id="thread-empty" class="empty" hidden>尚未发现 Codex 会话</div>
-    <div class="list-foot"><span id="thread-count">-</span><span>自动更新数值 / 阅读期间保持顺序</span></div>
+    <div id="thread-empty" class="empty" hidden>没有符合范围的 Working / Ready 会话</div>
+    <div class="list-foot"><span id="thread-count">-</span><span>每 0.5 秒自动更新 / 最近交互在前</span></div>
   </section>
   <section id="history-view" role="tabpanel" aria-labelledby="history-tab" hidden>
     <div class="history-summary" id="history-summary">正在读取历史用量</div>
     <div class="history-chart" id="history-chart"></div>
     <div class="history-table-wrap"><table class="history-table"><thead><tr><th scope="col">日期</th><th scope="col">输入 tokens</th><th scope="col">输出 tokens</th><th scope="col">请求</th><th scope="col">均速 tok/s</th></tr></thead><tbody id="history-rows"></tbody></table></div>
-    <div class="history-foot">按日聚合 / 仅采集未压缩文件及既有缓存 / 输出包含 reasoning</div>
+    <div class="history-foot" id="history-coverage">按日聚合 / 仅未压缩日志及既有采样 / 输出包含 reasoning</div>
   </section>
   <section id="diagnostics-view" role="tabpanel" aria-labelledby="diagnostics-tab" hidden>
     <dl class="diagnostics-facts"><dt>日志路径</dt><dd id="diagnostics-path">尚未取得</dd><dt>后端版本 / 等级</dt><dd id="diagnostics-version">-</dd><dt>日志写入</dt><dd id="diagnostics-write">-</dd><dt>跳过压缩文件</dt><dd id="diagnostics-skipped">-</dd></dl>
