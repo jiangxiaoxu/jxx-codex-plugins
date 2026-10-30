@@ -14,13 +14,20 @@ const clock = time => new Date(time).toLocaleTimeString('zh-CN', { hour12: false
 const decimal = value => value.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const tierLabels = { fast: 'Fast', priority: 'Fast', ultrafast: 'Ultrafast', standard: 'Standard', default: 'Standard' };
+const tierOrder = { Standard: 0, Fast: 1, Ultrafast: 2 };
 
 function groupHtml(groups) {
   if (!Array.isArray(groups)) return '';
   if (!groups.length) return '<div class="curve-contributors-empty">此刻无输出贡献</div>';
-  return `<div class="curve-contributors" aria-label="模型与档位速率构成">${groups.map(item => `<div class="curve-contributor">
-    <div><strong>${escapeHtml(item.model || '未知模型')}${tierLabels[item.serviceTier] ? ` / ${tierLabels[item.serviceTier]}` : ''}</strong><span>${item.agentCount} 个代理</span></div>
-    <div class="contributor-rate"><b>${decimal(item.measuredTps)}</b></div>
+  const models = new Map();
+  for (const item of groups) {
+    const model = item.model || '未知模型';
+    if (!models.has(model)) models.set(model, []);
+    models.get(model).push(item);
+  }
+  return `<div class="curve-contributors" aria-label="模型与档位速率构成">${[...models].map(([model, tiers]) => `<div class="curve-model">
+    <strong class="contributor-label">${escapeHtml(model)}</strong>
+    <div class="curve-tiers">${tiers.sort((a, b) => (tierOrder[tierLabels[a.serviceTier]] ?? 3) - (tierOrder[tierLabels[b.serviceTier]] ?? 3)).map(item => `<span class="curve-tier" title="${escapeHtml(tierLabels[item.serviceTier] || '')}${tierLabels[item.serviceTier] ? ' / ' : ''}${item.agentCount} 个代理 / ${decimal(item.measuredTps)} tok/s"><span>${tierLabels[item.serviceTier] || ''} <b>×${item.agentCount}</b></span><b class="contributor-rate">${decimal(item.measuredTps)}</b></span>`).join('')}</div>
   </div>`).join('')}</div>`;
 }
 
@@ -265,13 +272,20 @@ export class RateChart {
       const hasDetails = Array.isArray(selected?.groups);
       tooltip.classList.toggle('has-contributors', hasDetails);
       const position = x(timeline.cursor);
-      const tooltipWidth = Math.min(hasDetails ? 380 : 220, width);
-      tooltip.style.left = `${Math.max(0, Math.min(width - tooltipWidth, position > width / 2 ? position - tooltipWidth - 8 : position + 8))}px`;
       const maxHeight = Math.max(60, frameBottom - frameTop);
       const constraintsChanged = this.tooltipMaxHeight !== maxHeight;
       this.tooltipMaxHeight = maxHeight;
       tooltip.style.maxHeight = `${maxHeight}px`;
-      if (changed || constraintsChanged || this.tooltipHeight === 0) this.tooltipHeight = tooltip.offsetHeight;
+      if (changed || constraintsChanged || this.tooltipHeight === 0) {
+        this.tooltipHeight = tooltip.offsetHeight;
+        this.tooltipWidth = tooltip.offsetWidth;
+      }
+      const tooltipWidth = this.tooltipWidth;
+      const visibleLeft = Math.max(0, -plotRect.left, (frame?.left ?? plotRect.left) - plotRect.left);
+      const visibleRight = Math.min(width, window.innerWidth - plotRect.left, (frame?.right ?? plotRect.right) - plotRect.left);
+      const rightPosition = position + 8;
+      const preferredLeft = rightPosition + tooltipWidth <= visibleRight ? rightPosition : position - tooltipWidth - 8;
+      tooltip.style.left = `${Math.max(visibleLeft, Math.min(visibleRight - tooltipWidth, preferredLeft))}px`;
       tooltip.style.top = `${Math.max(frameTop - plotRect.top, Math.min(height - 25 - this.tooltipHeight, frameBottom - plotRect.top - this.tooltipHeight))}px`;
     }
   }
