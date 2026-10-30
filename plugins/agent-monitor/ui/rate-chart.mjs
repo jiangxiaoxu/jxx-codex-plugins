@@ -2,12 +2,12 @@ import { RateTimeline } from './timeline.mjs';
 
 export const rateChartHtml = ({ id, label }) => `<div class="rate-timeline" id="${id}">
   <div class="curve-controls" aria-label="时间线控制">
-    <span class="curve-mode">实时 / 近 5 分钟</span>
+    <span class="curve-mode">实时 · 5 分钟</span>
     <div><button type="button" data-curve="previous" aria-label="向前移动时间段">←</button><button type="button" data-curve="next" aria-label="向后移动时间段">→</button><button type="button" data-curve="in" aria-label="放大时间线">+</button><button type="button" data-curve="out" aria-label="缩小时间线">−</button><button type="button" data-curve="live">恢复实时</button></div>
   </div>
-  <div class="agent-curve" tabindex="0" role="group" aria-label="${label}" aria-describedby="${id}-help ${id}-detail"><div class="curve-svg"></div><div class="curve-tooltip" id="${id}-detail" hidden></div></div>
-  <div class="curve-foot"><span>实线已测 / 虚线估算 / tok/s</span><span class="curve-range"></span></div>
-  <div class="curve-help" id="${id}-help">拖拽框选放大; 悬浮或轻点查看. 方向键逐秒查看, +/− 缩放. 仅最近 5 分钟速率采样, 无完整历史状态.</div>
+  <div class="agent-curve" tabindex="0" role="group" aria-label="${label}" aria-describedby="${id}-help ${id}-detail" title="拖拽框选; 悬浮查看; 方向键逐秒查看, +/− 缩放."><div class="curve-svg"></div><div class="curve-tooltip" id="${id}-detail" hidden></div></div>
+  <div class="curve-foot"><span title="单位 tok/s; 实线为已测请求速率, 虚线为生成中估算.">已测 ━ / 估算 ┄</span><span class="curve-range"></span></div>
+  <div class="sr-only" id="${id}-help">拖拽框选放大; 悬浮或轻点查看. 方向键逐秒查看, +/− 缩放. 仅最近 5 分钟速率采样, 无完整历史状态.</div>
 </div>`;
 
 const clock = time => new Date(time).toLocaleTimeString('zh-CN', { hour12: false });
@@ -104,7 +104,7 @@ export class RateChart {
     const timeline = this.timeline, plot = this.plot;
     const tooltip = this.host.querySelector('.curve-tooltip');
     const view = timeline.view;
-    this.host.querySelector('.curve-mode').textContent = timeline.frozen ? '回看 / 已固定采样' : '实时 / 近 5 分钟';
+    this.host.querySelector('.curve-mode').textContent = timeline.frozen ? '回看' : '实时 · 5 分钟';
     for (const button of this.host.querySelectorAll('[data-curve]')) {
       const action = button.dataset.curve;
       button.disabled = !view || (action === 'live' && !timeline.frozen)
@@ -119,8 +119,8 @@ export class RateChart {
       this.host.querySelector('.curve-range').textContent = '';
       return;
     }
-    const width = Math.max(220, plot.clientWidth), height = 150;
-    const left = 38, right = width - 8, top = 12, bottom = 125;
+    const width = Math.max(220, plot.clientWidth), height = Math.max(110, plot.clientHeight || 140);
+    const left = 38, right = width - 8, top = 12, bottom = height - 25;
     const [start, end] = view;
     const visible = timeline.data.filter(point => point.time >= start && point.time <= end);
     const max = Math.max(1, ...visible.flatMap(point => [point.measuredTps, point.estimatedTps])) * 1.1;
@@ -137,7 +137,7 @@ export class RateChart {
       for (const [key, color] of [['measuredTps', 'blue'], ['estimatedTps', 'purple']]) svg += `<circle cx="${pos}" cy="${y(selected[key])}" r="3" fill="var(--monitor-${color})"/>`;
     }
     if (this.drag) svg += `<rect x="${x(Math.min(this.drag.start, this.drag.end))}" y="${top}" width="${Math.abs(x(this.drag.end) - x(this.drag.start))}" height="${bottom - top}" fill="var(--monitor-blue)" opacity=".2"/>`;
-    svg += `<text x="${left}" y="146" fill="var(--monitor-muted)" font-size="11">${clock(start)}</text><text x="${right}" y="146" text-anchor="end" fill="var(--monitor-muted)" font-size="11">${clock(end)}</text></svg>`;
+    svg += `<text x="${left}" y="${height - 4}" fill="var(--monitor-muted)" font-size="11">${clock(start)}</text><text x="${right}" y="${height - 4}" text-anchor="end" fill="var(--monitor-muted)" font-size="11">${clock(end)}</text></svg>`;
     plot.querySelector('.curve-svg').innerHTML = svg;
     tooltip.hidden = timeline.cursor === null || Boolean(this.drag);
     if (!tooltip.hidden) {

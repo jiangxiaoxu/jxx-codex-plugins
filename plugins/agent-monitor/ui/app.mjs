@@ -7,10 +7,11 @@ import { RateChart, rateChartHtml } from './rate-chart.mjs';
 
 const root = document.getElementById('monitor');
 const element = id => document.getElementById(id);
-const app = new App({ name: 'Agent Monitor', version: '0.1.4' }, {});
+const app = new App({ name: 'Agent Monitor', version: '0.1.5' }, {});
 const rows = new ThreadList();
 const health = new SnapshotHealth();
 const rateChart = new RateChart();
+const threadRateChart = new RateChart();
 const globalRateChart = new RateChart();
 const displayRates = new DisplayRates();
 const stableCounts = new StableCounts();
@@ -28,6 +29,7 @@ const state = {
 };
 let freshnessTimer = null;
 const seriesColors = ['var(--monitor-blue)', 'var(--monitor-purple)', 'var(--monitor-green)', 'var(--monitor-orange)'];
+const tierLabels = { fast: 'Fast', priority: 'Fast', ultrafast: 'Ultrafast', standard: 'Standard', default: 'Standard' };
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const finite = value => typeof value === 'number' && Number.isFinite(value);
@@ -64,9 +66,13 @@ function renderHealth() {
   if (state.connected) element('connection').textContent = !visible ? '显示已暂停'
     : current.collectionState === 'paused' ? '采集已暂停 / 正在恢复'
       : current.kind === 'live' ? '自动更新' : current.kind === 'stale' ? '数据已过期 / 正在重试' : '等待成功采样 / 正在重试';
-  element('data-freshness').textContent = current.lastSuccessAt
+  const freshness = current.lastSuccessAt
     ? `${current.kind === 'stale' ? '数据已过期 / ' : ''}最后成功采样 ${new Date(current.lastSuccessAt).toLocaleString('zh-CN', { hour12: false })} / ${Math.floor(current.ageMs / 1000)} 秒前`
     : '尚无成功采样 / 数值暂不可用';
+  element('connection').title = freshness;
+  element('data-freshness').hidden = current.kind === 'live';
+  element('data-freshness').textContent = current.kind === 'stale' ? '数据已过期' : '等待采样';
+  element('data-freshness').title = freshness;
   const warnings = state.snapshot?.collection?.warnings;
   if (current.kind !== 'live') setNotice(`${current.issue || '正在读取日志'}. ${health.snapshot ? '保留最后成功数据.' : '尚无可用数据.'} 将自动重试.`, current.kind === 'stale' || current.collectionState === 'error');
   else if (state.backgroundError) setNotice(`后台采集设置失败: ${state.backgroundError}.`, true);
@@ -173,12 +179,11 @@ function updateOverview() {
   const rate = displayRates.read('global', totals, totals);
   element('host-name').textContent = snapshot.hostName || '当前插件宿主';
   element('total-rate').textContent = tps(rate?.outputTps);
-  element('activity-summary').textContent = `Working ${number(totals.workingThreadCount)} / Ready ${number(totals.readyThreadCount)} / ${number(totals.threadCount)} 个根会话`;
-  const partial = snapshot.collection?.coverage === 'sampled' || snapshot.collection?.historyComplete === false;
-  element('sample-coverage').hidden = !partial;
-  element('sample-coverage').textContent = partial ? 'Token 和历史为已采样累计, 不代表会话完整用量.' : '';
-  element('rate-parts').textContent = `已测 ${tps(rate?.measuredTps)} / 估算 ${tps(rate?.estimatedTps)} tok/s`;
+  element('activity-summary').textContent = `Working ${number(totals.workingThreadCount)} / Ready ${number(totals.readyThreadCount)}`;
+  element('activity-summary').title = `${number(totals.threadCount)} 个根会话; 用量为已采样累计.`;
+  element('total-rate').title = `已测 ${tps(rate?.measuredTps)} / 估算 ${tps(rate?.estimatedTps)} tok/s`;
   updateAgentCounts(snapshot.agentCounts);
+  updateModelTierRates(snapshot.modelTierRates);
   drawGlobalChart();
   renderHealth();
 }
@@ -189,9 +194,23 @@ function updateAgentCounts(counts) {
   if (stable === displayedCounts) return;
   displayedCounts = stable;
   const evidence = (sources, labels) => labels.filter(([key]) => sources?.[key] > 0).map(([key, label]) => `${label} ${number(sources[key])}`).join(' / ');
-  element('model-counts').innerHTML = (stable.models ?? []).map(item => `<span class="agent-count" title="${escapeHtml(evidence(item.sources, [['turn_context', '执行记录'], ['runtime_config', '当前配置'], ['log_metadata', '日志元数据'], ['unknown', '未知']]))}">${escapeHtml(item.model || '未知模型')} <b>×${number(item.count)}</b></span>`).join('') || '<span class="muted">暂无代理</span>';
-  const tierLabels = { fast: 'Fast', ultrafast: 'Ultrafast', standard: 'Standard' };
-  element('tier-counts').innerHTML = (stable.serviceTiers ?? []).map(item => `<span class="agent-count" title="${escapeHtml(evidence(item.sources, [['selected', '已选择'], ['recorded', '请求记录'], ['unknown', '未知']]))}">${escapeHtml(tierLabels[item.tier] || '未知档位')} <b>×${number(item.count)}</b></span>`).join('') || '<span class="muted">暂无代理</span>';
+  element('model-counts').innerHTML = (stable.combinations ?? []).map(item => {
+    const modelEvidence = evidence(item.modelSources, [['turn_context', '执行记录'], ['runtime_config', '当前配置'], ['log_metadata', '日志元数据'], ['unknown', '未知']]);
+    const tierEvidence = evidence(item.tierSources, [['selected', '已选择'], ['recorded', '请求记录'], ['unknown', '未知']]);
+    return `<span class="agent-count" title="${escapeHtml(`模型: ${modelEvidence}; 档位: ${tierEvidence}`)}">${escapeHtml(item.model || '未知模型')} / ${escapeHtml(tierLabels[item.serviceTier] || '未知档位')} <b>×${number(item.count)}</b></span>`;
+  }).join('') || '<span class="muted">无活跃代理</span>';
+}
+
+function updateModelTierRates(rates) {
+  const samples = (Array.isArray(rates) ? rates : []).filter(sample => finite(sample.measuredTps)
+    && sample.measuredTps >= 0 && Number.isFinite(Date.parse(sample.lastSampleAt)));
+  element('model-rate-row').hidden = samples.length === 0;
+  element('model-rates').innerHTML = samples.map(sample => {
+    const date = new Date(sample.lastSampleAt);
+    const time = date.toLocaleTimeString('zh-CN', { hour12: false });
+    const details = `${number(sample.sampleCount)} 个请求 / ${number(sample.activeDurationMs / 1000, 1)} 秒有效运行; 最近样本 ${date.toLocaleString('zh-CN', { hour12: false })}`;
+    return `<span class="model-rate" title="${escapeHtml(details)}">${escapeHtml(sample.model || '未知模型')} / ${escapeHtml(tierLabels[sample.serviceTier] || '未知档位')} <b>${tps(sample.measuredTps)}</b> tok/s <time datetime="${escapeHtml(sample.lastSampleAt)}">· ${escapeHtml(time)}</time></span>`;
+  }).join('');
 }
 
 function drawGlobalChart() {
@@ -231,23 +250,23 @@ function detailHtml() {
   return `<div class="thread-detail">
     <div class="agent-layout"><div class="agent-column">
       <button type="button" class="agent-row thread-overview-row" data-overview aria-pressed="${state.selectedAgentId === null}"><span><span class="agent-name">线程总览</span><span class="agent-meta" id="thread-overview-meta">正在读取线程</span></span><span class="agent-rate"><b id="thread-overview-rate">-</b><span>合计 tok/s</span></span></button>
-      <div class="agent-section-label">主代理</div>
       <div class="main-agent">${main ? agentHtml(main) : `<span class="muted">${state.threadData ? '主代理不在当前监视范围' : '正在读取主代理'}</span>`}</div>
-      <div class="sub-head"><span>子代理 / 最近交互</span><select id="agent-scope" aria-label="子代理范围">${scopeOptions}</select></div>
+      <div class="sub-head"><span>子代理</span><select id="agent-scope" aria-label="子代理范围">${scopeOptions}</select></div>
       <div class="agent-list" id="agent-list">${children.map(agentHtml).join('')}<div class="load-sentinel" id="agent-sentinel">${state.nextAgentCursor ? '向下滚动载入更多' : `${children.length} 个子代理`}</div></div>
     </div><aside class="inspector" aria-label="线程与代理详情">
       <div id="thread-inspector"${state.selectedAgentId === null ? '' : ' hidden'}>
-        <div class="inspector-head"><strong>线程总览</strong><span class="muted" id="thread-overview-status"></span></div>
-        <div class="inspector-model" id="thread-overview-title"></div>
-        <dl class="facts"><dt>合计输出</dt><dd id="thread-total-rate">-</dd><dt>已测 / 估算</dt><dd id="thread-rate-parts">-</dd><dt>监视中的代理</dt><dd id="thread-agent-count">-</dd><dt>Working / Ready</dt><dd id="thread-agent-statuses">-</dd><dt>已采样输出</dt><dd id="thread-output">-</dd><dt>已采样输入 / 缓存</dt><dd id="thread-input">-</dd><dt>其中 reasoning</dt><dd id="thread-reasoning">-</dd></dl>
-        <div class="agent-section-label">模型输出贡献</div><div class="thread-models" id="thread-models"></div>
-        <p class="inspector-note">汇总线程全部可监视代理, 包含未加载的列表行. Token 为已采样累计.</p>
+        <div class="inspector-head"><strong title="汇总当前监视成员, 包含未显示的代理; 时间线按当前成员回看.">线程总览</strong><span class="muted" id="thread-overview-status"></span></div>
+        <div class="sr-only" id="thread-overview-title"></div>
+        <dl class="facts metric-grid"><div><dt>输出 tok/s</dt><dd id="thread-total-rate">-</dd></div><div><dt>已测 / 估算</dt><dd id="thread-rate-parts">-</dd></div><div title="当前监视范围内的代理"><dt>代理 / Working / Ready</dt><dd><span id="thread-agent-count">-</span> / <span id="thread-agent-statuses">-</span></dd></div><div title="已采样累计, 非完整会话用量"><dt>输出 tokens</dt><dd id="thread-output">-</dd></div><div><dt>输入 / 缓存</dt><dd id="thread-input">-</dd></div><div title="已包含于输出 tokens"><dt>Reasoning</dt><dd id="thread-reasoning">-</dd></div></dl>
+        <div class="thread-models" id="thread-models" title="当前模型输出贡献"></div>
+        ${rateChartHtml({ id: 'thread-rate-timeline', label: '线程汇总输出速率时间线' })}
       </div>
       <div id="agent-inspector"${state.selectedAgentId === null ? ' hidden' : ''}>
       <div class="inspector-head"><strong id="agent-name">${state.selectedAgentId || !state.threadData ? '正在读取代理' : '请选择代理'}</strong><span class="muted" id="agent-phase"></span></div>
       <div class="inspector-model" id="agent-model"></div>
       <div class="inspector-configuration" id="agent-configuration" hidden></div>
-      <dl class="facts"><dt>当前输出</dt><dd id="agent-rate">-</dd><dt>加速模式</dt><dd id="agent-mode">-</dd><dt>模式依据</dt><dd id="agent-mode-evidence">-</dd><dt>父代理</dt><dd id="agent-parent">-</dd><dt>已采样输出</dt><dd id="agent-output">-</dd><dt>已采样输入 / 缓存</dt><dd id="agent-input">-</dd></dl>
+      <dl class="facts metric-grid agent-metrics"><div><dt>输出 tok/s</dt><dd id="agent-rate">-</dd></div><div><dt>Service tier</dt><dd id="agent-mode">-</dd></div><div title="已采样累计, 非完整会话用量"><dt>输出 tokens</dt><dd id="agent-output">-</dd></div><div><dt>输入 / 缓存</dt><dd id="agent-input">-</dd></div></dl>
+      <details class="agent-metadata"><summary>更多信息</summary><dl class="facts"><dt>档位依据</dt><dd id="agent-mode-evidence">-</dd><dt>父代理</dt><dd id="agent-parent">-</dd></dl></details>
       ${rateChartHtml({ id: 'agent-rate-timeline', label: '所选代理输出速率时间线' })}
       </div>
     </aside></div>
@@ -336,14 +355,14 @@ function updateThreadRows() {
     element('thread-overview-rate').textContent = tps(outputTps(thread));
     element('thread-overview-title').textContent = thread.title || thread.id;
     element('thread-overview-status').textContent = phasePresentation(thread.status);
-    element('thread-total-rate').textContent = `${tps(outputTps(thread))} tok/s`;
+    element('thread-total-rate').textContent = tps(outputTps(thread));
     const rate = displayedRate(thread);
-    element('thread-rate-parts').textContent = `${tps(rate?.measuredTps)} / ${tps(rate?.estimatedTps)} tok/s`;
+    element('thread-rate-parts').textContent = `${tps(rate?.measuredTps)} / ${tps(rate?.estimatedTps)}`;
     element('thread-agent-count').textContent = number(thread.agentCount);
     element('thread-agent-statuses').textContent = `${number(thread.activeAgentCount)} / ${number(finite(thread.agentCount) && finite(thread.activeAgentCount) ? thread.agentCount - thread.activeAgentCount : null)}`;
-    element('thread-output').textContent = `${number(thread.tokens?.output)} tokens`;
+    element('thread-output').textContent = number(thread.tokens?.output);
     element('thread-input').textContent = `${number(thread.tokens?.input)} / ${number(thread.tokens?.cachedInput)}`;
-    element('thread-reasoning').textContent = `${number(thread.tokens?.reasoning)} tokens`;
+    element('thread-reasoning').textContent = number(thread.tokens?.reasoning);
   }
   if (element('thread-models') && thread) {
     const models = Array.isArray(thread.modelRates) ? thread.modelRates : [];
@@ -356,9 +375,14 @@ function drawAgentChart(history = []) {
   rateChart.update(element('agent-rate-timeline'), state.selectedAgentId, history);
 }
 
+function drawThreadChart() {
+  threadRateChart.update(element('thread-rate-timeline'), state.openThreadId, state.threadData?.history ?? []);
+}
+
 function updateInspector() {
   if (element('thread-inspector')) element('thread-inspector').hidden = state.selectedAgentId !== null;
   if (element('agent-inspector')) element('agent-inspector').hidden = state.selectedAgentId === null;
+  if (state.selectedAgentId === null) { drawThreadChart(); return; }
   const agent = state.agentData?.agent ?? state.agents.find(item => item.id === state.selectedAgentId);
   if (!element('agent-name') || !agent) return;
   const mode = modePresentation(agent.mode);
@@ -371,12 +395,13 @@ function updateInspector() {
   element('agent-model').textContent = `${model.label} / ${model.effortLabel}`;
   element('agent-configuration').hidden = !model.configuration;
   element('agent-configuration').textContent = model.configuration || '';
-  element('agent-rate').textContent = `${tps(outputTps(agent))} tok/s${agent.rate?.estimatedTps > 0 ? ' / 含估算' : ''}`;
+  element('agent-rate').textContent = `${tps(outputTps(agent))}${agent.rate?.estimatedTps > 0 ? ' *' : ''}`;
+  element('agent-rate').title = agent.rate?.estimatedTps > 0 ? '含生成中估算' : '已测输出速率';
   element('agent-mode').textContent = mode.label;
   element('agent-mode-evidence').textContent = mode.evidence;
   element('agent-parent').textContent = agent.parentId ? agent.parentId.slice(0, 12) : '-';
   element('agent-parent').title = agent.parentId || '根会话';
-  element('agent-output').textContent = `${number(agent.tokens?.output)} tokens`;
+  element('agent-output').textContent = number(agent.tokens?.output);
   element('agent-input').textContent = `${number(agent.tokens?.input)} / ${number(agent.tokens?.cachedInput)}`;
   drawAgentChart(state.agentData?.history ?? []);
 }
@@ -541,11 +566,10 @@ function drawHistory() {
   const days = Array.isArray(state.history?.days) ? state.history.days : [];
   const sorted = [...days].sort((a, b) => a.day.localeCompare(b.day));
   const total = sorted.reduce((sum, day) => sum + (day.outputTokens ?? 0), 0);
-  element('history-summary').textContent = sorted.length ? `${sorted.length} 天 / 已记录输出 ${number(total)} tokens` : '尚无历史用量';
+  element('history-summary').textContent = sorted.length ? `${sorted.length} 天 · ${number(total)} 输出 tokens` : '尚无历史用量';
   const partial = state.history?.coverage === 'sampled' || state.history?.historyComplete === false;
-  element('history-coverage').textContent = partial
-    ? '已采样数据按日聚合, 含既有记录; 非会话完整用量. 输出包含 reasoning.'
-    : '按日聚合 / 仅未压缩日志及既有采样 / 输出包含 reasoning';
+  element('history-coverage').textContent = partial ? '按日采样 · 含 reasoning' : '按日聚合 · 含 reasoning';
+  element('history-coverage').title = partial ? '包含既有采样记录, 不代表会话完整用量; 输出已包含 reasoning.' : '输出已包含 reasoning.';
   element('history-rows').innerHTML = [...sorted].reverse().map(day => `<tr><td>${escapeHtml(day.day)}</td><td>${number(day.inputTokens)}</td><td>${number(day.outputTokens)}</td><td>${number(day.requests)}</td><td>${tps(day.averageTps)}</td></tr>`).join('');
   const container = element('history-chart');
   if (!sorted.length) {
@@ -757,6 +781,7 @@ document.addEventListener('visibilitychange', updateVisibility);
 const resizeObserver = new ResizeObserver(() => {
   if (!panelVisible()) return;
   drawGlobalChart();
+  drawThreadChart();
   drawAgentChart(state.agentData?.history ?? []);
   if (state.view === 'history') drawHistory();
 });

@@ -23,15 +23,23 @@ export class MetricsStore {
       CREATE INDEX IF NOT EXISTS response_end ON responses(end_ms);
       CREATE INDEX IF NOT EXISTS response_agent ON responses(agent_id, end_ms);
       CREATE INDEX IF NOT EXISTS response_day ON responses(day);
+      CREATE TABLE IF NOT EXISTS response_service_tiers(response_key TEXT PRIMARY KEY, service_tier TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS peaks(day TEXT PRIMARY KEY, tps REAL NOT NULL);`);
       this.insert = this.db.prepare('INSERT OR IGNORE INTO responses VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      this.insertTier = this.db.prepare('INSERT INTO response_service_tiers VALUES(?, ?)');
     } catch (error) { this.db.close(); throw error; }
   }
 
   add(response) {
-    const { key, agentId, model, startMs, endMs, tokens } = response;
-    const result = this.insert.run(key, agentId, model, startMs, endMs, localDay(endMs), tokens.input, tokens.cachedInput, tokens.output, tokens.reasoning);
-    return Number(result.changes) !== 0;
+    const { key, agentId, model, serviceTier, startMs, endMs, tokens } = response;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const result = this.insert.run(key, agentId, model, startMs, endMs, localDay(endMs), tokens.input, tokens.cachedInput, tokens.output, tokens.reasoning);
+      const inserted = Number(result.changes) !== 0;
+      if (inserted && typeof serviceTier === 'string' && serviceTier) this.insertTier.run(key, serviceTier);
+      this.db.exec('COMMIT');
+      return inserted;
+    } catch (error) { this.db.exec('ROLLBACK'); throw error; }
   }
 
   owner(key) {
@@ -46,14 +54,25 @@ export class MetricsStore {
       const initial = afterRowId === null;
       const cursor = this.db.prepare('SELECT COALESCE(MAX(rowid), 0) AS value FROM responses').get().value;
       const totals = initial ? new Map(this.db.prepare('SELECT agent_id AS id, SUM(input_tokens) AS input, SUM(cached_tokens) AS cachedInput, SUM(output_tokens) AS output, SUM(reasoning_tokens) AS reasoning FROM responses GROUP BY agent_id').all().map(row => [row.id, { input: row.input, cachedInput: row.cachedInput, output: row.output, reasoning: row.reasoning }])) : null;
-      const rows = this.db.prepare(`SELECT rowid AS rowId, response_key AS key, agent_id AS agentId, model,
+      const rows = this.db.prepare(`SELECT r.rowid AS rowId, r.response_key AS key, agent_id AS agentId, model, t.service_tier AS serviceTier,
         start_ms AS startMs, end_ms AS endMs, input_tokens AS input, cached_tokens AS cachedInput,
-        output_tokens AS output, reasoning_tokens AS reasoning FROM responses
-        WHERE ${initial ? 'end_ms >= ?' : 'rowid > ?'} ORDER BY rowid`).all(initial ? nowMs - 1800000 : afterRowId);
+        output_tokens AS output, reasoning_tokens AS reasoning FROM responses r
+        LEFT JOIN response_service_tiers t ON t.response_key=r.response_key
+        WHERE ${initial ? 'end_ms >= ?' : 'r.rowid > ?'} ORDER BY r.rowid`).all(initial ? nowMs - 1800000 : afterRowId);
       const responses = rows.map(({ input, cachedInput, output, reasoning, ...response }) => ({ ...response, output, tokens: { input, cachedInput, output, reasoning } }));
+      const rateSamples = initial ? this.db.prepare(`WITH latest AS (
+        SELECT model, t.service_tier AS tier, MAX(end_ms) AS last_ms FROM responses r
+        LEFT JOIN response_service_tiers t ON t.response_key=r.response_key
+        WHERE start_ms IS NOT NULL AND end_ms>start_ms AND end_ms-start_ms<=900000
+        GROUP BY model, t.service_tier)
+        SELECT r.response_key AS key, r.model, t.service_tier AS serviceTier,
+          r.start_ms AS startMs, r.end_ms AS endMs, r.output_tokens AS output
+        FROM latest l JOIN responses r ON r.model IS l.model AND r.end_ms>=l.last_ms-300000 AND r.end_ms<=l.last_ms
+        LEFT JOIN response_service_tiers t ON t.response_key=r.response_key
+        WHERE t.service_tier IS l.tier AND r.start_ms IS NOT NULL AND r.end_ms>r.start_ms AND r.end_ms-r.start_ms<=900000`).all() : null;
       const today = this.today(nowMs);
       this.db.exec('COMMIT');
-      return { cursor, totals, responses, today };
+      return { cursor, totals, responses, today, rateSamples };
     } catch (error) {
       this.db.exec('ROLLBACK');
       throw error;

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { Monitor } from '../src/monitor/index.mjs';
+import { DatabaseSync } from 'node:sqlite';
 
 const epoch = Date.parse('2026-10-30T07:00:00.000Z');
 const iso = offset => new Date(epoch + offset).toISOString();
@@ -37,6 +38,60 @@ async function setup(t, { clock } = {}) {
   t.after(async () => { await Promise.all(monitors.map(item => item.stop())); await rm(folder, { recursive: true, force: true }); });
   return { folder, codexHome, stateDir, monitor, monitors, runtime, setNow(value) { now = value; }, file(name) { const filePath = path.join(codexHome, 'sessions', name); paths.add(filePath); return filePath; } };
 }
+
+test('model and request-tier rates weight effective durations and survive idle time, restart and shared-store sync', async t => {
+  const env = await setup(t);
+  const peer = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, runtime: env.runtime, now: () => epoch });
+  env.monitors.push(peer);
+  await peer.refresh();
+  await writeFile(env.file('rate-a.jsonl'), meta('rate-a', -100000)
+    + line('turn_context', -90000, { model: 'model-a', service_tier: 'ultrafast' })
+    + input(-60000) + usage('rate-fast-one', -50000, 1000, { service_tier: 'priority' })
+    + input(-20000) + usage('rate-fast-two', -10000, 2000, { service_tier: 'priority' })
+    + input(-5000) + usage('rate-standard', -1000, 400, { service_tier: 'default' }));
+  await writeFile(env.file('rate-b.jsonl'), meta('rate-b', -100000)
+    + line('turn_context', -90000, { model: 'model-a' })
+    + input(-40000) + usage('rate-fast-concurrent', -20000, 4000, { service_tier: 'priority' }));
+  await writeFile(env.file('rate-unknown.jsonl'), meta('rate-unknown', -100000)
+    + line('turn_context', -90000, { model: 'model-b', service_tier: 'priority' })
+    + usage('rate-invalid-start', -50000, 9000, { service_tier: 'priority' })
+    + input(-10000) + usage('rate-unknown', -5000, 100));
+  await env.monitor.refresh();
+  const rates = (await env.monitor.getSnapshot()).modelTierRates;
+  assert.equal(rates.length, 3);
+  const fast = rates.find(rate => rate.serviceTier === 'fast');
+  assert.equal(fast.measuredTps, 175);
+  assert.equal(fast.sampleCount, 3);
+  assert.equal(fast.activeDurationMs, 40000);
+  assert.equal(fast.lastSampleAt, iso(-10000));
+  assert.equal(rates.find(rate => rate.serviceTier === 'standard').measuredTps, 100);
+  assert.equal(rates.find(rate => rate.serviceTier === null).measuredTps, 20);
+  await peer.refresh();
+  assert.deepEqual((await peer.getSnapshot()).modelTierRates, rates);
+  env.setNow(epoch + 86400000);
+  env.runtime.paths.clear();
+  await env.monitor.refresh();
+  assert.deepEqual((await env.monitor.getSnapshot()).modelTierRates, rates);
+  const restarted = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, runtime: env.runtime, now: () => epoch + 86400000 });
+  env.monitors.push(restarted);
+  await restarted.refresh();
+  assert.deepEqual((await restarted.getSnapshot()).modelTierRates, rates);
+});
+
+test('legacy stored facts retain unknown request tier and old writers can still insert after schema setup', async t => {
+  const env = await setup(t);
+  await env.monitor.refresh();
+  const oldWriter = new DatabaseSync(path.join(env.stateDir, 'metrics.sqlite'));
+  try {
+    oldWriter.prepare('INSERT INTO responses VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run('old-schema-response', 'old-agent', 'old-model', epoch - 10000, epoch, '2026-10-30', 0, 0, 500, 0);
+  } finally { oldWriter.close(); }
+  await env.monitor.refresh();
+  const rates = (await env.monitor.getSnapshot()).modelTierRates;
+  assert.equal(rates.length, 1);
+  assert.equal(rates[0].serviceTier, null);
+  assert.equal(rates[0].measuredTps, 50);
+});
 
 test('modern main and nested agents are counted once, copied context is excluded, and modes stay per agent', async t => {
   const env = await setup(t);
@@ -136,7 +191,7 @@ test('in-flight estimates need measured samples and stale logs become unknown', 
   assert.equal(stale.agent.rate.estimatedTps, 0);
 });
 
-test('global rate history covers every monitored agent once independently of list filters and pagination', async t => {
+test('global and thread rate histories count nested members once independently of filters and pagination', async t => {
   const env = await setup(t);
   await writeFile(env.file('root.jsonl'), meta('root', -30000) + input(-3000) + usage('root-done', -1000, 200));
   await writeFile(env.file('child.jsonl'), meta('child', -30000, { parent_thread_id: 'root' })
@@ -163,21 +218,31 @@ test('global rate history covers every monitored agent once independently of lis
   assert.equal(ready.threads.length, 1);
   assert.equal(ready.threads[0].id, 'ready');
   const individual = await Promise.all(['root', 'child', 'grandchild', 'ready'].map(agentId => env.monitor.getAgent({ agentId })));
+  const thread = await env.monitor.getThread({ threadId: 'root', limit: 1 });
+  assert.equal(thread.agents.length, 1);
+  assert.ok(thread.nextCursor);
+  const threadNext = await env.monitor.getThread({ threadId: 'root', limit: 1, cursor: thread.nextCursor });
+  const readyMembers = await env.monitor.getThread({ threadId: 'root', scope: 'ready', limit: 1 });
+  assert.deepEqual(threadNext.history, thread.history);
+  assert.deepEqual(readyMembers.history, thread.history);
+  assert.equal(thread.history.length, 300);
+  assert.deepEqual((await env.monitor.getThread({ threadId: 'missing' })).history, []);
   for (let index = 0; index < snapshot.history.length; index++) {
     for (const key of ['measuredTps', 'estimatedTps', 'outputTps']) {
       assert.equal(snapshot.history[index][key], individual.reduce((sum, agent) => sum + agent.history[index][key], 0));
+      assert.equal(thread.history[index][key], individual.slice(0, 3).reduce((sum, agent) => sum + agent.history[index][key], 0));
     }
   }
 });
 
-test('global agent counts retain model and tier evidence and count unknowns independently of visible rows', async t => {
+test('global model and tier counts cover only Working agents independently of visible rows', async t => {
   const env = await setup(t);
   await writeFile(path.join(env.codexHome, 'config.toml'), 'service_tier = "priority"\n');
   await writeFile(env.file('root.jsonl'), meta('root', -30000) + input(-2000)
     + line('event_msg', -1500, { type: 'thread_settings_applied', thread_settings: { service_tier: 'ultrafast' } })
     + usage('selected-wins', 0, 100, { service_tier: 'priority' }));
   await writeFile(env.file('child.jsonl'), meta('child', -30000, { parent_thread_id: 'root' })
-    + line('turn_context', -3000, { model: 'model-b' }) + input(-2000) + usage('recorded-fast', 0, 100, { service_tier: 'priority' }));
+    + line('turn_context', -3000, { model: 'model-a' }) + input(-2000) + usage('recorded-fast', 0, 100, { service_tier: 'priority' }));
   await writeFile(env.file('ready.jsonl'), meta('ready', -30000) + input(-2000) + usage('recorded-standard', 0, 100, { service_tier: 'default' }));
   await writeFile(env.file('unknown.jsonl'), meta('unknown', -30000));
   await writeFile(env.file('excluded.jsonl'), meta('excluded', -30000));
@@ -188,23 +253,27 @@ test('global agent counts retain model and tier evidence and count unknowns inde
   await env.monitor.start();
   const snapshot = await env.monitor.getSnapshot({ limit: 1 });
   const counts = snapshot.agentCounts;
-  assert.equal(counts.total, 4);
-  assert.deepEqual(counts.models, [
-    { model: 'model-a', count: 2, sources: { turn_context: 0, runtime_config: 2, log_metadata: 0, unknown: 0 } },
-    { model: null, count: 1, sources: { turn_context: 0, runtime_config: 0, log_metadata: 0, unknown: 1 } },
-    { model: 'model-b', count: 1, sources: { turn_context: 1, runtime_config: 0, log_metadata: 0, unknown: 0 } },
-  ]);
-  assert.deepEqual(counts.serviceTiers, [
-    { tier: null, count: 1, sources: { selected: 0, recorded: 0, unknown: 1 } },
-    { tier: 'fast', count: 1, sources: { selected: 0, recorded: 1, unknown: 0 } },
-    { tier: 'standard', count: 1, sources: { selected: 0, recorded: 1, unknown: 0 } },
-    { tier: 'ultrafast', count: 1, sources: { selected: 1, recorded: 0, unknown: 0 } },
+  assert.equal(counts.total, 3);
+  assert.deepEqual(counts.combinations, [
+    { model: null, serviceTier: null, count: 1, modelSources: { turn_context: 0, runtime_config: 0, log_metadata: 0, unknown: 1 }, tierSources: { selected: 0, recorded: 0, unknown: 1 } },
+    { model: 'model-a', serviceTier: 'fast', count: 1, modelSources: { turn_context: 1, runtime_config: 0, log_metadata: 0, unknown: 0 }, tierSources: { selected: 0, recorded: 1, unknown: 0 } },
+    { model: 'model-a', serviceTier: 'ultrafast', count: 1, modelSources: { turn_context: 0, runtime_config: 1, log_metadata: 0, unknown: 0 }, tierSources: { selected: 1, recorded: 0, unknown: 0 } },
   ]);
   const filtered = await env.monitor.getSnapshot({ scope: 'ready', order: 'priority', limit: 1 });
   assert.equal(filtered.threads.length, 1);
   assert.deepEqual(filtered.agentCounts, counts);
   const next = await env.monitor.getSnapshot({ limit: 1, cursor: snapshot.nextCursor });
   assert.deepEqual(next.agentCounts, counts);
+  assert.equal(snapshot.totals.readyThreadCount, 1);
+  assert.ok(snapshot.history.some(point => point.measuredTps > 0));
+  for (const id of ['root', 'child', 'unknown']) {
+    env.runtime.overrides.set(id, { ...env.runtime.overrides.get(id), status: { type: 'idle' } });
+  }
+  await env.monitor.refresh();
+  const idle = await env.monitor.getSnapshot();
+  assert.deepEqual(idle.agentCounts, { total: 0, combinations: [] });
+  assert.equal(idle.totals.threadCount, snapshot.totals.threadCount);
+  assert.deepEqual(idle.history, snapshot.history);
 });
 
 test('daily totals survive restarts and deleted logs without replay double counting', async t => {
