@@ -78,7 +78,7 @@ strong, b { font-weight: 600; }
 .curve-tooltip { position: absolute; z-index: 2; display: flex; flex-direction: column; overflow: hidden; width: min(220px, 100%); padding: 8px 10px; pointer-events: none; cursor: default; user-select: text; border: 1px solid var(--monitor-line); border-radius: 5px; background: var(--monitor-bg); box-shadow: 0 3px 12px #0002; font-size: 11px; font-variant-numeric: tabular-nums; }
 .curve-tooltip.is-pinned { pointer-events: auto; }
 .curve-tooltip > strong { flex-shrink: 0; }
-.curve-details { min-height: 0; max-height: min(270px, 43vh); overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.curve-details { min-height: 0; max-height: min(270px, 43vh); overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
 .curve-tooltip dl { display: grid; grid-template-columns: 1fr auto; gap: 3px 10px; margin: 5px 0; }
 .curve-tooltip dt, .curve-tooltip > span { color: var(--monitor-muted); }
 .curve-tooltip dd { margin: 0; text-align: right; }
@@ -115,10 +115,13 @@ strong, b { font-weight: 600; }
 }
 @media (pointer: coarse) { button, select { min-height: 44px; } }
 
-.curve-tooltip.has-contributors { width: min(380px, 100%); }
+.curve-tooltip.has-contributors { width: max-content; min-width: min(220px, 100%); max-width: min(720px, 100%); }
 .curve-contributors { border-top: 1px solid var(--monitor-line); margin-top: 6px; }
-.curve-contributor { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px; padding: 5px 0; }
-.curve-contributor strong, .curve-contributor span { display: block; overflow-wrap: anywhere; }
-.curve-contributor span, .curve-contributors-empty { color: var(--monitor-muted); font-size: 10px; }
+.curve-model { display: flex; align-items: baseline; gap: 12px; padding: 5px 0; width: max-content; min-width: 100%; white-space: nowrap; }
+.contributor-label { flex: 0 0 auto; }
+.curve-tiers { display: flex; align-items: baseline; gap: 12px; margin-left: auto; }
+.curve-tier { display: inline-flex; align-items: baseline; gap: 6px; }
+.curve-tier + .curve-tier { border-left: 1px solid var(--monitor-line); padding-left: 12px; }
+.curve-contributors-empty { color: var(--monitor-muted); font-size: 10px; }
 .contributor-rate { text-align: right; white-space: nowrap; line-height: inherit; font-variant-numeric: tabular-nums; }
 .curve-contributors-empty { padding-top: 4px; }
