@@ -1,33 +1,40 @@
 import { App, applyDocumentTheme, applyHostStyleVariables } from '@modelcontextprotocol/ext-apps';
 import {
-  SnapshotHealth, ThreadList, compareAgents, createVisiblePoller, dateGroup, mergeStableItems,
+  DisplayRates, SnapshotHealth, StableCounts, ThreadList, compareAgents, createVisiblePoller, dateGroup, mergeStableItems,
   modePresentation, modelPresentation, phasePresentation,
 } from './state.mjs';
 import { RateChart, rateChartHtml } from './rate-chart.mjs';
 
 const root = document.getElementById('monitor');
 const element = id => document.getElementById(id);
-const app = new App({ name: 'Agent Monitor', version: '0.1.3' }, {});
+const app = new App({ name: 'Agent Monitor', version: '0.1.4' }, {});
 const rows = new ThreadList();
 const health = new SnapshotHealth();
 const rateChart = new RateChart();
+const globalRateChart = new RateChart();
+const displayRates = new DisplayRates();
+const stableCounts = new StableCounts();
+let displayedCounts = null;
+document.getElementById('global-rate-chart').innerHTML = rateChartHtml({ id: 'global-rate-timeline', label: '全局输出速率时间线' });
+globalRateChart.update(document.getElementById('global-rate-timeline'), 'monitored-set', []);
 const state = {
   snapshot: null, order: 'recent', scope: 'all', view: 'live', nextThreadCursor: null, threadPrefixCount: 10,
   openThreadId: null, selectedAgentId: null, threadData: null, agents: [], agentData: null,
   nextAgentCursor: null, agentScope: 'all', agentPrefixCount: 10, history: null, listEpoch: 0, selectionEpoch: 0,
   loadingThreads: false, loadingAgents: false, connected: false, inViewport: true, detailError: null,
   diagnostics: null, clientEvents: [],
+  backgroundEnabled: null, backgroundPending: false, backgroundRequested: false, backgroundError: null,
   lastRefreshDurationMs: null,
 };
 let freshnessTimer = null;
 const seriesColors = ['var(--monitor-blue)', 'var(--monitor-purple)', 'var(--monitor-green)', 'var(--monitor-orange)'];
-const modelColors = new Map();
 
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const number = (value, digits = 0) => finite(value) ? value.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits }) : '-';
 const tps = value => number(value, 1);
-const outputTps = item => finite(item?.rate?.outputTps) ? item.rate.outputTps : null;
+const displayedRate = item => item ? displayRates.read(`${item.role ? 'agent' : 'thread'}:${item.id}`, item.rate, item.rate) : null;
+const outputTps = item => displayedRate(item)?.outputTps ?? null;
 const isMain = agent => agent.role === 'main' || agent.id === state.openThreadId;
 const panelVisible = () => state.inViewport && document.visibilityState !== 'hidden';
 
@@ -41,12 +48,6 @@ function clearSelection() {
   state.nextAgentCursor = null;
   state.agentPrefixCount = 10;
   state.detailError = null;
-}
-
-function colorForModel(model) {
-  const key = model || '未知模型';
-  if (!modelColors.has(key)) modelColors.set(key, seriesColors[modelColors.size % seriesColors.length]);
-  return modelColors.get(key);
 }
 
 function setNotice(message, error = false) {
@@ -68,6 +69,7 @@ function renderHealth() {
     : '尚无成功采样 / 数值暂不可用';
   const warnings = state.snapshot?.collection?.warnings;
   if (current.kind !== 'live') setNotice(`${current.issue || '正在读取日志'}. ${health.snapshot ? '保留最后成功数据.' : '尚无可用数据.'} 将自动重试.`, current.kind === 'stale' || current.collectionState === 'error');
+  else if (state.backgroundError) setNotice(`后台采集设置失败: ${state.backgroundError}.`, true);
   else if (state.detailError) setNotice(`部分详情数据已过期: ${state.detailError}. 将自动重试.`, true);
   else if (Array.isArray(warnings) && warnings.length) setNotice(warnings.join(' / '));
   else setNotice('');
@@ -110,7 +112,7 @@ function renderDiagnostics() {
     lastGoodUiReceivedAt: health.receivedAt === null ? null : new Date(health.receivedAt).toISOString(),
     ageMs: current.ageMs,
     lastRefreshDurationMs: state.lastRefreshDurationMs,
-    refreshIntervalMs: 500,
+    refreshIntervalMs: 250,
     coverage: state.snapshot?.collection?.coverage ?? null,
     partialHistoryFiles: state.snapshot?.collection?.partialHistoryFiles ?? null,
     source: state.snapshot?.collection?.source ?? null,
@@ -168,24 +170,32 @@ function updateOverview() {
   const snapshot = state.snapshot;
   if (!snapshot) return;
   const totals = snapshot.totals;
-  const rate = totals.outputTps;
+  const rate = displayRates.read('global', totals, totals);
   element('host-name').textContent = snapshot.hostName || '当前插件宿主';
-  element('total-rate').textContent = tps(totals.outputTps);
+  element('total-rate').textContent = tps(rate?.outputTps);
   element('activity-summary').textContent = `Working ${number(totals.workingThreadCount)} / Ready ${number(totals.readyThreadCount)} / ${number(totals.threadCount)} 个根会话`;
   const partial = snapshot.collection?.coverage === 'sampled' || snapshot.collection?.historyComplete === false;
   element('sample-coverage').hidden = !partial;
   element('sample-coverage').textContent = partial ? 'Token 和历史为已采样累计, 不代表会话完整用量.' : '';
-  element('estimated-share').textContent = rate > 0
-    ? `${Math.round(totals.estimatedTps / rate * 100)}% 为生成中估算`
-    : '当前没有输出速率';
-  const models = (Array.isArray(snapshot.models) ? snapshot.models : [])
-    .filter(model => finite(model.outputTps) && model.outputTps > 0);
-  element('model-stack').hidden = models.length === 0;
-  element('model-stack').innerHTML = models.map(model => `<span style="width:${rate > 0 ? Math.max(0, model.outputTps / rate * 100) : 0}%;background:${colorForModel(model.model)}"></span>`).join('');
-  element('model-legend').innerHTML = models.length
-    ? models.map(model => `<span class="model-entry"><i class="model-dot" style="background:${colorForModel(model.model)}"></i><span>${escapeHtml(model.model || '未知模型')}</span><span class="model-number">${tps(model.outputTps)} / ${rate > 0 ? Math.round(model.outputTps / rate * 100) : 0}%</span></span>`).join('')
-    : '<span class="muted">无当前输出</span>';
+  element('rate-parts').textContent = `已测 ${tps(rate?.measuredTps)} / 估算 ${tps(rate?.estimatedTps)} tok/s`;
+  updateAgentCounts(snapshot.agentCounts);
+  drawGlobalChart();
   renderHealth();
+}
+
+function updateAgentCounts(counts) {
+  if (!counts) return;
+  const stable = stableCounts.update(counts);
+  if (stable === displayedCounts) return;
+  displayedCounts = stable;
+  const evidence = (sources, labels) => labels.filter(([key]) => sources?.[key] > 0).map(([key, label]) => `${label} ${number(sources[key])}`).join(' / ');
+  element('model-counts').innerHTML = (stable.models ?? []).map(item => `<span class="agent-count" title="${escapeHtml(evidence(item.sources, [['turn_context', '执行记录'], ['runtime_config', '当前配置'], ['log_metadata', '日志元数据'], ['unknown', '未知']]))}">${escapeHtml(item.model || '未知模型')} <b>×${number(item.count)}</b></span>`).join('') || '<span class="muted">暂无代理</span>';
+  const tierLabels = { fast: 'Fast', ultrafast: 'Ultrafast', standard: 'Standard' };
+  element('tier-counts').innerHTML = (stable.serviceTiers ?? []).map(item => `<span class="agent-count" title="${escapeHtml(evidence(item.sources, [['selected', '已选择'], ['recorded', '请求记录'], ['unknown', '未知']]))}">${escapeHtml(tierLabels[item.tier] || '未知档位')} <b>×${number(item.count)}</b></span>`).join('') || '<span class="muted">暂无代理</span>';
+}
+
+function drawGlobalChart() {
+  globalRateChart.update(element('global-rate-timeline'), 'monitored-set', state.snapshot?.history ?? []);
 }
 
 function threadMeta(thread) {
@@ -238,7 +248,7 @@ function detailHtml() {
       <div class="inspector-model" id="agent-model"></div>
       <div class="inspector-configuration" id="agent-configuration" hidden></div>
       <dl class="facts"><dt>当前输出</dt><dd id="agent-rate">-</dd><dt>加速模式</dt><dd id="agent-mode">-</dd><dt>模式依据</dt><dd id="agent-mode-evidence">-</dd><dt>父代理</dt><dd id="agent-parent">-</dd><dt>已采样输出</dt><dd id="agent-output">-</dd><dt>已采样输入 / 缓存</dt><dd id="agent-input">-</dd></dl>
-      ${rateChartHtml}
+      ${rateChartHtml({ id: 'agent-rate-timeline', label: '所选代理输出速率时间线' })}
       </div>
     </aside></div>
   </div>`;
@@ -327,7 +337,8 @@ function updateThreadRows() {
     element('thread-overview-title').textContent = thread.title || thread.id;
     element('thread-overview-status').textContent = phasePresentation(thread.status);
     element('thread-total-rate').textContent = `${tps(outputTps(thread))} tok/s`;
-    element('thread-rate-parts').textContent = `${tps(thread.rate?.measuredTps)} / ${tps(thread.rate?.estimatedTps)} tok/s`;
+    const rate = displayedRate(thread);
+    element('thread-rate-parts').textContent = `${tps(rate?.measuredTps)} / ${tps(rate?.estimatedTps)} tok/s`;
     element('thread-agent-count').textContent = number(thread.agentCount);
     element('thread-agent-statuses').textContent = `${number(thread.activeAgentCount)} / ${number(finite(thread.agentCount) && finite(thread.activeAgentCount) ? thread.agentCount - thread.activeAgentCount : null)}`;
     element('thread-output').textContent = `${number(thread.tokens?.output)} tokens`;
@@ -336,13 +347,13 @@ function updateThreadRows() {
   }
   if (element('thread-models') && thread) {
     const models = Array.isArray(thread.modelRates) ? thread.modelRates : [];
-    element('thread-models').textContent = models.map(model => `${model.model || '未知模型'} ${tps(model.outputTps)} tok/s`).join(' / ')
+    element('thread-models').textContent = models.map(model => `${model.model || '未知模型'} ${tps(displayRates.read(`thread-model:${thread.id}:${model.model}`, model, model)?.outputTps)} tok/s`).join(' / ')
       || `当前会话合计 ${tps(outputTps(thread))} tok/s`;
   }
 }
 
 function drawAgentChart(history = []) {
-  rateChart.update(element('rate-timeline'), state.selectedAgentId, history);
+  rateChart.update(element('agent-rate-timeline'), state.selectedAgentId, history);
 }
 
 function updateInspector() {
@@ -372,6 +383,8 @@ function updateInspector() {
 
 function acceptSnapshot(snapshot, { complete = false } = {}) {
   if (!Array.isArray(snapshot.threads)) throw new Error('会话数据格式不完整');
+  if (typeof snapshot.collection?.backgroundEnabled === 'boolean') state.backgroundEnabled = snapshot.collection.backgroundEnabled;
+  renderBackgroundControl();
   if (!health.accept(snapshot)) {
     renderHealth();
     return false;
@@ -601,6 +614,34 @@ async function refreshVisible() {
 
 const poller = createVisiblePoller(refreshVisible, { onError: reportSnapshotError });
 
+function renderBackgroundControl() {
+  const control = element('background-enabled');
+  control.disabled = state.backgroundPending || state.backgroundEnabled === null;
+  control.checked = state.backgroundPending ? state.backgroundRequested : state.backgroundEnabled === true;
+  element('background-status').textContent = state.backgroundPending ? '正在设置'
+    : state.backgroundEnabled === null ? '正在读取' : state.backgroundEnabled ? '当前后台进程 / 已开启' : '隐藏后暂停';
+}
+
+element('background-enabled').addEventListener('change', async event => {
+  if (state.backgroundPending) return;
+  state.backgroundRequested = event.target.checked;
+  state.backgroundPending = true;
+  state.backgroundError = null;
+  renderBackgroundControl();
+  try {
+    const result = await callTool('monitor_background', { enabled: state.backgroundRequested });
+    if (typeof result.backgroundEnabled !== 'boolean') throw new Error('后台采集状态无效');
+    state.backgroundEnabled = result.backgroundEnabled;
+  } catch (error) {
+    state.backgroundError = String(error.message ?? error);
+    recordClientError('background', error);
+  } finally {
+    state.backgroundPending = false;
+    renderBackgroundControl();
+    renderHealth();
+  }
+});
+
 function updateVisibility() {
   const visible = state.connected && panelVisible();
   poller.setVisible(visible);
@@ -715,6 +756,7 @@ visibilityObserver.observe(root);
 document.addEventListener('visibilitychange', updateVisibility);
 const resizeObserver = new ResizeObserver(() => {
   if (!panelVisible()) return;
+  drawGlobalChart();
   drawAgentChart(state.agentData?.history ?? []);
   if (state.view === 'history') drawHistory();
 });

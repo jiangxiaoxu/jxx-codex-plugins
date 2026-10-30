@@ -19,9 +19,9 @@ export function createServer(monitor, { uiUrl = new URL('../dist/dashboard.html'
     content: [{ type: 'text', text }],
     structuredContent: data
   });
-  const tool = (name, description, inputSchema, run) => {
+  const tool = (name, description, inputSchema, run, annotations = readOnly) => {
     server.registerTool(name, {
-      description, inputSchema, annotations: readOnly,
+      description, inputSchema, annotations,
       _meta: { ui: { visibility: ['app'] } }
     }, async (args) => {
       const started = performance.now();
@@ -87,6 +87,9 @@ export function createServer(monitor, { uiUrl = new URL('../dist/dashboard.html'
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
   }, (args) => monitor.getHistory(args));
+  tool('monitor_background', 'Set temporary background collection for this server process. Shared app windows use the same setting; it resets when the process restarts. Collection requires the host to keep this process alive.', {
+    enabled: z.boolean()
+  }, (args) => monitor.setBackgroundCollection(args), { ...readOnly, readOnlyHint: false });
   tool('monitor_diagnostics', 'Read local diagnostic metadata and recent service events. Conversation bodies and credentials are excluded.', {}, () => ({
     version: VERSION,
     ...(diagnostics?.snapshot() ?? { logPath: null, level: null, events: [], writeFailed: false })

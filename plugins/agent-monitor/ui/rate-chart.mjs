@@ -1,13 +1,13 @@
 import { RateTimeline } from './timeline.mjs';
 
-export const rateChartHtml = `<div class="rate-timeline" id="rate-timeline">
+export const rateChartHtml = ({ id, label }) => `<div class="rate-timeline" id="${id}">
   <div class="curve-controls" aria-label="时间线控制">
-    <span id="curve-mode">实时 / 近 5 分钟</span>
+    <span class="curve-mode">实时 / 近 5 分钟</span>
     <div><button type="button" data-curve="previous" aria-label="向前移动时间段">←</button><button type="button" data-curve="next" aria-label="向后移动时间段">→</button><button type="button" data-curve="in" aria-label="放大时间线">+</button><button type="button" data-curve="out" aria-label="缩小时间线">−</button><button type="button" data-curve="live">恢复实时</button></div>
   </div>
-  <div class="agent-curve" id="agent-curve" tabindex="0" role="group" aria-label="代理速率时间线" aria-describedby="curve-help curve-detail"><div class="curve-svg"></div><div class="curve-tooltip" id="curve-detail" hidden></div></div>
-  <div class="curve-foot"><span>实线已测 / 虚线估算 / tok/s</span><span id="curve-range"></span></div>
-  <div class="curve-help" id="curve-help">拖拽框选放大; 悬浮或轻点查看. 方向键逐秒查看, +/− 缩放. 仅最近 5 分钟速率采样, 无完整历史状态.</div>
+  <div class="agent-curve" tabindex="0" role="group" aria-label="${label}" aria-describedby="${id}-help ${id}-detail"><div class="curve-svg"></div><div class="curve-tooltip" id="${id}-detail" hidden></div></div>
+  <div class="curve-foot"><span>实线已测 / 虚线估算 / tok/s</span><span class="curve-range"></span></div>
+  <div class="curve-help" id="${id}-help">拖拽框选放大; 悬浮或轻点查看. 方向键逐秒查看, +/− 缩放. 仅最近 5 分钟速率采样, 无完整历史状态.</div>
 </div>`;
 
 const clock = time => new Date(time).toLocaleTimeString('zh-CN', { hour12: false });
@@ -104,7 +104,7 @@ export class RateChart {
     const timeline = this.timeline, plot = this.plot;
     const tooltip = this.host.querySelector('.curve-tooltip');
     const view = timeline.view;
-    this.host.querySelector('#curve-mode').textContent = timeline.frozen ? '回看 / 已固定采样' : '实时 / 近 5 分钟';
+    this.host.querySelector('.curve-mode').textContent = timeline.frozen ? '回看 / 已固定采样' : '实时 / 近 5 分钟';
     for (const button of this.host.querySelectorAll('[data-curve]')) {
       const action = button.dataset.curve;
       button.disabled = !view || (action === 'live' && !timeline.frozen)
@@ -116,7 +116,7 @@ export class RateChart {
     if (!view) {
       plot.querySelector('.curve-svg').innerHTML = '<div class="curve-empty">尚无速率历史</div>';
       tooltip.hidden = true;
-      this.host.querySelector('#curve-range').textContent = '';
+      this.host.querySelector('.curve-range').textContent = '';
       return;
     }
     const width = Math.max(220, plot.clientWidth), height = 150;
@@ -147,6 +147,6 @@ export class RateChart {
       const position = x(timeline.cursor);
       tooltip.style.left = `${Math.max(0, Math.min(width - Math.min(220, width), position > width / 2 ? position - 228 : position + 8))}px`;
     }
-    this.host.querySelector('#curve-range').textContent = `${Math.round((end - start) / 1000)} 秒`;
+    this.host.querySelector('.curve-range').textContent = `${Math.round((end - start) / 1000)} 秒`;
   }
 }

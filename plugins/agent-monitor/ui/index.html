@@ -18,11 +18,17 @@
       <div><span class="muted">总输出速率</span> <strong id="total-rate" class="total-rate">-</strong><span class="muted"> tok/s</span></div>
       <span class="muted" id="activity-summary">正在读取 Codex 数据</span>
     </div>
-    <div class="model-stack" id="model-stack" aria-label="当前模型速率占比"></div>
-    <div class="model-legend" id="model-legend"></div>
-    <div class="overview-foot"><span>最近 3 秒 / Working + Ready / 未压缩</span><span id="estimated-share">估算占比 -</span></div>
+    <div class="agent-count-line"><span class="muted">模型</span><div class="agent-counts" id="model-counts">正在读取</div></div>
+    <div class="agent-count-line"><span class="muted">Service tier</span><div class="agent-counts" id="tier-counts">正在读取</div></div>
+    <div class="coverage-info">模型含当前配置及执行证据; 档位来自选择或请求记录, 不代表后端实际服务档位.</div>
+    <div class="overview-foot"><span>最近 3 秒 / Working + Ready / 未压缩</span><span id="rate-parts">已测 - / 估算 - tok/s</span></div>
+    <div class="coverage-info">速率数字经 0.5 秒平滑; 图表保留原始样本. 代理数量短暂稳定后更新.</div>
     <div class="coverage-info" id="sample-coverage" hidden></div>
     <div class="freshness-info" id="data-freshness" role="status">尚无成功采样</div>
+    <label class="background-control" title="保持当前插件后台进程持续采集. 不保存此开关, 后台进程重启后关闭."><input type="checkbox" id="background-enabled" disabled><span>后台持续采集</span><span class="muted" id="background-status">正在读取</span></label>
+    <div class="global-timeline-heading"><strong>全局输出时间线</strong><span>当前 Working + Ready 集合 / 不随列表筛选变化</span></div>
+    <div id="global-rate-chart"></div>
+    <div class="coverage-info">回看按当前成员汇总, 已离开监视范围的代理不计入.</div>
   </section>
   <div class="view-bar">
     <div class="tabs" role="tablist" aria-label="监视视图">
@@ -36,7 +42,7 @@
   <section id="live-view" role="tabpanel" aria-labelledby="live-tab">
     <div id="thread-list" class="thread-list" aria-label="根会话列表"></div>
     <div id="thread-empty" class="empty" hidden>没有符合范围的 Working / Ready 会话</div>
-    <div class="list-foot"><span id="thread-count">-</span><span>每 0.5 秒自动更新 / 最近交互在前</span></div>
+    <div class="list-foot"><span id="thread-count">-</span><span>每 0.25 秒自动更新 / 最近交互在前</span></div>
   </section>
   <section id="history-view" role="tabpanel" aria-labelledby="history-tab" hidden>
     <div class="history-summary" id="history-summary">正在读取历史用量</div>

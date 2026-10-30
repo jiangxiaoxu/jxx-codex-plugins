@@ -76,6 +76,7 @@ export class Monitor {
     this.pendingFileIndex = 0;
     this.running = false;
     this.continuous = false;
+    this.backgroundEnabled = false;
     this.activityDeadline = 0;
     this.closed = false;
     this.timer = null;
@@ -106,7 +107,14 @@ export class Monitor {
   }
 
   hasDemand() {
-    return this.continuous || this.now() < this.activityDeadline;
+    return this.continuous || this.backgroundEnabled || this.now() < this.activityDeadline;
+  }
+
+  setBackgroundCollection({ enabled }) {
+    if (this.closed) throw new Error('Monitor is closed');
+    this.backgroundEnabled = enabled;
+    this.activate();
+    return { backgroundEnabled: this.backgroundEnabled, scope: 'process' };
   }
 
   pause() {
@@ -120,7 +128,7 @@ export class Monitor {
     this.diagnostics?.write('info', 'collection.pause', { files: this.files.size, pendingFiles: this.pendingFiles?.length ?? null, fileIndex: this.pendingFileIndex, file: currentFile ? path.basename(currentFile.path) : null, offset: currentFile?.offset ?? null, lastSuccessAt: this.lastSuccessAt });
   }
 
-  schedule(delay = 250) {
+  schedule(delay = 100) {
     if (!this.running || this.closed) return;
     this.timer = setTimeout(async () => {
       if (!this.running || this.closed) return;
@@ -136,6 +144,7 @@ export class Monitor {
 
   async stop() {
     this.running = false;
+    this.backgroundEnabled = false;
     clearTimeout(this.timer);
     if (this.refreshPromise) await this.refreshPromise;
     if (!this.closed) { this.closed = true; this.runtime.close(); this.store?.close(); }
@@ -473,6 +482,36 @@ export class Monitor {
     });
   }
 
+  rateHistory(agentIds, now, view) {
+    const records = [...view.responses.values()].filter(response => agentIds.has(response.agentId) && response.endMs >= now - HISTORY_MS);
+    const estimates = [...agentIds].map(id => view.estimates.get(id)).filter(Boolean);
+    return Array.from({ length: 300 }, (_, index) => {
+      const time = Math.floor(now / 1000) * 1000 - (299 - index) * 1000;
+      const measuredTps = records.reduce((total, response) => total + contribution(response, time - 1000, time), 0);
+      const estimatedTps = estimates.reduce((total, estimate) => total + (estimate.points.get(time) ?? 0), 0);
+      return { time: date(time), measuredTps, estimatedTps, outputTps: measuredTps + estimatedTps };
+    });
+  }
+
+  agentCounts(agents) {
+    const models = new Map(), serviceTiers = new Map();
+    for (const agent of agents) {
+      const model = agent.model || null;
+      const modelEntry = models.get(model) ?? { model, count: 0, sources: { turn_context: 0, runtime_config: 0, log_metadata: 0, unknown: 0 } };
+      modelEntry.count++;
+      modelEntry.sources[model && Object.hasOwn(modelEntry.sources, agent.modelSource) ? agent.modelSource : 'unknown']++;
+      models.set(model, modelEntry);
+      const source = agent.mode.selected ? 'selected' : agent.mode.recorded ? 'recorded' : 'unknown';
+      const tier = source === 'unknown' ? null : normalizeMode(agent.mode[source]);
+      const tierEntry = serviceTiers.get(tier) ?? { tier, count: 0, sources: { selected: 0, recorded: 0, unknown: 0 } };
+      tierEntry.count++;
+      tierEntry.sources[source]++;
+      serviceTiers.set(tier, tierEntry);
+    }
+    const order = key => (a, b) => b.count - a.count || String(a[key] ?? '').localeCompare(String(b[key] ?? ''));
+    return { total: agents.length, models: [...models.values()].sort(order('model')), serviceTiers: [...serviceTiers.values()].sort(order('tier')) };
+  }
+
   async getSnapshot({ limit = 10, cursor = null, order = 'recent', scope = 'all' } = {}) {
     const now = this.now(), view = this.published, agents = view.agents;
     const allThreads = this.threads(agents, now, view);
@@ -480,9 +519,9 @@ export class Monitor {
     const result = page(threads, limit, cursor, `${order}:${scope}`);
     const summaries = [...agents.values()].map(a => this.summarizeAgent(a, agents, now, view));
     const rate = summaries.map(a => a.rate).reduce(sumRate, zeroRate());
-    return { schemaVersion: 1, sampledAt: date(now), hostName: hostname(), collection: { state: this.collectionState, source: 'app-server', coverage: 'sampled', historyComplete: false, lastSuccessAt: this.lastSuccessAt, skippedCompressedFiles: view.skippedCompressedFiles, skippedUnavailableThreads: view.skippedUnavailableThreads, excluded: { ...view.excluded }, warnings: [...this.warnings] },
+    return { schemaVersion: 1, sampledAt: date(now), hostName: hostname(), collection: { state: this.collectionState, source: 'app-server', backgroundEnabled: this.backgroundEnabled, coverage: 'sampled', historyComplete: false, lastSuccessAt: this.lastSuccessAt, skippedCompressedFiles: view.skippedCompressedFiles, skippedUnavailableThreads: view.skippedUnavailableThreads, excluded: { ...view.excluded }, warnings: [...this.warnings] },
       totals: { ...rate, ...view.today, generatingCount: summaries.filter(a => a.phase === 'generating').length, toolCount: summaries.filter(a => a.phase === 'tools').length, threadCount: allThreads.length, workingThreadCount: allThreads.filter(thread => thread.status === 'working').length, readyThreadCount: allThreads.filter(thread => thread.status === 'ready').length },
-      models: this.modelRates([...agents.values()], now, view), threads: result.items, nextCursor: result.nextCursor };
+      models: this.modelRates([...agents.values()], now, view), agentCounts: this.agentCounts(summaries), history: this.rateHistory(new Set(agents.keys()), now, view), threads: result.items, nextCursor: result.nextCursor };
   }
 
   async getThread({ threadId, limit = 20, cursor = null, scope = 'all' } = {}) {
@@ -499,14 +538,7 @@ export class Monitor {
   async getAgent({ agentId } = {}) {
     const now = this.now(), view = this.published, agents = view.agents, agent = agents.get(agentId);
     if (!agent) return { agent: null, history: [], coverage: 'sampled', historyComplete: false, sampledAt: date(now) };
-    const records = [...view.responses.values()].filter(r => r.agentId === agentId && r.endMs >= now - HISTORY_MS);
-    const estimate = view.estimates.get(agentId);
-    const history = Array.from({ length: 300 }, (_, index) => {
-      const time = Math.floor(now / 1000) * 1000 - (299 - index) * 1000;
-      const measuredTps = records.reduce((total, r) => total + contribution(r, time - 1000, time), 0);
-      const estimatedTps = estimate?.points.get(time) ?? 0;
-      return { time: date(time), measuredTps, estimatedTps, outputTps: measuredTps + estimatedTps };
-    });
+    const history = this.rateHistory(new Set([agentId]), now, view);
     return { agent: this.summarizeAgent(agent, agents, now, view), history, coverage: 'sampled', historyComplete: false, sampledAt: date(now) };
   }
 

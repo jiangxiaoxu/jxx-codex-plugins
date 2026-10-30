@@ -151,8 +151,62 @@ export class SnapshotHealth {
   }
 }
 
+export class StableCounts {
+  constructor({ now = () => performance.now(), settleMs = 500, maxWaitMs = 1000 } = {}) {
+    this.now = now;
+    this.settleMs = settleMs;
+    this.maxWaitMs = maxWaitMs;
+    this.value = null;
+    this.key = null;
+    this.pendingKey = null;
+    this.pendingSince = null;
+    this.firstChangeAt = null;
+  }
+
+  update(value) {
+    const key = JSON.stringify(value), now = this.now();
+    if (this.value === null || key === this.key) {
+      if (this.value === null) { this.value = value; this.key = key; }
+      this.pendingKey = null;
+      this.firstChangeAt = null;
+      return this.value;
+    }
+    if (this.firstChangeAt === null) this.firstChangeAt = now;
+    if (key !== this.pendingKey) { this.pendingKey = key; this.pendingSince = now; }
+    if (now - this.pendingSince >= this.settleMs || now - this.firstChangeAt >= this.maxWaitMs) {
+      this.value = value;
+      this.key = key;
+      this.pendingKey = null;
+      this.firstChangeAt = null;
+    }
+    return this.value;
+  }
+}
+
+export class DisplayRates {
+  constructor({ now = () => performance.now(), smoothingMs = 500, resetAfterMs = 5000 } = {}) {
+    this.now = now;
+    this.smoothingMs = smoothingMs;
+    this.resetAfterMs = resetAfterMs;
+    this.values = new Map();
+  }
+
+  read(id, rate, sample) {
+    if (!rate || !['measuredTps', 'estimatedTps'].every(key => Number.isFinite(rate[key]) && rate[key] >= 0)) return null;
+    const now = this.now(), previous = this.values.get(id);
+    if (previous?.sample === sample) return previous.rate;
+    const elapsed = previous ? Math.max(0, now - previous.at) : Infinity;
+    const alpha = elapsed >= this.resetAfterMs ? 1 : 1 - Math.exp(-elapsed / this.smoothingMs);
+    const measuredTps = previous ? previous.rate.measuredTps + alpha * (rate.measuredTps - previous.rate.measuredTps) : rate.measuredTps;
+    const estimatedTps = previous ? previous.rate.estimatedTps + alpha * (rate.estimatedTps - previous.rate.estimatedTps) : rate.estimatedTps;
+    const displayed = { measuredTps, estimatedTps, outputTps: measuredTps + estimatedTps };
+    this.values.set(id, { sample, at: now, rate: displayed });
+    return displayed;
+  }
+}
+
 export function createVisiblePoller(task, {
-  intervalMs = 500,
+  intervalMs = 250,
   now = () => performance.now(),
   setTimer = setTimeout,
   clearTimer = clearTimeout,

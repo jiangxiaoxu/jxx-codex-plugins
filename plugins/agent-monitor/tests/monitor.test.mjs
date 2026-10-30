@@ -136,6 +136,77 @@ test('in-flight estimates need measured samples and stale logs become unknown', 
   assert.equal(stale.agent.rate.estimatedTps, 0);
 });
 
+test('global rate history covers every monitored agent once independently of list filters and pagination', async t => {
+  const env = await setup(t);
+  await writeFile(env.file('root.jsonl'), meta('root', -30000) + input(-3000) + usage('root-done', -1000, 200));
+  await writeFile(env.file('child.jsonl'), meta('child', -30000, { parent_thread_id: 'root' })
+    + line('turn_context', -21000, { model: 'sample-model' }) + input(-20000) + usage('child-sample', -10000, 500) + input(-5000));
+  await writeFile(env.file('grandchild.jsonl'), meta('grandchild', -30000, { parent_thread_id: 'child' }) + input(-2000) + usage('grandchild-done', 0, 100));
+  await writeFile(env.file('ready.jsonl'), meta('ready', -30000) + input(-2000) + usage('ready-done', 0, 40));
+  await writeFile(env.file('excluded.jsonl'), meta('excluded', -30000) + input(-2000) + usage('excluded-done', 0, 10000));
+  env.runtime.overrides.set('ready', { status: { type: 'idle' } });
+  env.runtime.overrides.set('excluded', { status: { type: 'active', activeFlags: ['waitingOnUserInput'] } });
+  await env.monitor.start();
+  const snapshot = await env.monitor.getSnapshot({ limit: 1 });
+  assert.equal(snapshot.history.length, 300);
+  assert.equal(snapshot.history.at(-1).time, iso(0));
+  assert.equal(snapshot.history.at(-1).measuredTps, 70);
+  assert.equal(snapshot.history.at(-1).estimatedTps, 50);
+  assert.equal(snapshot.history.at(-1).outputTps, 120);
+  assert.equal(snapshot.history.at(-2).measuredTps, 170);
+  assert.equal(snapshot.history[0].outputTps, 0);
+  assert.ok(snapshot.nextCursor);
+  const next = await env.monitor.getSnapshot({ limit: 1, cursor: snapshot.nextCursor });
+  const ready = await env.monitor.getSnapshot({ scope: 'ready', order: 'priority', limit: 1 });
+  assert.deepEqual(next.history, snapshot.history);
+  assert.deepEqual(ready.history, snapshot.history);
+  assert.equal(ready.threads.length, 1);
+  assert.equal(ready.threads[0].id, 'ready');
+  const individual = await Promise.all(['root', 'child', 'grandchild', 'ready'].map(agentId => env.monitor.getAgent({ agentId })));
+  for (let index = 0; index < snapshot.history.length; index++) {
+    for (const key of ['measuredTps', 'estimatedTps', 'outputTps']) {
+      assert.equal(snapshot.history[index][key], individual.reduce((sum, agent) => sum + agent.history[index][key], 0));
+    }
+  }
+});
+
+test('global agent counts retain model and tier evidence and count unknowns independently of visible rows', async t => {
+  const env = await setup(t);
+  await writeFile(path.join(env.codexHome, 'config.toml'), 'service_tier = "priority"\n');
+  await writeFile(env.file('root.jsonl'), meta('root', -30000) + input(-2000)
+    + line('event_msg', -1500, { type: 'thread_settings_applied', thread_settings: { service_tier: 'ultrafast' } })
+    + usage('selected-wins', 0, 100, { service_tier: 'priority' }));
+  await writeFile(env.file('child.jsonl'), meta('child', -30000, { parent_thread_id: 'root' })
+    + line('turn_context', -3000, { model: 'model-b' }) + input(-2000) + usage('recorded-fast', 0, 100, { service_tier: 'priority' }));
+  await writeFile(env.file('ready.jsonl'), meta('ready', -30000) + input(-2000) + usage('recorded-standard', 0, 100, { service_tier: 'default' }));
+  await writeFile(env.file('unknown.jsonl'), meta('unknown', -30000));
+  await writeFile(env.file('excluded.jsonl'), meta('excluded', -30000));
+  env.runtime.overrides.set('root', { model: 'model-a' });
+  env.runtime.overrides.set('child', { model: 'next-model' });
+  env.runtime.overrides.set('ready', { model: 'model-a', status: { type: 'idle' } });
+  env.runtime.overrides.set('excluded', { model: 'excluded-model', status: { type: 'notLoaded' } });
+  await env.monitor.start();
+  const snapshot = await env.monitor.getSnapshot({ limit: 1 });
+  const counts = snapshot.agentCounts;
+  assert.equal(counts.total, 4);
+  assert.deepEqual(counts.models, [
+    { model: 'model-a', count: 2, sources: { turn_context: 0, runtime_config: 2, log_metadata: 0, unknown: 0 } },
+    { model: null, count: 1, sources: { turn_context: 0, runtime_config: 0, log_metadata: 0, unknown: 1 } },
+    { model: 'model-b', count: 1, sources: { turn_context: 1, runtime_config: 0, log_metadata: 0, unknown: 0 } },
+  ]);
+  assert.deepEqual(counts.serviceTiers, [
+    { tier: null, count: 1, sources: { selected: 0, recorded: 0, unknown: 1 } },
+    { tier: 'fast', count: 1, sources: { selected: 0, recorded: 1, unknown: 0 } },
+    { tier: 'standard', count: 1, sources: { selected: 0, recorded: 1, unknown: 0 } },
+    { tier: 'ultrafast', count: 1, sources: { selected: 1, recorded: 0, unknown: 0 } },
+  ]);
+  const filtered = await env.monitor.getSnapshot({ scope: 'ready', order: 'priority', limit: 1 });
+  assert.equal(filtered.threads.length, 1);
+  assert.deepEqual(filtered.agentCounts, counts);
+  const next = await env.monitor.getSnapshot({ limit: 1, cursor: snapshot.nextCursor });
+  assert.deepEqual(next.agentCounts, counts);
+});
+
 test('daily totals survive restarts and deleted logs without replay double counting', async t => {
   const env = await setup(t);
   const source = meta('persisted', -20000) + input(-10000) + usage('durable-response', 0, 400);
@@ -186,7 +257,9 @@ test('independent collectors reconcile shared facts through duplicate reads, pau
     assert.deepEqual(a.agent.rate, b.agent.rate);
     assert.deepEqual(a.history, b.history);
     assert.ok(a.agent.rate.measuredTps > 0);
-    assert.deepEqual((await left.getSnapshot()).totals, (await right.getSnapshot()).totals);
+    const leftSnapshot = await left.getSnapshot(), rightSnapshot = await right.getSnapshot();
+    assert.deepEqual(leftSnapshot.totals, rightSnapshot.totals);
+    assert.deepEqual(leftSnapshot.history, rightSnapshot.history);
   };
   await compare(env.monitor, second, 340);
   env.monitor.pause();
@@ -461,11 +534,14 @@ test('queries retain the last complete view while refreshing and a late source d
     assert.equal(duringDiscovery.collection.state, 'ready');
     assert.deepEqual(duringDiscovery.threads.map(thread => thread.id), ['previous']);
     assert.ok(duringDiscovery.totals.outputTps > 0);
+    assert.equal(duringDiscovery.history.at(-1).measuredTps, 0);
     assert.equal((await env.monitor.getThread({ threadId: 'previous' })).thread.id, 'previous');
     assert.equal((await env.monitor.getAgent({ agentId: 'replacement' })).agent, null);
     releaseBefore();
     await afterReached;
-    assert.equal((await env.monitor.getSnapshot()).totals.outputTokens, 100);
+    const duringRead = await env.monitor.getSnapshot();
+    assert.equal(duringRead.totals.outputTokens, 100);
+    assert.deepEqual(duringRead.history, duringDiscovery.history);
     assert.equal((await env.monitor.getAgent({ agentId: 'previous' })).agent.tokens.output, 100);
     env.runtime.error = Object.assign(new Error('Connection lost after metadata read'), { code: 'CONNECTION_CLOSED' });
     releaseAfter();
@@ -474,6 +550,7 @@ test('queries retain the last complete view while refreshing and a late source d
     assert.equal(failed.collection.state, 'error');
     assert.equal(failed.collection.lastSuccessAt, previous.collection.lastSuccessAt);
     assert.equal(failed.totals.outputTokens, 100);
+    assert.deepEqual(failed.history, duringDiscovery.history);
     assert.deepEqual(failed.threads.map(thread => thread.id), ['previous']);
   } finally {
     releaseBefore();
@@ -487,6 +564,7 @@ test('queries retain the last complete view while refreshing and a late source d
   assert.equal(recovered.collection.lastSuccessAt, iso(1000));
   assert.deepEqual(recovered.threads.map(thread => thread.id), ['replacement']);
   assert.equal(recovered.totals.outputTokens, 300);
+  assert.equal(recovered.history.at(-1).measuredTps, 200);
   assert.equal((await env.monitor.getAgent({ agentId: 'replacement' })).agent.tokens.output, 200);
   await appendFile(env.file('replacement.jsonl'), line('event_msg', 1500, { type: 'thread_settings_applied', thread_settings: { service_tier: 'priority' } }) + input(1500));
   env.setNow(epoch + 2500);
@@ -663,6 +741,46 @@ test('panel activity leases lazily initialize, pause reads and resume appended r
   const unopened = new Monitor({ codexHome: env.codexHome, stateDir: path.join(env.folder, 'never-opened') });
   await unopened.stop();
   await assert.rejects(stat(path.join(env.folder, 'never-opened')), { code: 'ENOENT' });
+});
+
+test('temporary background collection outlives the UI lease and disabling restores lease-based pause', async t => {
+  const env = await setup(t);
+  const filePath = env.file('background.jsonl');
+  await writeFile(filePath, meta('background', -20000) + input(-10000) + usage('first', 0, 100));
+  const until = async predicate => {
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline) {
+      const snapshot = await env.monitor.getSnapshot();
+      if (predicate(snapshot)) return snapshot;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.fail('Expected background collection transition did not occur');
+  };
+  assert.equal((await env.monitor.getSnapshot()).collection.backgroundEnabled, false);
+  assert.deepEqual(env.monitor.setBackgroundCollection({ enabled: true }), { backgroundEnabled: true, scope: 'process' });
+  await until(snapshot => snapshot.totals.outputTokens === 100);
+  env.setNow(epoch + 6000);
+  await appendFile(filePath, input(5000) + usage('beyond-lease', 6000, 10));
+  const background = await until(snapshot => snapshot.totals.outputTokens === 110);
+  assert.equal(background.collection.backgroundEnabled, true);
+  assert.equal(background.collection.state, 'ready');
+  assert.deepEqual(env.monitor.setBackgroundCollection({ enabled: false }), { backgroundEnabled: false, scope: 'process' });
+  env.setNow(epoch + 10000);
+  await appendFile(filePath, input(9000) + usage('remaining-lease', 10000, 20));
+  await until(snapshot => snapshot.totals.outputTokens === 130);
+  env.setNow(epoch + 12000);
+  await appendFile(filePath, input(11000) + usage('after-pause', 12000, 30));
+  const paused = await until(snapshot => snapshot.collection.state === 'paused');
+  assert.equal(paused.collection.backgroundEnabled, false);
+  assert.equal(paused.totals.outputTokens, 130);
+  env.monitor.setBackgroundCollection({ enabled: true });
+  await until(snapshot => snapshot.totals.outputTokens === 160);
+  await env.monitor.stop();
+  const restarted = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, runtime: env.runtime, now: () => epoch + 12000 });
+  env.monitors.push(restarted);
+  const initial = await restarted.getSnapshot();
+  assert.equal(initial.collection.backgroundEnabled, false);
+  assert.equal(initial.collection.state, 'paused');
 });
 
 test('an expired lease interrupts a large incomplete record and resumes its buffered bytes without losing usage', async t => {
