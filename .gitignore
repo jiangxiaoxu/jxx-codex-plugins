@@ -5,9 +5,9 @@ dist/
 !plugins/figma-workspace/cli-runtime/dist/
 !plugins/figma-workspace/cli-runtime/dist/**
 
-# Agent Monitor ships its bundled MCP server and single-file UI.
-!plugins/agent-monitor/dist/
-!plugins/agent-monitor/dist/**
+# Codex Agent Metrics ships its bundled MCP server and single-file UI.
+!plugins/codex-agent-metrics/dist/
+!plugins/codex-agent-metrics/dist/**
 
 downloads/
 tmp/

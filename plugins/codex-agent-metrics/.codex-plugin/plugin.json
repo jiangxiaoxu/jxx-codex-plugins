@@ -1,0 +1,18 @@
+{
+  "name": "codex-agent-metrics",
+  "version": "0.1.6",
+  "description": "Read-only Codex agent speed, usage, models and execution modes in a live MCP App.",
+  "author": { "name": "jiangxiaoxu" },
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Codex Agent Metrics",
+    "shortDescription": "Live Codex agent metrics",
+    "longDescription": "Inspect current-host Codex threads and subagents through a compact live dashboard with aggregate model rates, token usage, speed estimates and evidence-based execution modes.",
+    "developerName": "jiangxiaoxu",
+    "category": "Developer Tools",
+    "capabilities": ["Read", "Interactive"],
+    "logo": "./assets/icon.png",
+    "composerIcon": "./assets/icon.png",
+    "defaultPrompt": "Open Codex Agent Metrics."
+  }
+}
