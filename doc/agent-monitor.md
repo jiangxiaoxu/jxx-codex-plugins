@@ -2,6 +2,8 @@
 
 Agent Monitor is a local Codex MCP App that sends only read-only data requests to an existing Codex daemon. It monitors Working and Ready threads with available uncompressed `.jsonl` rollouts, displaying output speed by model, root conversations, subagents, recorded token usage, acceleration evidence and daily usage history. Needs you, Inactive, compressed and unavailable-log threads are excluded. The global and thread entrypoints open the same dashboard.
 
+For the published 0.1.2 baseline, verification evidence and cross-machine continuation checklist, see the [2026-10-30 handoff](agent-monitor-handoff.md).
+
 ## Source map
 
 | Path | Responsibility |
