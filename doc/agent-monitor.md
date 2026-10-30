@@ -2,7 +2,9 @@
 
 Agent Monitor is a local Codex MCP App that sends only read-only data requests to an existing Codex daemon. It monitors Working and Ready threads with available uncompressed `.jsonl` rollouts, displaying output speed by model, root conversations, subagents, recorded token usage, acceleration evidence and daily usage history. Needs you, Inactive, compressed and unavailable-log threads are excluded. The global and thread entrypoints open the same dashboard.
 
-For the published 0.1.2 baseline, verification evidence and cross-machine continuation checklist, see the [2026-10-30 handoff](agent-monitor-handoff.md).
+Version 0.1.3 adds interactive rate-chart inspection, conversation overviews and task-based subagent names. It also synchronizes shared database facts across monitor processes and stores default state under `<CODEX_HOME>/state/agent-monitor`.
+
+For the previous 0.1.2 baseline, verification evidence and cross-machine continuation checklist, see the [2026-10-30 handoff](agent-monitor-handoff.md).
 
 ## Source map
 
@@ -25,7 +27,8 @@ Node.js 24 or later is required on the plugin's execution host. The generated ru
 The observer integration is verified against Codex 0.166.0. An existing daemon with `codex app-server proxy` support is required. Starting a separate app-server process cannot expose another process's loaded threads. An unavailable daemon is reported as unavailable; recently modified files are not silently treated as Ready.
 
 - `CODEX_HOME` selects the Codex home. The default is `~/.codex`.
-- `AGENT_MONITOR_STATE_DIR` selects plugin-owned persistent history. The default is `~/.local/state/agent-monitor`.
+- `AGENT_MONITOR_STATE_DIR` selects plugin-owned persistent history. The default is `<CODEX_HOME>/state/agent-monitor`.
+- On first collection, if the default database does not exist, an existing `~/.local/state/agent-monitor/metrics.sqlite` is copied as a SQLite snapshot, including committed WAL data. The old directory remains in place; old-version writes after that snapshot are not automatically merged. An existing destination database is not overwritten. Explicit `AGENT_MONITOR_STATE_DIR` disables this migration.
 - `AGENT_MONITOR_LOG_LEVEL` selects `debug`, `info`, `warn` or `error`. The default is `info`; `debug` additionally records collection cycles, file reads and MCP request timings.
 - `AGENT_MONITOR_CODEX_BIN` optionally selects the native Codex executable. Otherwise the daemon's managed `packages/app-server-daemon/current/bin/codex[.exe]` is preferred, followed by `codex` on PATH. On Windows, an npm `.cmd` shim is not a native executable.
 - `AGENT_MONITOR_APP_SERVER_SOCKET` optionally selects the existing control socket. The default is `<CODEX_HOME>/app-server-control/app-server-control.sock`.
@@ -71,6 +74,8 @@ Threads and agents that normally leave the monitored set return `thread:null` or
 
 Collection reads candidate-file increments with a 250 ms delay after each completed cycle. Cycles do not overlap. The loaded-ID catalog is reconciled at most once per second, thread status notifications update known entries immediately, and metadata/default mode configuration is refreshed every ten seconds. Initial parsing reads eligible plaintext files from the beginning. A generating/tool phase without new log evidence for 300 seconds becomes unknown; runtime Working/Ready remains separately identified. No global rollout directory scan is performed.
 
+Multiple monitor processes can share the same state directory. Each process synchronizes newly committed response facts from the shared database before publishing a collection cycle, so duplicate parsing does not double-count and facts recorded by another process become visible. Samples can still differ briefly with collection timing and in-flight estimates. SQLite waits briefly for competing writers; a longer contention failure follows the normal collection error and retry path.
+
 Daily totals use an index on the recorded response day. On the measured 67 MiB history database, the previous full scan took about 20.5 ms per query; the indexed query took about 0.75 ms. Candidate-only cold parsing of roughly 319 MiB completed in about 1.4 seconds, and indexed warm collection cycles took about 5 ms median. These are short measurements on one active Windows host, not guarantees for daemon CPU or host UI rendering.
 
 `sampledAt` anchors the query's rate window; `collection.lastSuccessAt` is the last successfully completed runtime-and-file reader cycle. A query returning a new timestamp does not prove that collection advanced. `collection.skippedCompressedFiles` reports compressed loaded candidates, not a scan of all compressed history. `collection.excluded` separately counts compressed, missing-metadata, missing-log and unsupported-path exclusions.
@@ -79,7 +84,13 @@ Daily totals use an index on the recorded response day. On the measured 67 MiB h
 
 The top overview covers monitorable Working/Ready agents independently of the selected or visible rows. Root conversations occupy the top-level list; descendants are shown within their root. Recent ordering uses session recency metadata and actually reorders existing rows when a new interaction occurs. The main agent stays first within a root; descendants follow recency. Prefix limits grow only through user scrolling. At most one selected row is retained outside a prefix, until the corresponding nullable detail response confirms it has left the monitored set.
 
+An expanded conversation opens on its aggregate overview, followed by the main agent and its subagents. The overview covers the monitored group regardless of agent filtering or pagination; selecting an agent opens its individual details and rate chart.
+
+Subagent names use the recorded task path when available, then the thread title or a stable ID. Generated agent nicknames are not used as task names.
+
 Lists use bounded scrolling regions and cursor-based incremental loading rather than page buttons. While visible, the dashboard targets a 500 ms start-to-start refresh interval, subtracting the previous refresh's duration. Slow refreshes finish before another begins and do not create a backlog. Hidden views stop both metric requests and the UI freshness timer; an already-sent request may finish, but hidden views do not continue the next page or detail request.
+
+The agent rate chart supports selecting a time range, zooming and panning, and inspecting individual samples. A historical view holds its captured five-minute window steady while live updates continue; returning to live follows the latest samples again. The tooltip reports measured and estimated rates, not historical runtime status or configuration, which are not recorded as a timeline. The chart cannot reconstruct older per-second history from the daily aggregates.
 
 MCP discovery and resource reads only register the App and serve its files. They do not open the metrics database or connect to the daemon. Data requests activate the collector and renew a five-second activity lease. With no further requests, background collection pauses after the current cycle and no later cycle is scheduled. The observer proxy and read-only catalog database close on pause; the Codex daemon remains running. Parsed offsets and plugin metrics remain cached for resume. Diagnostics requests alone do not activate collection. The MCP subprocess remains available; paused does not mean that Codex has unloaded the plugin.
 

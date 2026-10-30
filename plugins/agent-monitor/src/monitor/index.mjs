@@ -5,6 +5,7 @@ import path from 'node:path';
 import { RolloutParser, normalizeMode } from './parser.mjs';
 import { MetricsStore, localDay } from './store.mjs';
 import { RuntimeClient } from './runtime.mjs';
+import { migrateLegacyState } from '../state-migration.mjs';
 
 const WINDOW_MS = 3000;
 const HISTORY_MS = 300000;
@@ -15,6 +16,17 @@ const date = ms => ms === null || ms === undefined ? null : new Date(ms).toISOSt
 const runtimeMs = seconds => typeof seconds === 'number' && Number.isFinite(seconds) ? seconds * 1000 : null;
 const sumRate = (a, b) => ({ measuredTps: a.measuredTps + b.measuredTps, estimatedTps: a.estimatedTps + b.estimatedTps, outputTps: a.outputTps + b.outputTps });
 const sumTokens = (a, b) => ({ input: a.input + b.input, cachedInput: a.cachedInput + b.cachedInput, output: a.output + b.output, reasoning: a.reasoning + b.reasoning });
+
+function agentName(agent) {
+  if (agent.isSubagent && typeof agent.agentPath === 'string') {
+    const task = agent.agentPath.split('/').filter(Boolean).at(-1);
+    if (task && task !== 'root') {
+      const label = task.replace(/[_-]+/g, ' ').trim();
+      if (label) return label.charAt(0).toUpperCase() + label.slice(1);
+    }
+  }
+  return agent.title || `${agent.isSubagent ? 'Agent' : 'Thread'} ${agent.id.slice(0, 8)}`;
+}
 
 function contribution(response, start, end) {
   if (response.startMs === null || response.startMs === undefined) return 0;
@@ -37,9 +49,10 @@ function page(items, limit, cursor, context) {
 }
 
 export class Monitor {
-  constructor({ codexHome = process.env.CODEX_HOME || path.join(homedir(), '.codex'), stateDir = process.env.AGENT_MONITOR_STATE_DIR || path.join(homedir(), '.agent-monitor'), now = Date.now, diagnostics, runtime } = {}) {
+  constructor({ codexHome = process.env.CODEX_HOME || path.join(homedir(), '.codex'), stateDir = process.env.AGENT_MONITOR_STATE_DIR || path.join(codexHome, 'state', 'agent-monitor'), legacyStateDir = null, now = Date.now, diagnostics, runtime } = {}) {
     this.codexHome = path.resolve(codexHome);
     this.stateDir = path.resolve(stateDir);
+    this.legacyStateDir = legacyStateDir;
     this.now = now;
     this.diagnostics = diagnostics;
     this.runtime = runtime ?? new RuntimeClient({ codexHome: this.codexHome, diagnostics });
@@ -48,6 +61,7 @@ export class Monitor {
     this.readers = new Map();
     this.responses = new Map();
     this.tokens = new Map();
+    this.responseCursor = null;
     this.estimates = new Map();
     this.catalog = new Map();
     this.published = { agents: new Map(), responses: new Map(), tokens: new Map(), estimates: new Map(), catalog: new Map(), today: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 }, skippedCompressedFiles: 0, skippedUnavailableThreads: 0, excluded: {} };
@@ -145,14 +159,8 @@ export class Monitor {
     let failedFiles = 0;
     try {
       if (!this.store) {
-        const store = new MetricsStore(this.stateDir);
-        try {
-          const tokens = store.agentTotals();
-          const responses = store.recent(now - 1800000);
-          this.store = store;
-          this.tokens = tokens;
-          for (const response of responses) this.responses.set(response.key, response);
-        } catch (error) { store.close(); throw error; }
+        await migrateLegacyState(this.stateDir, this.legacyStateDir);
+        this.store = new MetricsStore(this.stateDir);
       }
       const threads = await this.runtime.list();
       if (this.running && !this.hasDemand()) { this.pause(); return; }
@@ -224,17 +232,18 @@ export class Monitor {
       if (this.running && !this.hasDemand()) { this.pause(); return; }
       if (failedFiles) throw Object.assign(new Error('Some monitored rollouts could not be read'), { code: 'ROLLOUT_READ_FAILED' });
       this.runtime.assertConnected?.();
+      const today = this.syncMetrics(now);
       for (const [key, response] of this.responses) if (response.endMs < now - 1800000) this.responses.delete(key);
       const agents = this.agents();
       const measured = [...agents.values()].reduce((sum, agent) => sum + this.rate(agent, now).measuredTps, 0);
       this.store.peak(now, measured);
-      const today = this.store.today(now);
       const lastSuccessAt = date(this.now());
       // Publish only after every awaited read and fallible source/store check.
       // Queries keep the previous complete view while collection is in progress.
       for (const agent of agents.values()) {
         const phase = this.phase(agent, now);
         let bins = this.estimates.get(agent.id);
+        if (this.pendingCompleted(agent, now)) { this.estimates.delete(agent.id); continue; }
         if (phase !== 'generating') continue;
         if (!bins || bins.startMs !== agent.pendingStartMs) {
           bins = { startMs: agent.pendingStartMs, points: new Map() };
@@ -332,13 +341,20 @@ export class Monitor {
   accept(response) {
     const inserted = this.store.add(response);
     if (!inserted && this.store.owner(response.key) !== response.agentId) return false;
-    if (inserted) {
-      this.tokens.set(response.agentId, sumTokens(this.tokens.get(response.agentId) ?? zeroTokens(), response.tokens));
-      this.acceptedResponses++;
-    }
-    if (inserted && response.endMs >= this.now() - 1800000) this.responses.set(response.key, { ...response, output: response.tokens.output });
+    if (inserted) this.acceptedResponses++;
     this.estimates.delete(response.agentId);
     return true;
+  }
+
+  syncMetrics(now) {
+    const { cursor, totals, responses, today } = this.store.readMetrics(this.responseCursor, now);
+    if (totals) this.tokens = totals;
+    for (const response of responses) {
+      if (!totals) this.tokens.set(response.agentId, sumTokens(this.tokens.get(response.agentId) ?? zeroTokens(), response.tokens));
+      if (response.endMs >= now - 1800000) this.responses.set(response.key, response);
+    }
+    this.responseCursor = cursor;
+    return today;
   }
 
   agents() {
@@ -351,7 +367,8 @@ export class Monitor {
         sessionId: typeof runtime.sessionId === 'string' && runtime.sessionId.trim() ? runtime.sessionId : null,
         parentId: runtime.parentThreadId ?? parser.parentId,
         isSubagent: !!(runtime.parentThreadId ?? parser.parentId) || parser.isSubagent,
-        title: runtime.name || null,
+        title: runtime.name || parser.title,
+        agentPath: runtime.agentPath ?? parser.agentPath,
         nickname: runtime.agentNickname ?? parser.nickname,
         model: activity === 'working' && parser.turnModel ? parser.turnModel : runtime.model ?? parser.model,
         modelSource: activity === 'working' && parser.turnModel ? 'turn_context' : runtime.model ? 'runtime_config' : parser.model ? 'log_metadata' : 'unknown',
@@ -372,8 +389,13 @@ export class Monitor {
     return ['generating', 'tools'].includes(agent.phase) && now - agent.lastMs > HISTORY_MS ? 'unknown' : agent.phase;
   }
 
+  pendingCompleted(agent, now, view = this) {
+    return agent.pendingStartMs !== null && [...view.responses.values()].some(response =>
+      response.agentId === agent.id && response.endMs > agent.pendingStartMs && response.endMs <= now);
+  }
+
   estimate(agent, now, view = this) {
-    if (this.phase(agent, now) !== 'generating' || agent.pendingStartMs === null || !agent.turnModel) return 0;
+    if (this.phase(agent, now) !== 'generating' || agent.pendingStartMs === null || !agent.turnModel || this.pendingCompleted(agent, now, view)) return 0;
     const recent = [...view.responses.values()].filter(r => r.startMs !== null && r.endMs <= now && r.output > 0).sort((a, b) => b.endMs - a.endMs);
     let samples = recent.filter(r => r.agentId === agent.id && r.model === agent.model && r.endMs >= now - 600000).slice(0, 3);
     if (!samples.length) samples = recent.filter(r => r.model === agent.model && r.endMs >= now - 1800000).slice(0, 10);
@@ -407,7 +429,7 @@ export class Monitor {
     const phase = this.phase(agent, now);
     return {
       id: agent.id, parentId: agent.parentId, rootThreadId: this.rootId(agent, agents, view), role: agent.isSubagent ? 'subagent' : 'main',
-      name: agent.nickname ?? agent.title ?? (agent.isSubagent ? `Agent ${agent.id.slice(0, 8)}` : `Thread ${agent.id.slice(0, 8)}`), model: agent.model,
+      name: agentName(agent), model: agent.model,
       reasoningEffort: agent.reasoningEffort, activity: agent.activity, phase, phaseSource: ['working', 'ready'].includes(phase) ? 'runtime' : 'log', recencyAt: date(agent.recencyMs),
       modelSource: agent.modelSource, configuredModel: agent.configuredModel, configuredReasoningEffort: agent.configuredReasoningEffort, reasoningEffortSource: agent.reasoningEffortSource,
       rate: this.rate(agent, now, view), tokens: view.tokens.get(agent.id) ?? zeroTokens(),

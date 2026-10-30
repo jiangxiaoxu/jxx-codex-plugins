@@ -12,7 +12,8 @@ export class MetricsStore {
     mkdirSync(stateDir, { recursive: true });
     this.db = new DatabaseSync(path.join(stateDir, 'metrics.sqlite'));
     try {
-      this.db.exec(`PRAGMA journal_mode=WAL;
+      this.db.exec(`PRAGMA busy_timeout=2000;
+      PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS responses (
         response_key TEXT PRIMARY KEY, agent_id TEXT NOT NULL, model TEXT,
         start_ms REAL, end_ms REAL NOT NULL, day TEXT NOT NULL,
@@ -33,16 +34,30 @@ export class MetricsStore {
     return Number(result.changes) !== 0;
   }
 
-  recent(sinceMs) {
-    return this.db.prepare('SELECT response_key AS key, agent_id AS agentId, model, start_ms AS startMs, end_ms AS endMs, output_tokens AS output FROM responses WHERE end_ms >= ? ORDER BY end_ms DESC').all(sinceMs);
-  }
-
   owner(key) {
     return this.db.prepare('SELECT agent_id AS id FROM responses WHERE response_key = ?').get(key)?.id ?? null;
   }
 
-  agentTotals() {
-    return new Map(this.db.prepare('SELECT agent_id AS id, SUM(input_tokens) AS input, SUM(cached_tokens) AS cachedInput, SUM(output_tokens) AS output, SUM(reasoning_tokens) AS reasoning FROM responses GROUP BY agent_id').all().map(row => [row.id, { input: row.input, cachedInput: row.cachedInput, output: row.output, reasoning: row.reasoning }]));
+  readMetrics(afterRowId, nowMs) {
+    this.db.exec('BEGIN');
+    try {
+      // Responses are append-only. Read the initial aggregates and append cursor
+      // from one snapshot so another process cannot make a fact missing or counted twice.
+      const initial = afterRowId === null;
+      const cursor = this.db.prepare('SELECT COALESCE(MAX(rowid), 0) AS value FROM responses').get().value;
+      const totals = initial ? new Map(this.db.prepare('SELECT agent_id AS id, SUM(input_tokens) AS input, SUM(cached_tokens) AS cachedInput, SUM(output_tokens) AS output, SUM(reasoning_tokens) AS reasoning FROM responses GROUP BY agent_id').all().map(row => [row.id, { input: row.input, cachedInput: row.cachedInput, output: row.output, reasoning: row.reasoning }])) : null;
+      const rows = this.db.prepare(`SELECT rowid AS rowId, response_key AS key, agent_id AS agentId, model,
+        start_ms AS startMs, end_ms AS endMs, input_tokens AS input, cached_tokens AS cachedInput,
+        output_tokens AS output, reasoning_tokens AS reasoning FROM responses
+        WHERE ${initial ? 'end_ms >= ?' : 'rowid > ?'} ORDER BY rowid`).all(initial ? nowMs - 1800000 : afterRowId);
+      const responses = rows.map(({ input, cachedInput, output, reasoning, ...response }) => ({ ...response, output, tokens: { input, cachedInput, output, reasoning } }));
+      const today = this.today(nowMs);
+      this.db.exec('COMMIT');
+      return { cursor, totals, responses, today };
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   today(nowMs) {

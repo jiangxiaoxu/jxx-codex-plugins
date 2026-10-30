@@ -6673,7 +6673,7 @@ var require_compile = __commonJS({
       const schOrFunc = root.refs[ref];
       if (schOrFunc)
         return schOrFunc;
-      let _sch = resolve.call(this, root, ref);
+      let _sch = resolve2.call(this, root, ref);
       if (_sch === void 0) {
         const schema = (_a3 = root.localRefs) === null || _a3 === void 0 ? void 0 : _a3[ref];
         const { schemaId } = this.opts;
@@ -6700,7 +6700,7 @@ var require_compile = __commonJS({
     function sameSchemaEnv(s1, s2) {
       return s1.schema === s2.schema && s1.root === s2.root && s1.baseId === s2.baseId;
     }
-    function resolve(root, ref) {
+    function resolve2(root, ref) {
       let sch;
       while (typeof (sch = this.refs[ref]) == "string")
         ref = sch;
@@ -7564,7 +7564,7 @@ var require_fast_uri = __commonJS({
       }
       return uri;
     }
-    function resolve(baseURI, relativeURI, options) {
+    function resolve2(baseURI, relativeURI, options) {
       const schemelessOptions = options ? Object.assign({ scheme: "null" }, options) : { scheme: "null" };
       const {
         parsed: baseParsed,
@@ -7955,7 +7955,7 @@ var require_fast_uri = __commonJS({
     var fastUri = {
       SCHEMES,
       normalize,
-      resolve,
+      resolve: resolve2,
       resolveComponent,
       equal,
       serialize,
@@ -10946,7 +10946,7 @@ var require_dist = __commonJS({
 
 // src/main.mjs
 import { homedir as homedir2 } from "node:os";
-import { join } from "node:path";
+import { join as join2 } from "node:path";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 import process2 from "node:process";
@@ -16018,7 +16018,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve) {
+function isRecursive(inst, stack, resolve2) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -16028,7 +16028,7 @@ function isRecursive(inst, stack, resolve) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve);
+      const answer = isRecursive(child, stack, resolve2);
       if (answer > result)
         result = answer;
     }
@@ -16039,7 +16039,7 @@ function isRecursive(inst, stack, resolve) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve2) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -16103,7 +16103,7 @@ function isRecursive(inst, stack, resolve) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve2 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -32292,12 +32292,12 @@ var StdioServerTransport = class {
     this.onclose?.();
   }
   send(message) {
-    return new Promise((resolve) => {
+    return new Promise((resolve2) => {
       const json2 = serializeMessage(message);
       if (this._stdout.write(json2)) {
-        resolve();
+        resolve2();
       } else {
-        this._stdout.once("drain", resolve);
+        this._stdout.once("drain", resolve2);
       }
     });
   }
@@ -32527,7 +32527,8 @@ var MetricsStore = class {
     mkdirSync(stateDir2, { recursive: true });
     this.db = new DatabaseSync(path2.join(stateDir2, "metrics.sqlite"));
     try {
-      this.db.exec(`PRAGMA journal_mode=WAL;
+      this.db.exec(`PRAGMA busy_timeout=2000;
+      PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS responses (
         response_key TEXT PRIMARY KEY, agent_id TEXT NOT NULL, model TEXT,
         start_ms REAL, end_ms REAL NOT NULL, day TEXT NOT NULL,
@@ -32549,14 +32550,27 @@ var MetricsStore = class {
     const result = this.insert.run(key, agentId, model, startMs, endMs, localDay(endMs), tokens.input, tokens.cachedInput, tokens.output, tokens.reasoning);
     return Number(result.changes) !== 0;
   }
-  recent(sinceMs) {
-    return this.db.prepare("SELECT response_key AS key, agent_id AS agentId, model, start_ms AS startMs, end_ms AS endMs, output_tokens AS output FROM responses WHERE end_ms >= ? ORDER BY end_ms DESC").all(sinceMs);
-  }
   owner(key) {
     return this.db.prepare("SELECT agent_id AS id FROM responses WHERE response_key = ?").get(key)?.id ?? null;
   }
-  agentTotals() {
-    return new Map(this.db.prepare("SELECT agent_id AS id, SUM(input_tokens) AS input, SUM(cached_tokens) AS cachedInput, SUM(output_tokens) AS output, SUM(reasoning_tokens) AS reasoning FROM responses GROUP BY agent_id").all().map((row) => [row.id, { input: row.input, cachedInput: row.cachedInput, output: row.output, reasoning: row.reasoning }]));
+  readMetrics(afterRowId, nowMs) {
+    this.db.exec("BEGIN");
+    try {
+      const initial = afterRowId === null;
+      const cursor = this.db.prepare("SELECT COALESCE(MAX(rowid), 0) AS value FROM responses").get().value;
+      const totals = initial ? new Map(this.db.prepare("SELECT agent_id AS id, SUM(input_tokens) AS input, SUM(cached_tokens) AS cachedInput, SUM(output_tokens) AS output, SUM(reasoning_tokens) AS reasoning FROM responses GROUP BY agent_id").all().map((row) => [row.id, { input: row.input, cachedInput: row.cachedInput, output: row.output, reasoning: row.reasoning }])) : null;
+      const rows = this.db.prepare(`SELECT rowid AS rowId, response_key AS key, agent_id AS agentId, model,
+        start_ms AS startMs, end_ms AS endMs, input_tokens AS input, cached_tokens AS cachedInput,
+        output_tokens AS output, reasoning_tokens AS reasoning FROM responses
+        WHERE ${initial ? "end_ms >= ?" : "rowid > ?"} ORDER BY rowid`).all(initial ? nowMs - 18e5 : afterRowId);
+      const responses = rows.map(({ input: input2, cachedInput, output: output2, reasoning, ...response }) => ({ ...response, output: output2, tokens: { input: input2, cachedInput, output: output2, reasoning } }));
+      const today = this.today(nowMs);
+      this.db.exec("COMMIT");
+      return { cursor, totals, responses, today };
+    } catch (error62) {
+      this.db.exec("ROLLBACK");
+      throw error62;
+    }
   }
   today(nowMs) {
     return this.db.prepare("SELECT COALESCE(SUM(input_tokens), 0) AS inputTokens, COALESCE(SUM(output_tokens), 0) AS outputTokens, COALESCE(SUM(reasoning_tokens), 0) AS reasoningTokens FROM responses WHERE day = ?").get(localDay(nowMs));
@@ -32599,7 +32613,7 @@ var wrapper_default = import_websocket.default;
 // package.json
 var package_default = {
   name: "@jxx-codex-plugins/agent-monitor",
-  version: "0.1.2",
+  version: "0.1.3",
   private: true,
   description: "Read-only Codex agent speed and activity monitoring through MCP Apps.",
   type: "module",
@@ -32640,7 +32654,9 @@ function metadata(thread) {
   if (!thread || typeof thread.id !== "string" || typeof thread.status?.type !== "string") throw new Error("Invalid App Server thread metadata");
   const result = Object.fromEntries(metadataFields.map((key) => [key, thread[key] ?? null]));
   result.status = { type: thread.status.type, activeFlags: Array.isArray(thread.status.activeFlags) ? [...thread.status.activeFlags] : [] };
-  result.source = typeof thread.source === "string" ? thread.source : thread.source?.subagent ? "subagent" : null;
+  result.source = typeof thread.source === "string" ? thread.source : thread.source?.subAgent ? "subagent" : null;
+  const spawn2 = thread.source?.subAgent?.thread_spawn;
+  result.agentPath = typeof spawn2?.agent_path === "string" ? spawn2.agent_path : null;
   return result;
 }
 var RuntimeClient = class {
@@ -32817,11 +32833,11 @@ var RuntimeClient = class {
     ws.on("message", (bytes) => this.receive(connection, bytes));
     ws.on("error", () => this.disconnected(connection, new Error("App Server WebSocket failed")));
     ws.on("close", () => this.disconnected(connection, new Error("App Server connection closed")));
-    await new Promise((resolve, reject) => {
+    await new Promise((resolve2, reject) => {
       const timer = setTimeout(() => reject(new Error("App Server handshake timed out")), REQUEST_TIMEOUT_MS);
       const opened = () => {
         cleanup();
-        resolve();
+        resolve2();
       };
       const failed = () => {
         cleanup();
@@ -32860,13 +32876,13 @@ var RuntimeClient = class {
     if (!connection || connection.ws.readyState !== wrapper_default.OPEN) return Promise.reject(new Error("App Server is disconnected"));
     const id = this.nextId++;
     const startedAt = performance.now();
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
         reject(new Error(`App Server request timed out (${method})`));
         this.disconnected(connection, new Error("App Server request timed out"));
       }, REQUEST_TIMEOUT_MS);
-      this.pending.set(id, { resolve, reject, timer, method, startedAt });
+      this.pending.set(id, { resolve: resolve2, reject, timer, method, startedAt });
       connection.ws.send(JSON.stringify({ id, method, params }), (error62) => {
         if (error62) this.disconnected(connection, new Error("App Server request could not be sent"));
       });
@@ -32943,6 +32959,35 @@ var RuntimeClient = class {
   }
 };
 
+// src/state-migration.mjs
+import { backup, DatabaseSync as DatabaseSync3 } from "node:sqlite";
+import { existsSync, linkSync, mkdirSync as mkdirSync2, mkdtempSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
+async function migrateLegacyState(stateDir2, legacyStateDir2) {
+  if (!legacyStateDir2 || resolve(stateDir2) === resolve(legacyStateDir2)) return;
+  const sourcePath = join(legacyStateDir2, "metrics.sqlite");
+  const targetPath = join(stateDir2, "metrics.sqlite");
+  if (!existsSync(legacyStateDir2)) return;
+  mkdirSync2(stateDir2, { recursive: true });
+  if (!existsSync(targetPath) && existsSync(sourcePath)) {
+    const temporary = mkdtempSync(join(stateDir2, ".migration-"));
+    let source;
+    try {
+      source = new DatabaseSync3(sourcePath, { readOnly: true });
+      const snapshot = join(temporary, "metrics.sqlite");
+      await backup(source, snapshot);
+      try {
+        linkSync(snapshot, targetPath);
+      } catch (error62) {
+        if (error62.code !== "EEXIST") throw error62;
+      }
+    } finally {
+      source?.close();
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  }
+}
+
 // src/monitor/index.mjs
 var WINDOW_MS = 3e3;
 var HISTORY_MS = 3e5;
@@ -32953,6 +32998,16 @@ var date5 = (ms) => ms === null || ms === void 0 ? null : new Date(ms).toISOStri
 var runtimeMs = (seconds) => typeof seconds === "number" && Number.isFinite(seconds) ? seconds * 1e3 : null;
 var sumRate = (a, b) => ({ measuredTps: a.measuredTps + b.measuredTps, estimatedTps: a.estimatedTps + b.estimatedTps, outputTps: a.outputTps + b.outputTps });
 var sumTokens = (a, b) => ({ input: a.input + b.input, cachedInput: a.cachedInput + b.cachedInput, output: a.output + b.output, reasoning: a.reasoning + b.reasoning });
+function agentName(agent) {
+  if (agent.isSubagent && typeof agent.agentPath === "string") {
+    const task = agent.agentPath.split("/").filter(Boolean).at(-1);
+    if (task && task !== "root") {
+      const label = task.replace(/[_-]+/g, " ").trim();
+      if (label) return label.charAt(0).toUpperCase() + label.slice(1);
+    }
+  }
+  return agent.title || `${agent.isSubagent ? "Agent" : "Thread"} ${agent.id.slice(0, 8)}`;
+}
 function contribution(response, start, end) {
   if (response.startMs === null || response.startMs === void 0) return 0;
   const overlap = Math.min(response.endMs, end) - Math.max(response.startMs, start);
@@ -32974,9 +33029,10 @@ function page(items, limit, cursor, context) {
   return { items: items.slice(offset, nextOffset), nextCursor: nextOffset < items.length ? Buffer.from(JSON.stringify({ offset: nextOffset, context })).toString("base64url") : null };
 }
 var Monitor = class {
-  constructor({ codexHome: codexHome2 = process.env.CODEX_HOME || path4.join(homedir(), ".codex"), stateDir: stateDir2 = process.env.AGENT_MONITOR_STATE_DIR || path4.join(homedir(), ".agent-monitor"), now = Date.now, diagnostics: diagnostics2, runtime } = {}) {
+  constructor({ codexHome: codexHome2 = process.env.CODEX_HOME || path4.join(homedir(), ".codex"), stateDir: stateDir2 = process.env.AGENT_MONITOR_STATE_DIR || path4.join(codexHome2, "state", "agent-monitor"), legacyStateDir: legacyStateDir2 = null, now = Date.now, diagnostics: diagnostics2, runtime } = {}) {
     this.codexHome = path4.resolve(codexHome2);
     this.stateDir = path4.resolve(stateDir2);
+    this.legacyStateDir = legacyStateDir2;
     this.now = now;
     this.diagnostics = diagnostics2;
     this.runtime = runtime ?? new RuntimeClient({ codexHome: this.codexHome, diagnostics: diagnostics2 });
@@ -32985,6 +33041,7 @@ var Monitor = class {
     this.readers = /* @__PURE__ */ new Map();
     this.responses = /* @__PURE__ */ new Map();
     this.tokens = /* @__PURE__ */ new Map();
+    this.responseCursor = null;
     this.estimates = /* @__PURE__ */ new Map();
     this.catalog = /* @__PURE__ */ new Map();
     this.published = { agents: /* @__PURE__ */ new Map(), responses: /* @__PURE__ */ new Map(), tokens: /* @__PURE__ */ new Map(), estimates: /* @__PURE__ */ new Map(), catalog: /* @__PURE__ */ new Map(), today: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 }, skippedCompressedFiles: 0, skippedUnavailableThreads: 0, excluded: {} };
@@ -33086,17 +33143,8 @@ var Monitor = class {
     let failedFiles = 0;
     try {
       if (!this.store) {
-        const store = new MetricsStore(this.stateDir);
-        try {
-          const tokens = store.agentTotals();
-          const responses = store.recent(now - 18e5);
-          this.store = store;
-          this.tokens = tokens;
-          for (const response of responses) this.responses.set(response.key, response);
-        } catch (error62) {
-          store.close();
-          throw error62;
-        }
+        await migrateLegacyState(this.stateDir, this.legacyStateDir);
+        this.store = new MetricsStore(this.stateDir);
       }
       const threads = await this.runtime.list();
       if (this.running && !this.hasDemand()) {
@@ -33189,15 +33237,19 @@ var Monitor = class {
       }
       if (failedFiles) throw Object.assign(new Error("Some monitored rollouts could not be read"), { code: "ROLLOUT_READ_FAILED" });
       this.runtime.assertConnected?.();
+      const today = this.syncMetrics(now);
       for (const [key, response] of this.responses) if (response.endMs < now - 18e5) this.responses.delete(key);
       const agents = this.agents();
       const measured = [...agents.values()].reduce((sum, agent) => sum + this.rate(agent, now).measuredTps, 0);
       this.store.peak(now, measured);
-      const today = this.store.today(now);
       const lastSuccessAt = date5(this.now());
       for (const agent of agents.values()) {
         const phase = this.phase(agent, now);
         let bins = this.estimates.get(agent.id);
+        if (this.pendingCompleted(agent, now)) {
+          this.estimates.delete(agent.id);
+          continue;
+        }
         if (phase !== "generating") continue;
         if (!bins || bins.startMs !== agent.pendingStartMs) {
           bins = { startMs: agent.pendingStartMs, points: /* @__PURE__ */ new Map() };
@@ -33302,13 +33354,19 @@ var Monitor = class {
   accept(response) {
     const inserted = this.store.add(response);
     if (!inserted && this.store.owner(response.key) !== response.agentId) return false;
-    if (inserted) {
-      this.tokens.set(response.agentId, sumTokens(this.tokens.get(response.agentId) ?? zeroTokens(), response.tokens));
-      this.acceptedResponses++;
-    }
-    if (inserted && response.endMs >= this.now() - 18e5) this.responses.set(response.key, { ...response, output: response.tokens.output });
+    if (inserted) this.acceptedResponses++;
     this.estimates.delete(response.agentId);
     return true;
+  }
+  syncMetrics(now) {
+    const { cursor, totals, responses, today } = this.store.readMetrics(this.responseCursor, now);
+    if (totals) this.tokens = totals;
+    for (const response of responses) {
+      if (!totals) this.tokens.set(response.agentId, sumTokens(this.tokens.get(response.agentId) ?? zeroTokens(), response.tokens));
+      if (response.endMs >= now - 18e5) this.responses.set(response.key, response);
+    }
+    this.responseCursor = cursor;
+    return today;
   }
   agents() {
     const agents = /* @__PURE__ */ new Map();
@@ -33321,7 +33379,8 @@ var Monitor = class {
         sessionId: typeof runtime.sessionId === "string" && runtime.sessionId.trim() ? runtime.sessionId : null,
         parentId: runtime.parentThreadId ?? parser.parentId,
         isSubagent: !!(runtime.parentThreadId ?? parser.parentId) || parser.isSubagent,
-        title: runtime.name || null,
+        title: runtime.name || parser.title,
+        agentPath: runtime.agentPath ?? parser.agentPath,
         nickname: runtime.agentNickname ?? parser.nickname,
         model: activity === "working" && parser.turnModel ? parser.turnModel : runtime.model ?? parser.model,
         modelSource: activity === "working" && parser.turnModel ? "turn_context" : runtime.model ? "runtime_config" : parser.model ? "log_metadata" : "unknown",
@@ -33340,8 +33399,11 @@ var Monitor = class {
     if (!["generating", "tools", "unknown"].includes(agent.phase)) return "working";
     return ["generating", "tools"].includes(agent.phase) && now - agent.lastMs > HISTORY_MS ? "unknown" : agent.phase;
   }
+  pendingCompleted(agent, now, view = this) {
+    return agent.pendingStartMs !== null && [...view.responses.values()].some((response) => response.agentId === agent.id && response.endMs > agent.pendingStartMs && response.endMs <= now);
+  }
   estimate(agent, now, view = this) {
-    if (this.phase(agent, now) !== "generating" || agent.pendingStartMs === null || !agent.turnModel) return 0;
+    if (this.phase(agent, now) !== "generating" || agent.pendingStartMs === null || !agent.turnModel || this.pendingCompleted(agent, now, view)) return 0;
     const recent = [...view.responses.values()].filter((r) => r.startMs !== null && r.endMs <= now && r.output > 0).sort((a, b) => b.endMs - a.endMs);
     let samples = recent.filter((r) => r.agentId === agent.id && r.model === agent.model && r.endMs >= now - 6e5).slice(0, 3);
     if (!samples.length) samples = recent.filter((r) => r.model === agent.model && r.endMs >= now - 18e5).slice(0, 10);
@@ -33375,7 +33437,7 @@ var Monitor = class {
       parentId: agent.parentId,
       rootThreadId: this.rootId(agent, agents, view),
       role: agent.isSubagent ? "subagent" : "main",
-      name: agent.nickname ?? agent.title ?? (agent.isSubagent ? `Agent ${agent.id.slice(0, 8)}` : `Thread ${agent.id.slice(0, 8)}`),
+      name: agentName(agent),
       model: agent.model,
       reasoningEffort: agent.reasoningEffort,
       activity: agent.activity,
@@ -33486,7 +33548,7 @@ var Monitor = class {
 };
 
 // src/diagnostics.mjs
-import { closeSync, existsSync, mkdirSync as mkdirSync2, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
+import { closeSync, existsSync as existsSync2, mkdirSync as mkdirSync3, openSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import path5 from "node:path";
 var levels = { debug: 10, info: 20, warn: 30, error: 40 };
 var allowedFields = /* @__PURE__ */ new Set([
@@ -33648,7 +33710,7 @@ var Diagnostics = class {
     this.logPath = null;
     try {
       const directory = path5.join(stateDir2, "logs");
-      mkdirSync2(directory, { recursive: true });
+      mkdirSync3(directory, { recursive: true });
       const timestamp = `${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-")}-${process.hrtime.bigint()}`;
       this.logPath = path5.join(directory, `agent-monitor-${process.pid}-${timestamp}.jsonl`);
       this.fd = openSync(this.logPath, "ax");
@@ -33671,10 +33733,10 @@ var Diagnostics = class {
     if (this.keepFiles === 1) unlinkSync(this.logPath);
     else {
       const oldest = archive(this.keepFiles - 1);
-      if (existsSync(oldest)) unlinkSync(oldest);
+      if (existsSync2(oldest)) unlinkSync(oldest);
       for (let index = this.keepFiles - 1; index >= 1; index--) {
         const source = index === 1 ? this.logPath : archive(index - 1);
-        if (existsSync(source)) renameSync(source, archive(index));
+        if (existsSync2(source)) renameSync(source, archive(index));
       }
     }
     this.fd = openSync(this.logPath, "ax");
@@ -39708,7 +39770,7 @@ var Protocol = class {
           return;
         }
         const pollInterval = task2.pollInterval ?? this._options?.defaultTaskPollInterval ?? 1e3;
-        await new Promise((resolve) => setTimeout(resolve, pollInterval));
+        await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
         options?.signal?.throwIfAborted();
       }
     } catch (error62) {
@@ -39725,7 +39787,7 @@ var Protocol = class {
    */
   request(request, resultSchema, options) {
     const { relatedRequestId, resumptionToken, onresumptiontoken, task, relatedTask } = options ?? {};
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       const earlyReject = (error62) => {
         reject(error62);
       };
@@ -39803,7 +39865,7 @@ var Protocol = class {
           if (!parseResult.success) {
             reject(parseResult.error);
           } else {
-            resolve(parseResult.data);
+            resolve2(parseResult.data);
           }
         } catch (error62) {
           reject(error62);
@@ -40065,12 +40127,12 @@ var Protocol = class {
       }
     } catch {
     }
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve2, reject) => {
       if (signal.aborted) {
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
         return;
       }
-      const timeoutId = setTimeout(resolve, interval);
+      const timeoutId = setTimeout(resolve2, interval);
       signal.addEventListener("abort", () => {
         clearTimeout(timeoutId);
         reject(new McpError(ErrorCode.InvalidRequest, "Request cancelled"));
@@ -41210,7 +41272,7 @@ var McpServer = class {
     let task = createTaskResult.task;
     const pollInterval = task.pollInterval ?? 5e3;
     while (task.status !== "completed" && task.status !== "failed" && task.status !== "cancelled") {
-      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      await new Promise((resolve2) => setTimeout(resolve2, pollInterval));
       const updatedTask = await extra.taskStore.getTask(taskId);
       if (!updatedTask) {
         throw new McpError(ErrorCode.InternalError, `Task ${taskId} not found during polling`);
@@ -41878,8 +41940,9 @@ function createServer(monitor, { uiUrl = new URL("../dist/dashboard.html", impor
 }
 
 // src/main.mjs
-var codexHome = process.env.CODEX_HOME || join(homedir2(), ".codex");
-var stateDir = process.env.AGENT_MONITOR_STATE_DIR || join(homedir2(), ".local", "state", "agent-monitor");
+var codexHome = process.env.CODEX_HOME || join2(homedir2(), ".codex");
+var stateDir = process.env.AGENT_MONITOR_STATE_DIR || join2(codexHome, "state", "agent-monitor");
+var legacyStateDir = process.env.AGENT_MONITOR_STATE_DIR ? null : join2(homedir2(), ".local", "state", "agent-monitor");
 var diagnostics = new Diagnostics({ stateDir, version: VERSION });
 diagnostics.write("info", "service.start", { nodeVersion: process.version, source: codexHome });
 process.on("uncaughtExceptionMonitor", (error62) => diagnostics.write("error", "process.uncaught_exception", { error: error62 }));
@@ -41888,7 +41951,7 @@ process.once("exit", (code) => {
   diagnostics.close();
 });
 try {
-  const monitor = new Monitor({ codexHome, stateDir, diagnostics });
+  const monitor = new Monitor({ codexHome, stateDir, legacyStateDir, diagnostics });
   const server = createServer(monitor, { diagnostics });
   const transport = new StdioServerTransport();
   server.server.oninitialized = () => diagnostics.write("info", "mcp.initialized");
