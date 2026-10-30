@@ -6,7 +6,7 @@ import { RateChart, rateChartHtml } from './rate-chart.mjs';
 
 const root = document.getElementById('monitor');
 const element = id => document.getElementById(id);
-const app = new App({ name: 'Codex Agent Metrics', version: '0.1.7' }, {});
+const app = new App({ name: 'Codex Agent Metrics', version: '0.1.8' }, {});
 const rows = new ThreadList();
 const health = new SnapshotHealth();
 const threadRateChart = new RateChart();
@@ -14,11 +14,14 @@ const globalRateChart = new RateChart();
 const displayRates = new DisplayRates();
 const stableCounts = new StableCounts();
 let displayedCounts = null;
+let displayedModelTierRates = null;
+const modelTierRateFields = ['model', 'serviceTier', 'measuredTps', 'sampleCount', 'activeDurationMs', 'lastSampleAt'];
 document.getElementById('global-rate-chart').innerHTML = rateChartHtml({ id: 'global-rate-timeline', label: '全局输出速率时间线' });
 globalRateChart.update(document.getElementById('global-rate-timeline'), 'monitored-set', []);
 const state = {
   snapshot: null, order: 'recent', scope: 'all', view: 'live', nextThreadCursor: null, threadPrefixCount: 10,
   openThreadId: null, threadData: null, history: null, listEpoch: 0, selectionEpoch: 0,
+  globalTimelineMinutes: 5, threadTimelineMinutes: new Map(),
   loadingThreads: false, connected: false, inViewport: true, detailError: null,
   diagnostics: null, clientEvents: [],
   backgroundEnabled: null, backgroundPending: false, backgroundRequested: false, backgroundError: null,
@@ -191,7 +194,11 @@ function updateAgentCounts(counts) {
 }
 
 function updateModelTierRates(rates) {
-  const samples = (Array.isArray(rates) ? rates : []).filter(sample => finite(sample.measuredTps)
+  const values = Array.isArray(rates) ? rates : [];
+  if (displayedModelTierRates?.length === values.length && values.every((sample, index) =>
+    modelTierRateFields.every((key, field) => Object.is(sample?.[key], displayedModelTierRates[index][field])))) return;
+  displayedModelTierRates = values.map(sample => modelTierRateFields.map(key => sample?.[key]));
+  const samples = values.filter(sample => finite(sample?.measuredTps)
     && sample.measuredTps >= 0 && Number.isFinite(Date.parse(sample.lastSampleAt)));
   element('model-rate-row').hidden = samples.length === 0;
   element('model-rates').innerHTML = samples.map(sample => {
@@ -203,7 +210,7 @@ function updateModelTierRates(rates) {
 }
 
 function drawGlobalChart() {
-  globalRateChart.update(element('global-rate-timeline'), 'monitored-set', state.snapshot?.history ?? []);
+  globalRateChart.update(element('global-rate-timeline'), 'monitored-set', state.snapshot?.history ?? [], state.snapshot?.historyGroups, state.snapshot?.historySampleMs, state.snapshot?.timelineMinutes);
 }
 
 function threadMeta(thread) {
@@ -279,7 +286,7 @@ function updateThreadRows() {
 }
 
 function drawThreadChart() {
-  threadRateChart.update(element('thread-rate-timeline'), state.openThreadId, state.threadData?.history ?? [], state.threadData?.historyContributors);
+  threadRateChart.update(element('thread-rate-timeline'), state.openThreadId, state.threadData?.history ?? [], state.threadData?.historyGroups, state.threadData?.historySampleMs, state.threadData?.timelineMinutes);
 }
 
 function acceptSnapshot(snapshot, { complete = false } = {}) {
@@ -314,7 +321,7 @@ async function refreshSnapshot() {
   let snapshot;
   let cursor = null;
   do {
-    const page = await callTool('monitor_snapshot', { limit: Math.min(100, count - collected.size), cursor, order: state.order, scope: state.scope });
+    const page = await callTool('monitor_snapshot', { limit: Math.min(100, count - collected.size), cursor, order: state.order, scope: state.scope, timelineMinutes: state.globalTimelineMinutes });
     if (epoch !== state.listEpoch || !state.connected || !panelVisible()) return false;
     snapshot = page;
     for (const thread of page.threads ?? []) collected.set(thread.id, thread);
@@ -328,15 +335,15 @@ async function refreshSnapshot() {
 async function refreshSelection() {
   const threadId = state.openThreadId;
   const epoch = state.selectionEpoch;
-  if (!threadId || !state.connected || !panelVisible() || health.inspect().kind !== 'live') return;
-  const data = await callTool('monitor_thread', { threadId, limit: 1 });
-  if (epoch !== state.selectionEpoch || threadId !== state.openThreadId || !state.connected || !panelVisible() || health.inspect().kind !== 'live') return;
+  if (!threadId || !state.connected || !panelVisible() || health.inspect().kind !== 'live') return false;
+  const data = await callTool('monitor_thread', { threadId, limit: 1, timelineMinutes: state.threadTimelineMinutes.get(threadId) ?? 5 });
+  if (epoch !== state.selectionEpoch || threadId !== state.openThreadId || !state.connected || !panelVisible() || health.inspect().kind !== 'live') return false;
   if (data.thread === null) {
     rows.items = rows.items.filter(thread => thread.id !== threadId);
     clearSelection();
     renderThreadList();
     renderHealth();
-    return;
+    return false;
   }
   const oldLayout = threadLayout();
   state.threadData = data;
@@ -345,6 +352,7 @@ async function refreshSelection() {
   else { updateThreadRows(); drawThreadChart(); }
   state.detailError = null;
   renderHealth();
+  return true;
 }
 
 async function loadMoreThreads() {
@@ -352,7 +360,7 @@ async function loadMoreThreads() {
   state.loadingThreads = true;
   const epoch = state.listEpoch;
   try {
-    const data = await callTool('monitor_snapshot', { limit: 10, cursor: state.nextThreadCursor, order: state.order, scope: state.scope });
+    const data = await callTool('monitor_snapshot', { limit: 10, cursor: state.nextThreadCursor, order: state.order, scope: state.scope, timelineMinutes: state.globalTimelineMinutes });
     if (epoch === state.listEpoch && panelVisible() && acceptSnapshot(data)) state.threadPrefixCount += 10;
   } catch (error) {
     reportSnapshotError(error);
@@ -441,6 +449,47 @@ async function refreshVisible() {
 
 const poller = createVisiblePoller(refreshVisible, { onError: reportSnapshotError });
 
+globalRateChart.onWindowChange = async minutes => {
+  const previous = globalRateChart.windowMinutes;
+  state.globalTimelineMinutes = minutes;
+  state.listEpoch++;
+  try {
+    const accepted = await refreshSnapshot();
+    if (!accepted && state.globalTimelineMinutes === minutes && globalRateChart.windowMinutes !== minutes) {
+      state.globalTimelineMinutes = previous;
+      state.listEpoch++;
+    }
+  } catch (error) {
+    if (state.globalTimelineMinutes === minutes && globalRateChart.windowMinutes !== minutes) {
+      state.globalTimelineMinutes = previous;
+      state.listEpoch++;
+    }
+    reportSnapshotError(error);
+  }
+};
+threadRateChart.onWindowChange = async minutes => {
+  if (!state.openThreadId) return;
+  const threadId = state.openThreadId;
+  const previous = state.threadTimelineMinutes.get(threadId) ?? 5;
+  state.threadTimelineMinutes.set(threadId, minutes);
+  state.selectionEpoch++;
+  try {
+    const accepted = await refreshSelection();
+    if (!accepted && state.threadTimelineMinutes.get(threadId) === minutes
+      && !(state.threadData?.thread?.id === threadId && state.threadData.timelineMinutes === minutes)) {
+      state.threadTimelineMinutes.set(threadId, previous);
+      if (state.openThreadId === threadId) state.selectionEpoch++;
+    }
+  } catch (error) {
+    if (state.threadTimelineMinutes.get(threadId) === minutes
+      && !(state.threadData?.thread?.id === threadId && state.threadData.timelineMinutes === minutes)) {
+      state.threadTimelineMinutes.set(threadId, previous);
+      if (state.openThreadId === threadId) state.selectionEpoch++;
+    }
+    reportDetailError(error);
+  }
+};
+
 function renderBackgroundControl() {
   const control = element('background-enabled');
   control.disabled = state.backgroundPending || state.backgroundEnabled === null;
@@ -471,6 +520,7 @@ element('background-enabled').addEventListener('change', async event => {
 
 function updateVisibility() {
   const visible = state.connected && panelVisible();
+  if (!visible) { globalRateChart.suspend(); threadRateChart.suspend(); }
   poller.setVisible(visible);
   if (visible && freshnessTimer === null) freshnessTimer = setInterval(renderHealth, 1000);
   else if (!visible && freshnessTimer !== null) {
@@ -548,6 +598,8 @@ const resizeObserver = new ResizeObserver(() => {
 resizeObserver.observe(root);
 
 function stop() {
+  globalRateChart.detach();
+  threadRateChart.detach();
   state.connected = false;
   state.inViewport = false;
   poller.stop();

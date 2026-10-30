@@ -220,7 +220,7 @@ test('global and thread rate histories count nested members once independently o
   }
 });
 
-test('thread history contributions preserve request identities and sum to the measured timeline', async t => {
+test('thread timeline groups preserve request models and tiers and sum to the measured timeline', async t => {
   const env = await setup(t);
   await writeFile(env.file('root.jsonl'), meta('root', -10000, { title: 'Root task' })
     + line('turn_context', -4000, { model: 'model-a' }) + input(-3000) + usage('old-fast', -2000, 100, { service_tier: 'priority' })
@@ -231,20 +231,149 @@ test('thread history contributions preserve request identities and sum to the me
   env.runtime.overrides.set('root', { model: 'next-model', reasoningEffort: 'high' });
   await env.monitor.refresh();
   const thread = await env.monitor.getThread({ threadId: 'root', limit: 1 });
-  assert.deepEqual(thread.historyContributors.map(({ agentId, name, model, serviceTier, modelSource, tierSource }) =>
-    ({ agentId, name, model, serviceTier, modelSource, tierSource })), [
-    { agentId: 'root', name: 'Root task', model: 'model-a', serviceTier: 'fast', modelSource: 'response', tierSource: 'recorded' },
-    { agentId: 'child', name: 'Worker task', model: 'model-c', serviceTier: null, modelSource: 'response', tierSource: 'unknown' },
-    { agentId: 'root', name: 'Root task', model: 'model-b', serviceTier: 'standard', modelSource: 'response', tierSource: 'recorded' },
+  assert.deepEqual(thread.historyGroups.map(({ model, serviceTier }) => ({ model, serviceTier })), [
+    { model: 'model-a', serviceTier: 'fast' },
+    { model: 'model-b', serviceTier: 'standard' },
+    { model: 'model-c', serviceTier: null },
   ]);
   for (let index = 0; index < thread.history.length; index++) {
-    const sum = thread.historyContributors.reduce((total, series) => total + (series.samples.find(sample => sample[0] === index)?.[1] ?? 0), 0);
+    const sum = thread.historyGroups.reduce((total, series) => total + (series.samples.find(sample => sample[0] === index)?.[2] ?? 0), 0);
     assert.equal(sum, thread.history[index].measuredTps);
   }
-  assert.ok(thread.historyContributors.every(series => series.samples.every(([index, value]) => index >= 0 && index < 300 && value > 0)));
+  assert.ok(thread.historyGroups.every(series => series.samples.every(([index, count, value]) => index >= 0 && index < 300 && count > 0 && value > 0)));
   const filtered = await env.monitor.getThread({ threadId: 'root', scope: 'ready', limit: 1 });
-  assert.deepEqual(filtered.historyContributors, thread.historyContributors);
-  assert.deepEqual((await env.monitor.getThread({ threadId: 'missing' })).historyContributors, []);
+  assert.deepEqual(filtered.historyGroups, thread.historyGroups);
+  assert.deepEqual((await env.monitor.getThread({ threadId: 'missing' })).historyGroups, []);
+});
+
+test('global timeline groups count each contributing agent once per historical model and tier', async t => {
+  const env = await setup(t);
+  await writeFile(env.file('root.jsonl'), meta('root', -10000) + line('turn_context', -3000, { model: 'model-a' })
+    + input(-1000) + usage('first-half', -500, 50, { service_tier: 'priority' })
+    + input(-500) + usage('second-half', 0, 100, { service_tier: 'priority' }));
+  await writeFile(env.file('child.jsonl'), meta('child', -10000, { parent_thread_id: 'root' })
+    + line('turn_context', -3000, { model: 'model-a' }) + input(-1000) + usage('child-fast', 0, 50, { service_tier: 'priority' }));
+  await writeFile(env.file('standard.jsonl'), meta('standard', -10000)
+    + line('turn_context', -3000, { model: 'model-a' }) + input(-1000) + usage('standard', 0, 300, { service_tier: 'default' }));
+  await writeFile(env.file('excluded.jsonl'), meta('excluded', -10000) + input(-1000) + usage('outside', 0, 10000));
+  env.runtime.overrides.set('root', { model: 'next-model' });
+  env.runtime.overrides.set('excluded', { status: { type: 'active', activeFlags: ['waitingOnUserInput'] } });
+  await env.monitor.refresh();
+  const snapshot = await env.monitor.getSnapshot({ limit: 1 });
+  assert.deepEqual(snapshot.historyGroups, [
+    { model: 'model-a', serviceTier: 'fast', samples: [[299, 2, 200]] },
+    { model: 'model-a', serviceTier: 'standard', samples: [[299, 1, 300]] },
+  ]);
+  for (let index = 0; index < snapshot.history.length; index++) {
+    assert.equal(snapshot.historyGroups.reduce((sum, group) => sum + (group.samples.find(sample => sample[0] === index)?.[2] ?? 0), 0), snapshot.history[index].measuredTps);
+  }
+  assert.deepEqual((await env.monitor.getSnapshot({ scope: 'ready', limit: 1 })).historyGroups, snapshot.historyGroups);
+  assert.deepEqual((await env.monitor.getSnapshot({ limit: 1, cursor: snapshot.nextCursor })).historyGroups, snapshot.historyGroups);
+  const thread = await env.monitor.getThread({ threadId: 'root', limit: 1 });
+  assert.deepEqual(thread.historyGroups, [{ model: 'model-a', serviceTier: 'fast', samples: [[299, 2, 200]] }]);
+  assert.deepEqual((await env.monitor.getThread({ threadId: 'root', scope: 'ready', limit: 1 })).historyGroups, thread.historyGroups);
+  assert.deepEqual((await env.monitor.getThread({ threadId: 'root', limit: 1, cursor: thread.nextCursor })).historyGroups, thread.historyGroups);
+});
+
+test('timeline buckets retain fractional overlap at both edges and exclude adjacent requests', async t => {
+  const env = await setup(t);
+  env.setNow(epoch + 500);
+  await writeFile(env.file('root.jsonl'), meta('root', -400000)
+    + input(-300500) + usage('crossing-left', -298500, 200));
+  await writeFile(env.file('child.jsonl'), meta('child', -400000, { parent_thread_id: 'root' })
+    + input(-299500) + usage('ending-at-left', -299000, 50)
+    + input(-250) + usage('crossing-right', 250, 100));
+  await env.monitor.refresh();
+  const snapshot = await env.monitor.getSnapshot();
+  const thread = await env.monitor.getThread({ threadId: 'root' });
+  assert.equal(snapshot.history[0].measuredTps, 150);
+  assert.equal(snapshot.history[1].measuredTps, 50);
+  assert.equal(snapshot.history.at(-1).measuredTps, 50);
+  assert.equal(snapshot.history[2].measuredTps, 0);
+  assert.deepEqual(thread.history, snapshot.history);
+  for (let index = 0; index < thread.history.length; index++) {
+    assert.equal(thread.historyGroups.reduce((sum, group) => sum + (group.samples.find(sample => sample[0] === index)?.[2] ?? 0), 0), thread.history[index].measuredTps);
+  }
+});
+
+test('timeline ranges use complete bounded buckets and recover hour-old stored facts after restart', async t => {
+  const env = await setup(t);
+  const now = epoch + 11999;
+  env.setNow(now);
+  await writeFile(env.file('root.jsonl'), meta('root', -7200000)
+    + line('turn_context', -7200000, { model: 'model-a' })
+    + input(-3599500) + usage('left-edge', -3598500, 100, { service_tier: 'priority' })
+    + input(-3500000) + usage('old-hour-fact', -3499000, 200, { service_tier: 'priority' })
+    + input(-400000) + usage('ten-minute-fact', -399000, 300, { service_tier: 'default' })
+    + input(11000) + usage('incomplete-last-bucket', 11500, 50));
+  await env.monitor.refresh();
+  for (const minutes of [5, 10, 30, 60]) {
+    const sampleMs = minutes * 200;
+    const snapshot = await env.monitor.getSnapshot({ timelineMinutes: minutes });
+    const thread = await env.monitor.getThread({ threadId: 'root', timelineMinutes: minutes, scope: 'ready', limit: 1 });
+    assert.equal(snapshot.history.length, 300);
+    assert.equal(snapshot.timelineMinutes, minutes);
+    assert.equal(snapshot.historySampleMs, sampleMs);
+    assert.equal(Date.parse(snapshot.history.at(-1).time), Math.floor(now / sampleMs) * sampleMs);
+    assert.deepEqual(thread.history, snapshot.history);
+    assert.deepEqual(thread.historyGroups, snapshot.historyGroups);
+    const output = snapshot.history.reduce((sum, point) => sum + point.measuredTps * sampleMs / 1000, 0);
+    assert.equal(output, minutes === 5 ? 0 : minutes === 60 ? 600 : 300);
+    for (let index = 0; index < 300; index++) {
+      const grouped = snapshot.historyGroups.reduce((sum, group) => sum + (group.samples.find(point => point[0] === index)?.[2] ?? 0), 0);
+      assert.ok(Math.abs(grouped - snapshot.history[index].measuredTps) < 1e-10);
+    }
+  }
+  const hour = await env.monitor.getSnapshot({ timelineMinutes: 60 });
+  assert.ok(Math.abs(hour.history[0].measuredTps - 100 / 12) < 1e-10);
+  assert.equal((await env.monitor.getSnapshot()).historySampleMs, 1000);
+  await assert.rejects(env.monitor.getSnapshot({ timelineMinutes: 15 }), RangeError);
+  await assert.rejects(env.monitor.getThread({ threadId: 'root', timelineMinutes: '60' }), RangeError);
+  await env.monitor.stop();
+  await writeFile(env.file('root.jsonl'), meta('root', -7200000));
+  const restarted = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, runtime: env.runtime, now: () => now });
+  env.monitors.push(restarted);
+  await restarted.refresh();
+  assert.deepEqual((await restarted.getSnapshot({ timelineMinutes: 60 })).history, hour.history);
+});
+
+test('recent model-tier rates cover thirty active minutes and freeze through idle time and restart', async t => {
+  const env = await setup(t);
+  await writeFile(env.file('rate-window.jsonl'), meta('rate-window', -2500000)
+    + line('turn_context', -2500000, { model: 'model-a' })
+    + input(-1901000) + usage('too-old', -1900000, 9000, { service_tier: 'priority' })
+    + input(-1201000) + usage('twenty-minutes', -1200000, 200, { service_tier: 'priority' })
+    + input(-2000) + usage('latest', -1000, 100, { service_tier: 'priority' }));
+  await env.monitor.refresh();
+  const [rate] = (await env.monitor.getSnapshot()).modelTierRates;
+  assert.equal(rate.sampleCount, 2);
+  assert.equal(rate.measuredTps, 150);
+  assert.equal(rate.windowStartAt, iso(-1801000));
+  env.setNow(epoch + 86400000);
+  await env.monitor.refresh();
+  assert.deepEqual((await env.monitor.getSnapshot()).modelTierRates, [rate]);
+  await env.monitor.stop();
+  await writeFile(env.file('rate-window.jsonl'), meta('rate-window', -2500000));
+  const restarted = new Monitor({ codexHome: env.codexHome, stateDir: env.stateDir, runtime: env.runtime, now: () => epoch + 86400000 });
+  env.monitors.push(restarted);
+  await restarted.refresh();
+  assert.deepEqual((await restarted.getSnapshot()).modelTierRates, [rate]);
+});
+
+test('late request facts join the latest model-tier sample window without moving its anchor backwards', async t => {
+  const env = await setup(t);
+  await writeFile(env.file('latest.jsonl'), meta('latest', -400000) + line('turn_context', -400000, { model: 'model-a' })
+    + input(-2000) + usage('latest', -1000, 100, { service_tier: 'priority' }));
+  await env.monitor.refresh();
+  await writeFile(env.file('late.jsonl'), meta('late', -2500000) + line('turn_context', -500000, { model: 'model-a' })
+    + input(-1900000) + usage('expired', -1899000, 10000, { service_tier: 'priority' })
+    + input(-3000) + usage('recent-late', -2000, 300, { service_tier: 'priority' }));
+  await env.monitor.refresh();
+  const [rate] = (await env.monitor.getSnapshot()).modelTierRates;
+  assert.equal(rate.sampleCount, 2);
+  assert.equal(rate.outputTokens, 400);
+  assert.equal(rate.measuredTps, 200);
+  assert.equal(rate.lastSampleAt, iso(-1000));
 });
 
 test('global model and tier counts cover only Working agents independently of visible rows', async t => {

@@ -32562,7 +32562,7 @@ var MetricsStore = class {
       const rows = this.db.prepare(`SELECT rowid AS rowId, response_key AS key, agent_id AS agentId, model, service_tier AS serviceTier,
         start_ms AS startMs, end_ms AS endMs, input_tokens AS input, cached_tokens AS cachedInput,
         output_tokens AS output, reasoning_tokens AS reasoning FROM responses
-        WHERE ${initial ? "end_ms >= ?" : "rowid > ?"} ORDER BY rowid`).all(initial ? nowMs - 18e5 : afterRowId);
+        WHERE ${initial ? "end_ms >= ?" : "rowid > ?"} ORDER BY rowid`).all(initial ? nowMs - 3612e3 : afterRowId);
       const responses = rows.map(({ input: input2, cachedInput, output: output2, reasoning, ...response }) => ({ ...response, output: output2, tokens: { input: input2, cachedInput, output: output2, reasoning } }));
       const rateSamples = initial ? this.db.prepare(`WITH latest AS (
         SELECT model, service_tier AS tier, MAX(end_ms) AS last_ms FROM responses
@@ -32570,7 +32570,7 @@ var MetricsStore = class {
         GROUP BY model, service_tier)
         SELECT r.response_key AS key, r.model, r.service_tier AS serviceTier,
           r.start_ms AS startMs, r.end_ms AS endMs, r.output_tokens AS output
-        FROM latest l JOIN responses r ON r.model IS l.model AND r.end_ms>=l.last_ms-300000 AND r.end_ms<=l.last_ms
+        FROM latest l JOIN responses r ON r.model IS l.model AND r.end_ms>=l.last_ms-1800000 AND r.end_ms<=l.last_ms
         WHERE r.service_tier IS l.tier AND r.start_ms IS NOT NULL AND r.end_ms>r.start_ms AND r.end_ms-r.start_ms<=900000`).all() : null;
       const today = this.today(nowMs);
       this.db.exec("COMMIT");
@@ -32621,7 +32621,7 @@ var wrapper_default = import_websocket.default;
 // package.json
 var package_default = {
   name: "@jxx-codex-plugins/codex-agent-metrics",
-  version: "0.1.7",
+  version: "0.1.8",
   private: true,
   description: "Read-only Codex agent speed and activity monitoring through MCP Apps.",
   type: "module",
@@ -32970,6 +32970,13 @@ var RuntimeClient = class {
 // src/monitor/index.mjs
 var WINDOW_MS = 3e3;
 var HISTORY_MS = 3e5;
+var RESPONSE_HISTORY_MS = 3612e3;
+var MODEL_RATE_HISTORY_MS = 18e5;
+var TIMELINE_MINUTES = /* @__PURE__ */ new Set([5, 10, 30, 60]);
+var timelineRange = (minutes) => {
+  if (!TIMELINE_MINUTES.has(minutes)) throw new RangeError("timelineMinutes must be 5, 10, 30 or 60");
+  return { timelineMinutes: minutes, historySampleMs: minutes * 200 };
+};
 var MAX_LINE_BYTES = 32 * 1024 * 1024;
 var zeroTokens = () => ({ input: 0, cachedInput: 0, output: 0, reasoning: 0 });
 var zeroRate = () => ({ measuredTps: 0, estimatedTps: 0, outputTps: 0 });
@@ -33219,9 +33226,10 @@ var Monitor = class {
       if (failedFiles) throw Object.assign(new Error("Some monitored rollouts could not be read"), { code: "ROLLOUT_READ_FAILED" });
       this.runtime.assertConnected?.();
       const today = this.syncMetrics(now);
-      for (const [key, response] of this.responses) if (response.endMs < now - 18e5) this.responses.delete(key);
+      for (const [key, response] of this.responses) if (response.endMs < now - RESPONSE_HISTORY_MS) this.responses.delete(key);
       const agents = this.agents();
-      const measured = [...agents.values()].reduce((sum, agent) => sum + this.rate(agent, now).measuredTps, 0);
+      let measured = 0;
+      for (const response of this.responses.values()) if (agents.has(response.agentId)) measured += contribution(response, now - WINDOW_MS, now);
       this.store.peak(now, measured);
       const lastSuccessAt = date5(this.now());
       this.published = {
@@ -33327,15 +33335,21 @@ var Monitor = class {
     if (totals) this.tokens = totals;
     for (const response of responses) {
       if (!totals) this.tokens.set(response.agentId, sumTokens(this.tokens.get(response.agentId) ?? zeroTokens(), response.tokens));
-      if (response.endMs >= now - 18e5) this.responses.set(response.key, response);
+      if (response.endMs >= now - RESPONSE_HISTORY_MS) this.responses.set(response.key, response);
     }
     this.responseCursor = cursor;
+    const addedSamples = /* @__PURE__ */ new Map();
     for (const response of rateSamples ?? responses) {
       if (!Number.isFinite(response.startMs) || !Number.isFinite(response.endMs) || response.endMs <= response.startMs || response.endMs - response.startMs > 9e5) continue;
       const key = JSON.stringify([response.model ?? null, response.serviceTier ?? null]);
-      const previous = this.rateSamples.get(key) ?? [];
-      const lastMs = Math.max(response.endMs, ...previous.map((sample) => sample.endMs));
-      this.rateSamples.set(key, [...previous, response].filter((sample) => sample.endMs >= lastMs - HISTORY_MS));
+      if (!addedSamples.has(key)) addedSamples.set(key, []);
+      addedSamples.get(key).push(response);
+    }
+    for (const [key, added] of addedSamples) {
+      const samples = [...this.rateSamples.get(key) ?? [], ...added];
+      let lastMs = -Infinity;
+      for (const sample of samples) lastMs = Math.max(lastMs, sample.endMs);
+      this.rateSamples.set(key, samples.filter((sample) => sample.endMs >= lastMs - MODEL_RATE_HISTORY_MS));
     }
     return today;
   }
@@ -33352,7 +33366,7 @@ var Monitor = class {
         outputTokens,
         activeDurationMs,
         lastSampleAt: date5(latest.endMs),
-        windowStartAt: date5(latest.endMs - HISTORY_MS)
+        windowStartAt: date5(latest.endMs - MODEL_RATE_HISTORY_MS)
       };
     }).sort((a, b) => (a.model ?? "").localeCompare(b.model ?? "") || (a.serviceTier ?? "").localeCompare(b.serviceTier ?? ""));
   }
@@ -33387,24 +33401,47 @@ var Monitor = class {
     if (!["generating", "tools", "unknown"].includes(agent.phase)) return "working";
     return ["generating", "tools"].includes(agent.phase) && now - agent.lastMs > HISTORY_MS ? "unknown" : agent.phase;
   }
-  pendingCompleted(agent, now, view = this) {
-    return agent.pendingStartMs !== null && [...view.responses.values()].some((response) => response.agentId === agent.id && response.endMs > agent.pendingStartMs && response.endMs <= now);
+  metricContext(now, view) {
+    const byAgent = /* @__PURE__ */ new Map(), byModel = /* @__PURE__ */ new Map();
+    for (const response of view.responses.values()) {
+      if (!byAgent.has(response.agentId)) byAgent.set(response.agentId, []);
+      byAgent.get(response.agentId).push(response);
+      if (response.startMs !== null && response.endMs <= now && response.output > 0) {
+        if (!byModel.has(response.model)) byModel.set(response.model, []);
+        byModel.get(response.model).push(response);
+      }
+    }
+    for (const records of byModel.values()) records.sort((a, b) => b.endMs - a.endMs);
+    return { byAgent, byModel, rates: /* @__PURE__ */ new Map() };
   }
-  estimate(agent, now, view = this) {
-    if (this.phase(agent, now) !== "generating" || agent.pendingStartMs === null || !agent.turnModel || this.pendingCompleted(agent, now, view)) return 0;
-    const recent = [...view.responses.values()].filter((r) => r.startMs !== null && r.endMs <= now && r.output > 0).sort((a, b) => b.endMs - a.endMs);
-    let samples = recent.filter((r) => r.agentId === agent.id && r.model === agent.model && r.endMs >= now - 6e5).slice(0, 3);
-    if (!samples.length) samples = recent.filter((r) => r.model === agent.model && r.endMs >= now - 18e5).slice(0, 10);
+  pendingCompleted(agent, now, view = this, metrics) {
+    return agent.pendingStartMs !== null && (metrics?.byAgent.get(agent.id) ?? (metrics ? [] : [...view.responses.values()])).some((response) => response.agentId === agent.id && response.endMs > agent.pendingStartMs && response.endMs <= now);
+  }
+  estimate(agent, now, view = this, metrics) {
+    if (this.phase(agent, now) !== "generating" || agent.pendingStartMs === null || !agent.turnModel || this.pendingCompleted(agent, now, view, metrics)) return 0;
+    const recent = metrics?.byModel.get(agent.model) ?? (metrics ? [] : [...view.responses.values()].filter((r) => r.startMs !== null && r.endMs <= now && r.output > 0).sort((a, b) => b.endMs - a.endMs));
+    const own2 = [], fallback = [];
+    for (const response of recent) {
+      if (response.endMs < now - 18e5) break;
+      if (response.model !== agent.model) continue;
+      if (fallback.length < 10) fallback.push(response);
+      if (response.agentId === agent.id && response.endMs >= now - 6e5) own2.push(response);
+      if (own2.length === 3 || response.endMs < now - 6e5 && fallback.length === 10) break;
+    }
+    const samples = own2.length ? own2 : fallback;
     const duration3 = samples.reduce((n, r) => n + r.endMs - r.startMs, 0);
     const speed = duration3 > 0 ? samples.reduce((n, r) => n + r.output, 0) * 1e3 / duration3 : 0;
     const share = Math.max(0, Math.min(WINDOW_MS, now - agent.pendingStartMs)) / WINDOW_MS;
     return speed * share;
   }
-  rate(agent, now, view = this) {
+  rate(agent, now, view = this, metrics) {
+    if (metrics?.rates.has(agent.id)) return metrics.rates.get(agent.id);
     let measuredTps = 0;
-    for (const response of view.responses.values()) if (response.agentId === agent.id) measuredTps += contribution(response, now - WINDOW_MS, now);
-    const estimatedTps = this.estimate(agent, now, view);
-    return { measuredTps, estimatedTps, outputTps: measuredTps + estimatedTps };
+    for (const response of metrics?.byAgent.get(agent.id) ?? (metrics ? [] : view.responses.values())) if (response.agentId === agent.id) measuredTps += contribution(response, now - WINDOW_MS, now);
+    const estimatedTps = this.estimate(agent, now, view, metrics);
+    const rate = { measuredTps, estimatedTps, outputTps: measuredTps + estimatedTps };
+    metrics?.rates.set(agent.id, rate);
+    return rate;
   }
   rootId(agent, agents, view = this) {
     if (agent.sessionId) return agent.sessionId;
@@ -33418,7 +33455,7 @@ var Monitor = class {
     }
     return id;
   }
-  summarizeAgent(agent, agents, now, view = this) {
+  summarizeAgent(agent, agents, now, view = this, metrics) {
     const phase = this.phase(agent, now);
     return {
       id: agent.id,
@@ -33436,25 +33473,26 @@ var Monitor = class {
       configuredModel: agent.configuredModel,
       configuredReasoningEffort: agent.configuredReasoningEffort,
       reasoningEffortSource: agent.reasoningEffortSource,
-      rate: this.rate(agent, now, view),
+      rate: this.rate(agent, now, view, metrics),
       tokens: view.tokens.get(agent.id) ?? zeroTokens(),
       mode: { ...agent.mode },
       attention: null
     };
   }
-  modelRates(agents, now, view = this) {
-    const ids = new Set(agents.map((a) => a.id));
+  modelRates(agents, now, view = this, metrics = this.metricContext(now, view)) {
     const rates = /* @__PURE__ */ new Map();
     const add = (model, measured, estimated) => {
       const name = model || "unknown";
       const previous = rates.get(name) ?? { model: name, measuredTps: 0, estimatedTps: 0, outputTps: 0 };
       rates.set(name, { model: name, measuredTps: previous.measuredTps + measured, estimatedTps: previous.estimatedTps + estimated, outputTps: previous.outputTps + measured + estimated });
     };
-    for (const response of view.responses.values()) if (ids.has(response.agentId)) add(response.model, contribution(response, now - WINDOW_MS, now), 0);
-    for (const agent of agents) add(agent.model, 0, this.estimate(agent, now, view));
+    for (const agent of agents) {
+      for (const response of metrics.byAgent.get(agent.id) ?? []) add(response.model, contribution(response, now - WINDOW_MS, now), 0);
+      add(agent.model, 0, this.rate(agent, now, view, metrics).estimatedTps);
+    }
     return [...rates.values()].sort((a, b) => b.outputTps - a.outputTps || a.model.localeCompare(b.model));
   }
-  threads(agents, now, view = this) {
+  threads(agents, now, view = this, metrics = this.metricContext(now, view)) {
     const groups = /* @__PURE__ */ new Map();
     for (const agent of agents.values()) {
       const id = this.rootId(agent, agents, view);
@@ -33463,7 +33501,7 @@ var Monitor = class {
     }
     return [...groups].map(([id, members2]) => {
       const main = agents.get(id);
-      const summaries = members2.map((a) => this.summarizeAgent(a, agents, now, view));
+      const summaries = members2.map((a) => this.summarizeAgent(a, agents, now, view, metrics));
       const status = summaries.some((a) => a.activity === "working") ? "working" : "ready";
       const created = Math.min(...members2.map((a) => a.createdMs));
       const metadata2 = view.catalog.get(id);
@@ -33482,46 +33520,51 @@ var Monitor = class {
         tokens: summaries.map((a) => a.tokens).reduce(sumTokens, zeroTokens()),
         agentCount: summaries.length,
         activeAgentCount: summaries.filter((a) => a.activity === "working").length,
-        modelRates: this.modelRates(members2, now, view)
+        modelRates: this.modelRates(members2, now, view, metrics)
       };
     });
   }
-  rateHistory(agentIds, now, view, includeContributors = false) {
-    const records = [...view.responses.values()].filter((response) => agentIds.has(response.agentId) && response.endMs >= now - HISTORY_MS);
-    const contributors2 = /* @__PURE__ */ new Map();
-    const history = Array.from({ length: 300 }, (_, index) => {
-      const time3 = Math.floor(now / 1e3) * 1e3 - (299 - index) * 1e3;
-      const sample = /* @__PURE__ */ new Map();
-      const add = (agentId, model, serviceTier, measuredTps2) => {
-        if (!includeContributors || measuredTps2 <= 0) return;
-        const modelSource = model ? "response" : "unknown", tierSource = serviceTier ? "recorded" : "unknown";
-        const key = JSON.stringify([agentId, model, serviceTier, modelSource, tierSource]);
-        if (!contributors2.has(key)) {
-          const agent = view.agents.get(agentId);
-          contributors2.set(key, {
-            agentId,
-            name: agent ? agentName(agent) : `Agent ${agentId.slice(0, 8)}`,
-            role: agent?.isSubagent ? "subagent" : "main",
-            model,
-            serviceTier,
-            modelSource,
-            tierSource,
-            samples: []
-          });
+  rateHistory(agentIds, now, view, includeGroups = false, timelineMinutes = 5) {
+    const range = timelineRange(timelineMinutes), sampleMs = range.historySampleMs;
+    const last = Math.floor(now / sampleMs) * sampleMs;
+    const first = last - 299 * sampleMs;
+    const totals = new Float64Array(300);
+    const groups = /* @__PURE__ */ new Map();
+    for (const response of view.responses.values()) {
+      if (!agentIds.has(response.agentId) || response.endMs <= first - sampleMs || response.startMs === null || response.startMs === void 0) continue;
+      const from = Math.max(0, Math.floor((response.startMs - first) / sampleMs) + 1);
+      const to = Math.min(299, Math.ceil((response.endMs - first) / sampleMs));
+      let group;
+      if (includeGroups && from <= to && response.output > 0) {
+        const model = response.model ?? null, serviceTier = normalizeMode(response.serviceTier);
+        const key = JSON.stringify([model, serviceTier]);
+        group = groups.get(key);
+        if (!group) {
+          group = { model, serviceTier, values: /* @__PURE__ */ new Map() };
+          groups.set(key, group);
         }
-        const previous = sample.get(key) ?? [index, 0];
-        previous[1] += measuredTps2;
-        sample.set(key, previous);
-      };
-      const measuredTps = records.reduce((total, response) => {
-        const value = contribution(response, time3 - 1e3, time3);
-        add(response.agentId, response.model ?? null, normalizeMode(response.serviceTier), value);
-        return total + value;
-      }, 0);
-      for (const [key, values] of sample) contributors2.get(key).samples.push(values);
-      return { time: date5(time3), measuredTps, estimatedTps: 0, outputTps: measuredTps };
-    });
-    return { history, ...includeContributors ? { historyContributors: [...contributors2.values()] } : {} };
+      }
+      for (let index = from; index <= to; index++) {
+        const time3 = first + index * sampleMs;
+        const value = contribution(response, time3 - sampleMs, time3);
+        totals[index] += value;
+        if (group && value > 0) {
+          let sample = group.values.get(index);
+          if (!sample) {
+            sample = { measuredTps: 0, agents: /* @__PURE__ */ new Set() };
+            group.values.set(index, sample);
+          }
+          sample.measuredTps += value;
+          sample.agents.add(response.agentId);
+        }
+      }
+    }
+    const history = Array.from(totals, (measuredTps, index) => ({ time: date5(first + index * sampleMs), measuredTps, estimatedTps: 0, outputTps: measuredTps }));
+    const historyGroups = includeGroups ? [...groups.values()].filter((group) => group.values.size).map(({ values, ...group }) => ({
+      ...group,
+      samples: [...values].sort((a, b) => a[0] - b[0]).map(([index, sample]) => [index, sample.agents.size, sample.measuredTps])
+    })) : void 0;
+    return { history, ...range, ...includeGroups ? { historyGroups } : {} };
   }
   agentCounts(agents) {
     const working = agents.filter((agent) => agent.activity === "working");
@@ -33545,12 +33588,14 @@ var Monitor = class {
     }
     return { total: working.length, combinations: [...combinations.values()].sort((a, b) => b.count - a.count || String(a.model ?? "").localeCompare(String(b.model ?? "")) || String(a.serviceTier ?? "").localeCompare(String(b.serviceTier ?? ""))) };
   }
-  async getSnapshot({ limit = 10, cursor = null, order = "recent", scope = "all" } = {}) {
+  async getSnapshot({ limit = 10, cursor = null, order = "recent", scope = "all", timelineMinutes = 5 } = {}) {
+    timelineRange(timelineMinutes);
     const now = this.now(), view = this.published, agents = view.agents;
-    const allThreads = this.threads(agents, now, view);
+    const metrics = this.metricContext(now, view);
+    const allThreads = this.threads(agents, now, view, metrics);
     const threads = allThreads.filter((t) => scope === "all" || t.status === scope).sort((a, b) => (order === "priority" ? Number(b.status === "working") - Number(a.status === "working") : 0) || Date.parse(b.recencyAt) - Date.parse(a.recencyAt) || a.id.localeCompare(b.id));
     const result = page(threads, limit, cursor, `${order}:${scope}`);
-    const summaries = [...agents.values()].map((a) => this.summarizeAgent(a, agents, now, view));
+    const summaries = [...agents.values()].map((a) => this.summarizeAgent(a, agents, now, view, metrics));
     const rate = summaries.map((a) => a.rate).reduce(sumRate, zeroRate());
     return {
       schemaVersion: 1,
@@ -33558,23 +33603,25 @@ var Monitor = class {
       hostName: hostname3(),
       collection: { state: this.collectionState, source: "app-server", backgroundEnabled: this.backgroundEnabled, coverage: "sampled", historyComplete: false, lastSuccessAt: this.lastSuccessAt, skippedCompressedFiles: view.skippedCompressedFiles, skippedUnavailableThreads: view.skippedUnavailableThreads, excluded: { ...view.excluded }, warnings: [...this.warnings] },
       totals: { ...rate, ...view.today, generatingCount: summaries.filter((a) => a.phase === "generating").length, toolCount: summaries.filter((a) => a.phase === "tools").length, threadCount: allThreads.length, workingThreadCount: allThreads.filter((thread) => thread.status === "working").length, readyThreadCount: allThreads.filter((thread) => thread.status === "ready").length },
-      models: this.modelRates([...agents.values()], now, view),
+      models: this.modelRates([...agents.values()], now, view, metrics),
       modelTierRates: view.modelTierRates,
       agentCounts: this.agentCounts(summaries),
-      ...this.rateHistory(new Set(agents.keys()), now, view),
+      ...this.rateHistory(new Set(agents.keys()), now, view, true, timelineMinutes),
       threads: result.items,
       nextCursor: result.nextCursor
     };
   }
-  async getThread({ threadId, limit = 20, cursor = null, scope = "all" } = {}) {
+  async getThread({ threadId, limit = 20, cursor = null, scope = "all", timelineMinutes = 5 } = {}) {
+    const range = timelineRange(timelineMinutes);
     const now = this.now(), view = this.published, agents = view.agents;
-    const thread = this.threads(agents, now, view).find((t) => t.id === threadId);
-    if (!thread) return { thread: null, agents: [], history: [], historyContributors: [], nextCursor: null, coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
-    const members2 = [...agents.values()].filter((a) => this.rootId(a, agents, view) === threadId).map((a) => this.summarizeAgent(a, agents, now, view));
+    const metrics = this.metricContext(now, view);
+    const thread = this.threads(agents, now, view, metrics).find((t) => t.id === threadId);
+    if (!thread) return { thread: null, agents: [], history: [], historyGroups: [], ...range, nextCursor: null, coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
+    const members2 = [...agents.values()].filter((a) => this.rootId(a, agents, view) === threadId).map((a) => this.summarizeAgent(a, agents, now, view, metrics));
     const filtered = members2.filter((a) => a.id === threadId || scope === "all" || a.activity === scope);
     filtered.sort((a, b) => Number(b.id === threadId) - Number(a.id === threadId) || Date.parse(b.recencyAt) - Date.parse(a.recencyAt) || a.id.localeCompare(b.id));
     const result = page(filtered, limit, cursor, `${threadId}:${scope}`);
-    return { thread, agents: result.items, ...this.rateHistory(new Set(members2.map((agent) => agent.id)), now, view, true), nextCursor: result.nextCursor, coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
+    return { thread, agents: result.items, ...this.rateHistory(new Set(members2.map((agent) => agent.id)), now, view, true, timelineMinutes), nextCursor: result.nextCursor, coverage: "sampled", historyComplete: false, sampledAt: date5(now) };
   }
   async getAgent({ agentId } = {}) {
     const now = this.now(), view = this.published, agents = view.agents, agent = agents.get(agentId);
@@ -41966,12 +42013,14 @@ function createServer(monitor, { uiUrl = new URL("../dist/dashboard.html", impor
   tool("monitor_snapshot", "Read monitored Working/Ready aggregate rates and a cursor page of root threads.", {
     ...listSchema,
     order: external_exports.enum(["priority", "recent"]).optional(),
-    scope: external_exports.enum(["all", "working", "ready"]).optional()
+    scope: external_exports.enum(["all", "working", "ready"]).optional(),
+    timelineMinutes: external_exports.union([external_exports.literal(5), external_exports.literal(10), external_exports.literal(30), external_exports.literal(60)]).optional()
   }, (args) => monitor.getSnapshot(args));
   tool("monitor_thread", "Read a root thread and a cursor page of its agents.", {
     ...listSchema,
     threadId: external_exports.string().min(1),
-    scope: external_exports.enum(["all", "working", "ready"]).optional()
+    scope: external_exports.enum(["all", "working", "ready"]).optional(),
+    timelineMinutes: external_exports.union([external_exports.literal(5), external_exports.literal(10), external_exports.literal(30), external_exports.literal(60)]).optional()
   }, (args) => monitor.getThread(args));
   tool("monitor_agent", "Read one agent and its recent speed history.", {
     agentId: external_exports.string().min(1)

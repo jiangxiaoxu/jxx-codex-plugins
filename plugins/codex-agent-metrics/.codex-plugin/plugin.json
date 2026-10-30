@@ -1,6 +1,6 @@
 {
   "name": "codex-agent-metrics",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Read-only Codex agent speed, usage, models and execution modes in a live MCP App.",
   "author": { "name": "jiangxiaoxu" },
   "mcpServers": "./.mcp.json",
