@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^(spawn_agent|collaborationspawn_agent)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "& \"$env:PLUGIN_ROOT/bin/spawn-agent-effort-hook.exe\"",
+            "statusMessage": "Applying subagent reasoning cap"
+          }
+        ]
+      }
+    ]
+  }
+}
