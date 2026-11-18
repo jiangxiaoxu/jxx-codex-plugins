@@ -1,0 +1,17 @@
+{
+  "name": "subagent-reasoning-cap",
+  "version": "0.1.0",
+  "description": "Inherits the thread's reasoning effort for worker and explorer subagents, capped at high.",
+  "author": {
+    "name": "jiangxiaoxu"
+  },
+  "interface": {
+    "displayName": "Subagent Reasoning Cap",
+    "shortDescription": "Cap subagent reasoning effort",
+    "longDescription": "For worker and explorer spawns without an explicit reasoning effort, inherit the latest applied thread setting up to high. Runs on Windows x64 with a bundled Native AOT executable.",
+    "developerName": "jiangxiaoxu",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": []
+  }
+}

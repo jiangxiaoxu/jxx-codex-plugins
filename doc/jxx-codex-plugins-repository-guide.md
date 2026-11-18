@@ -8,6 +8,7 @@ This repository is a local Codex plugin marketplace. It has no root-level packag
 | --- | --- | --- |
 | `task-memory` | `plugins/task-memory/skills/`, `src/`, and `scripts/commands/` | Run the plugin test suite and packed-artifact check. |
 | `context-window-rollover-reminder` | `plugins/context-window-rollover-reminder/hooks/`, `skills/`, `scripts/`, and `tests/` | Run Python unittest discovery, the audit skill validator, and the plugin manifest validator. |
+| `subagent-reasoning-cap` | `plugins/subagent-reasoning-cap/src/` and `hooks/` | Build the Windows x64 Native AOT executable, verify hook stdin/stdout, and validate the plugin manifest. |
 
 For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, marketplace entry, and root README inventory aligned when plugin identity, placement, or availability changes.
 
@@ -22,6 +23,8 @@ For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, market
 ## Validation Routing
 
 For context rollover hook behavior, configuration, and maintenance, see [Context Window Rollover Reminder](context-window-rollover-reminder.md).
+
+For the reasoning cap hook, see [Subagent Reasoning Cap](subagent-reasoning-cap.md).
 
 Always run `git diff --check` and the checks owned by the changed plugin. Resolve the installed validator paths instead of hard-coding a user-specific location.
 
