@@ -8,7 +8,11 @@
 - `AGENTS.md` 仅保存 AI 执行指令,不是项目 canonical 文档;不得复制或摘录其内容到项目文件.
 - Plugin 维护文档统一放在 `doc/` 下,文件名包含对应 plugin 名称.
 - 新增,重命名或移除 `plugins/*` 下的 plugin 时,同步维护 `.agents/plugins/marketplace.json`,`README.md` 和 repository guide 的 plugin inventory.
-- 将 plugin 数字版本号 +1 时,同步修改对应 `plugins/<plugin>/.codex-plugin/plugin.json` 的 `version`.
+
+## 迭代收尾
+
+- 本轮改动影响已有 plugin 的发布包时,由负责最终交付的 Agent 将受影响 plugin 的补丁版本各递增一次. 以迭代开始时 `plugins/<plugin>/.codex-plugin/plugin.json` 的 `version` 为基线. `task-memory` 另同步 `package.json` 的 `version` 和 `package-lock.json` 的 `version` 及 `packages[""].version`.
+- 验证最终改动后,由负责最终交付的 Agent 自动暂存本轮改动并创建本地 Git 提交. 版本变更与对应 plugin 的改动放在同一提交. 用户明确指定版本或提交安排时,按其要求执行.
 
 ## Plugin 发布与客户端更新
 
