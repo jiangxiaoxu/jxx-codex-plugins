@@ -47,8 +47,8 @@ _RECOVERY_WITH_NOTE_HINT = _RECOVERY_TEMPLATE.format(
     "Search the rollout for missing details as needed."
 )
 _SUBAGENT_RECOVERY_HINT = _RECOVERY_TEMPLATE.format(
-    "Context was compacted in this subagent. Read your note with `memory read` "
-    "or search the rollout as needed."
+    "Context was compacted in this subagent. Use `memory read` to recover your thread note. "
+    "Search the rollout for missing details as needed."
 )
 MAX_SUMMARY_BYTES = 8_192
 
@@ -210,9 +210,9 @@ def _compaction_reminder(request: dict, home: Path, path: Path, thread_id: str) 
         "the current thread note."
     )
     if any(stage != ReminderStage.FIRST for _, stage in notices):
-        context += (
-            " This is a follow-up reminder and may repeat an earlier prompt. "
-            "If the note is already current, continue the task."
+        context = (
+            f"This may be a duplicate reminder. {context} "
+            "If no update is needed, ignore this reminder."
         )
     else:
         context += " Preserve useful details from the existing note, then continue the task."

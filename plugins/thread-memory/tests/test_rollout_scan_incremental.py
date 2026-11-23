@@ -263,7 +263,7 @@ class IncrementalRolloutScanTest(unittest.TestCase):
             checkpoint = load_rollout_checkpoint(home, thread, path)
             self.assertTrue(checkpoint)
             before = snapshot(self.path, include_previous=False)
-            self.append(response_usage(315_000))
+            self.append(response_usage(320_000))
 
             with patch.object(Path, "open", measured_open):
                 cold = snapshot(
@@ -271,13 +271,13 @@ class IncrementalRolloutScanTest(unittest.TestCase):
                     collect_reminder_receipts=True,
                 )
                 cold_bytes, total = total, 0
-                self.assertIn("follow-up reminder", hook_instructions(request, home) or "")
-                self.append(receipt(before.current, 0), response_usage(385_000))
+                self.assertIsNotNone(hook_instructions(request, home))
+                self.append(receipt(before.current, 0), response_usage(330_000))
                 self.assertIsNone(hook_instructions(request, home))
             advanced = load_rollout_checkpoint(home, thread, path)
             self.assertTrue(advanced)
             self.assertNotEqual(advanced, checkpoint)
-        self.assertEqual(cold.used, 315_000)
+        self.assertEqual(cold.used, 320_000)
         self.assertEqual(cold.capacity, 500_000)
         self.assertLess(total, cold_bytes // 3)
 

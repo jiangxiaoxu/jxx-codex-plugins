@@ -353,7 +353,7 @@ class RolloutHookTest(unittest.TestCase):
         context = self.recovery_context(output["additionalContext"])
         self.assertIn("Context was compacted", context)
         self.assertIn("memory read", context)
-        self.assertIn("search the rollout", context)
+        self.assertIn("Search the rollout", context)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
     def test_usage_stays_silent_until_the_first_compaction_reminder(self):
@@ -380,31 +380,31 @@ class RolloutHookTest(unittest.TestCase):
         self.assertIn("may be compressed soon", first)
         receipt_offset = self.transcript.stat().st_size
         self.record_reminder(first)
-        self.append_usage(285_000)
+        self.append_usage(290_000)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
         # Keep the window key and remove the already observed receipt from the fixture.
         with self.transcript.open("r+b") as stream:
             stream.truncate(receipt_offset)
-        for tokens in (289_000, 354_999):
+        for tokens in (300_000, 354_999):
             self.append_usage(tokens)
             self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
         self.append_usage(355_000)
         self.reminder_context(self.invoke(request, check=True).stdout, "80")
-        self.append_usage(360_000)
+        self.append_usage(365_000)
         follow_up = self.reminder_context(self.invoke(request, check=True).stdout, "80")
         self.record_reminder(follow_up)
-        self.append_usage(364_000)
+        self.append_usage(375_000)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
         diagnostics = self.diagnostics(request["agent_id"])
         self.assertEqual(len({item["window"] for item in diagnostics}), 1)
         self.assertEqual(
             [(item["event"], item["details"]) for item in diagnostics],
             [
-                ("reminder_receipt_observed", {"used": 364_000, "capacity": 500_000, "stages": [[80, 3]]}),
-                ("reminder_context_prepared", {"used": 360_000, "capacity": 500_000, "stages": [[80, 1]]}),
+                ("reminder_receipt_observed", {"used": 375_000, "capacity": 500_000, "stages": [[80, 3]]}),
+                ("reminder_context_prepared", {"used": 365_000, "capacity": 500_000, "stages": [[80, 1]]}),
                 ("reminder_context_prepared", {"used": 355_000, "capacity": 500_000, "stages": [[80, 0]]}),
-                ("reminder_receipt_observed", {"used": 285_000, "capacity": 500_000, "stages": [[65, 3]]}),
+                ("reminder_receipt_observed", {"used": 290_000, "capacity": 500_000, "stages": [[65, 3]]}),
                 ("reminder_context_prepared", {"used": 280_000, "capacity": 500_000, "stages": [[65, 0]]}),
             ],
         )
@@ -414,7 +414,7 @@ class RolloutHookTest(unittest.TestCase):
         request = self.start_reminder_window()
         self.append_usage(280_000)
         first = self.reminder_context(self.invoke(request, check=True).stdout, "65")
-        follow_up_notice = "This is a follow-up reminder and may repeat an earlier prompt."
+        follow_up_notice = "This may be a duplicate reminder."
         self.assertNotIn(follow_up_notice, first)
         self.append_records(
             ("response_item", {
@@ -425,10 +425,10 @@ class RolloutHookTest(unittest.TestCase):
                 "type": "function_call_output", "call_id": "call_echo", "output": first,
             }),
         )
-        self.append_usage(284_999)
+        self.append_usage(289_999)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
-        self.append_usage(285_000)
+        self.append_usage(290_000)
         with ThreadPoolExecutor(max_workers=2) as executor:
             outputs = list(executor.map(
                 lambda index: self.invoke(
@@ -441,9 +441,9 @@ class RolloutHookTest(unittest.TestCase):
         retry = self.reminder_context(prompts[0], "65")
         self.assertIn(follow_up_notice, retry)
 
-        self.append_usage(288_999)
+        self.append_usage(299_999)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
-        self.append_usage(289_000)
+        self.append_usage(300_000)
         final = self.reminder_context(self.invoke(request, check=True).stdout, "65")
         self.assertIn(follow_up_notice, final)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
@@ -455,7 +455,7 @@ class RolloutHookTest(unittest.TestCase):
         prompt = self.reminder_context(self.invoke(request, check=True).stdout, "65,80")
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
         self.record_reminder(prompt)
-        for tokens in (360_000, 364_000):
+        for tokens in (365_000, 375_000):
             self.append_usage(tokens)
             self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
@@ -463,7 +463,7 @@ class RolloutHookTest(unittest.TestCase):
         self.append_usage(280_000)
         self.reminder_context(self.invoke(request, check=True).stdout, "65")
         self.record_reminder(prompt)
-        self.append_usage(285_000)
+        self.append_usage(290_000)
         self.reminder_context(self.invoke(request, check=True).stdout, "65")
 
     def start_reminder_window(self, *, child=False):

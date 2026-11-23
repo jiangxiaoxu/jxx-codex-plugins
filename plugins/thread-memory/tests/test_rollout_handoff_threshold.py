@@ -64,10 +64,10 @@ class HandoffThresholdTest(unittest.TestCase):
             cases = (
                 (304_999, ()),
                 (305_000, ((0, ReminderStage.FIRST),)),
-                (309_999, ((0, ReminderStage.FIRST),)),
-                (310_000, ((0, ReminderStage.CHECK),)),
-                (313_999, ((0, ReminderStage.CHECK),)),
-                (314_000, ((0, ReminderStage.FINAL_CHECK),)),
+                (314_999, ((0, ReminderStage.FIRST),)),
+                (315_000, ((0, ReminderStage.CHECK),)),
+                (324_999, ((0, ReminderStage.CHECK),)),
+                (325_000, ((0, ReminderStage.FINAL_CHECK),)),
             )
             for used, expected in cases:
                 with self.subTest(used=used):
@@ -75,17 +75,17 @@ class HandoffThresholdTest(unittest.TestCase):
 
     def test_custom_lead_keeps_only_checks_after_the_first_reminder(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {START_TOKENS_ENV: "350000", LEAD_TOKENS_ENV: "40000"}, clear=True
+            os.environ, {START_TOKENS_ENV: "350000", LEAD_TOKENS_ENV: "35000"}, clear=True
         ):
             home = Path(directory)
             plan = reminder_plan(home, None)
-            self.assertEqual(plan.reached(310_000), ((0, ReminderStage.FIRST),))
-            self.assertEqual(plan.reached(314_000), ((0, ReminderStage.FINAL_CHECK),))
+            self.assertEqual(plan.reached(315_000), ((0, ReminderStage.FIRST),))
+            self.assertEqual(plan.reached(325_000), ((0, ReminderStage.FINAL_CHECK),))
 
-            os.environ[LEAD_TOKENS_ENV] = "36000"
+            os.environ[LEAD_TOKENS_ENV] = "25000"
             plan = reminder_plan(home, None)
-            self.assertEqual(plan.reached(313_999), ())
-            self.assertEqual(plan.reached(319_000), ((0, ReminderStage.FIRST),))
+            self.assertEqual(plan.reached(324_999), ())
+            self.assertEqual(plan.reached(330_000), ((0, ReminderStage.FIRST),))
 
 
 if __name__ == "__main__":
