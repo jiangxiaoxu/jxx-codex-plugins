@@ -5,6 +5,7 @@
 
 ## 项目约定
 
+- 本仓库的插件仅面向 Windows x64. 实现, 打包, 发布和验证均以该平台为目标.
 - `AGENTS.md` 仅保存 AI 执行指令,不是项目 canonical 文档;不得复制或摘录其内容到项目文件.
 - Plugin 维护文档统一放在 `doc/` 下,文件名包含对应 plugin 名称.
 - 新增,重命名或移除 `plugins/*` 下的 plugin 时,同步维护 `.agents/plugins/marketplace.json`,`README.md` 和 repository guide 的 plugin inventory.
