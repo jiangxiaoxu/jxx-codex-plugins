@@ -9,7 +9,7 @@ Run `python "<skill-directory>/scripts/rollout.py" <command>`. Set `$cli` to tha
 
 ## Maintain the note
 
-Keep a concise note of the current work. Update existing sections in place, consolidate repeated information, and remove obsolete details. Record the active goal, open requests, important decisions and constraints, verified progress, and next steps. Keep rollout references for details that may be needed later.
+Keep a concise note of the current work. Update existing sections in place, consolidate repeated information, and remove obsolete details. Record the active goal, open requests, important decisions and constraints, verified progress, and next steps. Keep a rollout reference, a tool record ID, or a distinctive phrase from a message for details you may need to retrieve later.
 
 Use `memory write` to create or replace the whole note and `memory patch` for a targeted edit to an existing note. Read the current note first if you need its contents. Pass UTF-8 text or a unified diff on stdin.
 
