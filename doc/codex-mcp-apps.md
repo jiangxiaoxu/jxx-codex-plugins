@@ -31,7 +31,7 @@ This `tools/list` item opens an example app-only view.
 
 `interface.composerIcon` is the icon for the composer. The sidebar resolves the tool's icon first, then the local MCP server icon, then the generic icon. [Manifest fields](https://developers.openai.com/plugins/deploy/submission#listing-metadata) · [Entrypoint icons](https://github.com/openai/mcp-extensions/blob/main/docs/spec.md#entrypoint-icons)
 
-For the narrow Desktop rail, use an opaque glyph on a transparent background so the host can tint its shape as a monochrome mask. Check that the outline and internal spaces remain legible at rail size.
+For the narrow Desktop rail and its overflow menu, use a dark glyph on a transparent background. Codex fills the mask with the theme color. The renderer can use inverted luminance for icons with varying RGB values, which makes nearly white source strokes disappear. Check the rendered outline and internal spaces at menu size.
 
 ## Verify the package
 
