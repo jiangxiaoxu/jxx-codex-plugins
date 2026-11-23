@@ -10,11 +10,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
+from native_hook_fixture import run_native_hook
+
 PLUGIN = Path(__file__).resolve().parents[1]
 SCRIPT = PLUGIN / "skills" / "thread-memory" / "scripts" / "rollout.py"
 sys.path.insert(0, str(SCRIPT.parent))
 
-from rollout_handoff_snapshot import snapshot
+from rollout_handoff_snapshot import reminder_window_id, snapshot
 
 
 HISTORY = "private historical chat to exclude from hook guidance"
@@ -30,12 +32,12 @@ class RolloutHookTest(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.codex_home = Path(directory.name)
-        self.env = os.environ.copy()
+        self.codex_home = Path(directory.name) / "Codex \u6d4b\u8bd5"
+        self.env = {**os.environ, "CODEX_HOME": str(self.codex_home)}
         self.env.pop("THREAD_MEMORY_ASYNC_START_TOKENS", None)
         self.env.pop("THREAD_MEMORY_HANDOFF_LEAD_TOKENS", None)
         sessions = self.codex_home / "sessions"
-        sessions.mkdir()
+        sessions.mkdir(parents=True)
         self.session_id = str(uuid4())
         self.transcript = sessions / f"rollout-2026-01-01T00-00-00-{self.session_id}.jsonl"
         self.request = {
@@ -69,23 +71,7 @@ class RolloutHookTest(unittest.TestCase):
                 stream.write(json.dumps(row) + "\n")
 
     def invoke(self, request, *, check=False):
-        payload = (
-            request if isinstance(request, bytes) else json.dumps(request).encode()
-        )
-        return subprocess.run(
-            [
-                sys.executable,
-                "-B",
-                str(SCRIPT),
-                "hook",
-                "--codex-home",
-                str(self.codex_home),
-            ],
-            input=payload,
-            capture_output=True,
-            check=check,
-            env=self.env,
-        )
+        return run_native_hook(request, env=self.env, check=check)
 
     def diagnostics(self, thread_id):
         result = subprocess.run(
@@ -115,24 +101,18 @@ class RolloutHookTest(unittest.TestCase):
         self.assertIsNone(re.search(registration["matcher"], "resume"))
         self.assertIsNone(re.search(registration["matcher"], "clear"))
         self.assertIsNone(re.search(registration["matcher"], "not-compact"))
-        (handler,) = registration["hooks"]
-        self.assertEqual(handler["type"], "command")
-        self.assertIs(handler["async"], True)
-        entry = '"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py" hook'
-        self.assertEqual(handler["command"], f"python3 -B {entry}")
-        self.assertEqual(handler["commandWindows"], f"python -B {entry}")
-        for event in ("SubagentStart", "PostCompact"):
-            (registration,) = hooks[event]
-            (handler,) = registration["hooks"]
-            self.assertIs(handler["async"], True)
-            self.assertEqual(handler["command"], f"python3 -B {entry}")
-            self.assertEqual(handler["commandWindows"], f"python -B {entry}")
         (registration,) = hooks["PostToolUse"]
         self.assertIsNotNone(re.search(registration["matcher"], "exec_command"))
-        (handler,) = registration["hooks"]
-        self.assertIs(handler["async"], True)
-        self.assertEqual(handler["command"], f"python3 -B {entry}")
-        self.assertEqual(handler["commandWindows"], f"python -B {entry}")
+        for event, (registration,) in hooks.items():
+            with self.subTest(event=event):
+                (handler,) = registration["hooks"]
+                self.assertEqual(handler["type"], "command")
+                self.assertIs(handler["async"], True)
+                self.assertEqual(
+                    handler["command"],
+                    '& "$env:PLUGIN_ROOT/bin/Thread Memory Hook.exe"',
+                )
+                self.assertNotIn("commandWindows", handler)
 
     def test_startup_offers_memory_maintenance_only_to_root_threads(self):
         child_id = str(uuid4())
@@ -162,7 +142,7 @@ class RolloutHookTest(unittest.TestCase):
 
     def test_main_forks_copy_notes_silently_and_forked_subagents_start_empty(self):
         self.write_rollout(self.header)
-        summary = "A private parent note"
+        summary = "A private parent note \u7ebf\u7a0b"
         saved = self.handoff("write", stdin=summary)
         self.assertEqual(saved.returncode, 0, saved.stderr)
         forked_at = datetime.now(timezone.utc).isoformat()
@@ -366,9 +346,10 @@ class RolloutHookTest(unittest.TestCase):
                 self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
         self.append_usage(455_000)
-        self.reminder_context(self.invoke(request, check=True).stdout, "0")
+        deep_tool_response = json.loads("[" * 70 + "0" + "]" * 70)
+        response = self.invoke({**request, "tool_response": deep_tool_response}, check=True)
+        self.reminder_context(response.stdout, "0")
 
-    @unittest.skipIf(sys.version_info < (3, 11), "automatic threshold needs tomllib")
     def test_subagent_checks_each_reminder_tier_for_delivery(self):
         request = self.start_reminder_window(child=True)
         self.append_usage(355_000, capacity=499_999)
@@ -416,7 +397,6 @@ class RolloutHookTest(unittest.TestCase):
             ],
         )
 
-    @unittest.skipIf(sys.version_info < (3, 11), "automatic threshold needs tomllib")
     def test_main_thread_retries_missing_prompt_only_at_checkpoints(self):
         request = self.start_reminder_window()
         self.append_usage(280_000)
@@ -470,7 +450,9 @@ class RolloutHookTest(unittest.TestCase):
         duplicate_at = "2026-01-01T00:00:03Z"
         with self.transcript.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps({
-                "timestamp": compacted_at, "type": "compacted", "payload": {"replacement_history": []},
+                "timestamp": compacted_at,
+                "type": "compacted",
+                "payload": {"replacement_history": [{"type": "message", "text": "x" * 1_100_000}]},
             }) + "\n")
         self.record_reminder(followup, timestamp=duplicate_at)
         for _ in range(2):
@@ -500,11 +482,12 @@ class RolloutHookTest(unittest.TestCase):
         })
         self.assertNotIn(self.session_id, result.stdout.decode())
 
-    @unittest.skipIf(sys.version_info < (3, 11), "automatic threshold needs tomllib")
     def test_reminder_coalesces_crossed_tiers_and_checks_only_current_window(self):
         request = self.start_reminder_window()
         self.append_usage(355_000)
         prompt = self.reminder_context(self.invoke(request, check=True).stdout, "65,80")
+        first_window = snapshot(self.transcript, include_previous=False).current
+        self.assertIn(f"Notify ID: [65,80:{reminder_window_id(first_window)}]", prompt)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
         self.record_reminder(prompt)
         for tokens in (365_000, 375_000):
@@ -513,7 +496,9 @@ class RolloutHookTest(unittest.TestCase):
 
         self.append_records(("compacted", {"replacement_history": []}))
         self.append_usage(280_000)
-        self.reminder_context(self.invoke(request, check=True).stdout, "65")
+        after_compaction = self.reminder_context(self.invoke(request, check=True).stdout, "65")
+        second_window = snapshot(self.transcript, include_previous=False).current
+        self.assertIn(f"Notify ID: [65:{reminder_window_id(second_window)}]", after_compaction)
         self.record_reminder(prompt)
         self.append_usage(290_000)
         self.reminder_context(self.invoke(request, check=True).stdout, "65")
@@ -764,7 +749,6 @@ class RolloutHookTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)["summary"], expected)
 
-    @unittest.skipIf(sys.version_info < (3, 11), "automatic threshold needs tomllib")
     def test_handoff_is_written_once_and_reopened_only_for_the_next_checkpoint(self):
         (self.codex_home / "config.toml").write_text(
             "model_context_window = 500000\n"

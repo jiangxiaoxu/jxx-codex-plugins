@@ -7,8 +7,7 @@
           {
             "type": "command",
             "async": true,
-            "command": "python3 -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
-            "commandWindows": "python -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "command": "& \"$env:PLUGIN_ROOT/bin/Thread Memory Hook.exe\"",
             "timeout": 10,
             "statusMessage": "Checking thread memory"
           }
@@ -22,8 +21,7 @@
           {
             "type": "command",
             "async": true,
-            "command": "python3 -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
-            "commandWindows": "python -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "command": "& \"$env:PLUGIN_ROOT/bin/Thread Memory Hook.exe\"",
             "timeout": 10,
             "statusMessage": "Checking subagent thread memory"
           }
@@ -37,8 +35,7 @@
           {
             "type": "command",
             "async": true,
-            "command": "python3 -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
-            "commandWindows": "python -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "command": "& \"$env:PLUGIN_ROOT/bin/Thread Memory Hook.exe\"",
             "timeout": 10,
             "statusMessage": "Recording subagent compaction"
           }
@@ -52,8 +49,7 @@
           {
             "type": "command",
             "async": true,
-            "command": "python3 -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
-            "commandWindows": "python -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "command": "& \"$env:PLUGIN_ROOT/bin/Thread Memory Hook.exe\"",
             "timeout": 10,
             "statusMessage": "Checking for a context handoff"
           }

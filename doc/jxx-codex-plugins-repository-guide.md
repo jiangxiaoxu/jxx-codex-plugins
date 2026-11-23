@@ -9,7 +9,7 @@ This repository is a local Codex plugin marketplace. It has no root-level packag
 | `task-memory` | `plugins/task-memory/skills/`, `src/`, and `scripts/commands/` | Run the plugin test suite and packed-artifact check. |
 | `context-window-rollover-reminder` | `plugins/context-window-rollover-reminder/hooks/`, `skills/`, `scripts/`, and `tests/` | Run Python unittest discovery, the audit skill validator, and the plugin manifest validator. |
 | `subagent-reasoning-cap` | `plugins/subagent-reasoning-cap/src/` and `hooks/` | Build the Windows x64 Native AOT executable, verify hook stdin/stdout, and validate the plugin manifest. |
-| `thread-memory` | `plugins/thread-memory/skills/thread-memory/` and `hooks/` | Run Python unittest discovery, including note and hook checks, and validate the skill and plugin manifest. |
+| `thread-memory` | `plugins/thread-memory/src/`, `hooks/`, and `skills/thread-memory/` | Build the Windows x64 Native AOT hook, run Python unittest discovery against the packaged binary, and validate the skill and plugin manifest. |
 
 For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, marketplace entry, and root README inventory aligned when plugin identity, placement, or availability changes.
 
@@ -21,7 +21,8 @@ For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, market
 | Plugin identity, metadata, or marketplace inventory | Plugin manifest, `.agents/plugins/marketplace.json`, root README, and repository inventory. |
 | Codex Desktop MCP App views, entrypoints, or icons | [Codex MCP Apps](codex-mcp-apps.md) and the owning plugin's maintenance documentation. |
 | `task-memory` behavior | Plugin package scripts, shared CLI source, command entrypoints, and tests. |
-| Thread notes, fork copies, and compaction reminders | The Thread Memory skill, its `scripts/rollout_thread_memory.py` and `scripts/rollout_hook.py`, and `plugins/thread-memory/hooks/hooks.json`. |
+| Thread Memory hook lifecycle, reminder checks, and diagnostics | `plugins/thread-memory/src/` and `hooks/hooks.json`. |
+| Thread note edits, fork copies, and the Thread Memory panel | The Thread Memory skill, `scripts/rollout_thread_memory.py`, `scripts/rollout_handoff_store.py`, and `scripts/rollout_handoff_app.py`. Hook-triggered fork copies also use `plugins/thread-memory/src/ThreadMemory.cs`. |
 | Rollout inspection, search, and recovery | `plugins/thread-memory/skills/thread-memory/scripts/rollout.py`, the Thread Memory skill, and plugin tests. |
 
 ## Validation Routing
@@ -62,7 +63,7 @@ npm pack --dry-run --json
 
 ### `thread-memory`
 
-From the repository root:
+From the repository root on Windows x64, first [build and bundle the native hook](thread-memory.md#build-and-validate). The hook tests send JSON on stdin to the packaged executable. The suite also exercises the Python CLI, SQLite interoperability, and the MCP panel.
 
 ```text
 python -m unittest discover -s plugins/thread-memory/tests -p "test_*.py"

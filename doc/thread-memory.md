@@ -4,7 +4,7 @@ Use `$thread-memory` to maintain versioned notes across context compaction in ma
 
 ## Thread lifecycle and compaction
 
-The plugin registers asynchronous `SessionStart(startup|compact|fork)`, `SubagentStart`, `PostCompact`, and `PostToolUse` hooks. Codex queues their `additionalContext` for delivery when it checks completed hooks. A reminder can arrive after compaction, and recovery guidance can arrive after the first continuation. With manual `/compact`, Codex normally dispatches `SessionStart` on the next regular turn.
+The plugin registers asynchronous `SessionStart(startup|compact|fork)`, `SubagentStart`, `PostCompact`, and `PostToolUse` hooks. On Windows x64, these hooks require PowerShell as the Codex environment shell. Each callback runs the bundled Native AOT executable directly with `& "$env:PLUGIN_ROOT/bin/Thread Memory Hook.exe"`. It reads a UTF-8 JSON request from stdin and returns `hookSpecificOutput` on stdout when it has additional context. Codex queues that context for delivery when it checks completed hooks. A reminder can arrive after compaction, and recovery guidance can arrive after the first continuation. With manual `/compact`, Codex normally dispatches `SessionStart` on the next regular turn.
 
 After a Desktop plugin update, check the Hook list for enabled and trusted Thread Memory hooks. Codex ties hook trust to plugin content and can request approval again for an updated package.
 
@@ -22,7 +22,7 @@ Continue from the retained context and current instructions. Local compaction ke
 
 First reminders and follow-ups use `<thread_memory_reminder>` with a `Notify ID: [65:Abc123_-]` footer. The plugin uses its tiers and eight-character window ID to confirm delivery for the original window, even if the reminder arrives after compaction or rollback.
 
-Automatic discovery reads `config.toml` in the Codex home and requires `features.async_compaction` to be enabled. The raw window comes from a matching model catalog entry, including any configured window override and model cap. A configured percentage outside the compatibility levels adds a separate level. If the observed usable window disagrees with the expected model window, the hook skips inferred reminders. It also skips automatic reminders when the home config enables native `token_budget` or when the model window cannot be resolved. Python 3.11+ supplies the TOML parser. Python 3.10 can use `tomli` if installed. Project layers and launch overrides may differ from the home configuration. `THREAD_MEMORY_ASYNC_START_TOKENS` supplies a single authoritative startup line. `THREAD_MEMORY_HANDOFF_LEAD_TOKENS` overrides the first lead. Only checks that fall after that first reminder are used.
+Automatic discovery reads `config.toml` in the Codex home and requires `features.async_compaction` to be enabled. The raw window comes from a matching model catalog entry, including any configured window override and model cap. A configured percentage outside the compatibility levels adds a separate level. If the observed usable window disagrees with the expected model window, the hook skips inferred reminders. It also skips automatic reminders when the home config enables native `token_budget` or when the model window cannot be resolved. Project layers and launch overrides may differ from the home configuration. `THREAD_MEMORY_ASYNC_START_TOKENS` supplies a single authoritative startup line. `THREAD_MEMORY_HANDOFF_LEAD_TOKENS` overrides the first lead. Only checks that fall after that first reminder are used.
 
 Usage comes from the latest usable sample in a bounded rollout tail scan. Copied forks with an authoritative first-owned ordinal can be checked without counting inherited records. The hook skips reminders if it cannot verify the window boundary. A large new result, a long reply, or manual compaction can skip the save opportunity.
 
@@ -36,7 +36,7 @@ Each edit records a version with a UTC maintenance timestamp. `memory read` retu
 
 Main-thread forks use the creation timestamp in the new thread's original verified rollout header to choose the parent's version. The first `SessionStart(fork)` or first memory access copies that version, including an empty result if the parent had no note at that time. Further reads and edits use the new thread's revisions, and a later main-thread fork can inherit them. If a verified fork's inheritance is unavailable, an explicit `memory write` can start its own note and returns `inheritance_unavailable` in the receipt. The note store and fork logic use local SQLite and rollout headers.
 
-Thread Memory opens `$CODEX_HOME/state/plugins/thread-memory/handoff.sqlite3` on the first state write, including a Hook diagnostic or a note edit. `PRAGMA user_version` identifies the schema. Version 1 commits its tables and schema version in one transaction, and the revision index supports latest and time-bounded reads by thread. The first durable note initialization includes earlier window note versions so history and fork-time lookups can still find them. The handoff commands default to the preceding window and accept `--current` to select the active one. After initialization, maintain the durable note with `memory`.
+The native hook and the Python CLI and panel share `$CODEX_HOME/state/plugins/thread-memory/handoff.sqlite3`. Thread Memory opens it on the first state write, including a Hook diagnostic or a note edit. `PRAGMA user_version` identifies the schema. Version 1 commits its tables and schema version in one transaction, and the revision index supports latest and time-bounded reads by thread. The first durable note initialization includes earlier window note versions so history and fork-time lookups can still find them. The handoff commands default to the preceding window and accept `--current` to select the active one. After initialization, maintain the durable note with `memory`.
 
 ### Hook diagnostics
 
@@ -347,11 +347,28 @@ JSON output renders isolated UTF-16 surrogate escapes from old records as U+FFFD
 
 ## Runtime and validation
 
-Python 3.10 or newer supports uncompressed rollouts with its standard library. Reading `.jsonl.zst` requires the optional `zstandard` package. Image export requires Pillow 9.1 or newer with WebP support.
+The Windows x64 native hook uses the system `winsqlite3` library and runs without a separately installed .NET runtime or Python. The CLI and MCP panel use Python 3.10 or newer. For Python commands, reading `.jsonl.zst` requires `zstandard`, and image export requires Pillow 9.1 or newer with WebP support. Reading Codex configuration from Python 3.10 can also require `tomli`.
 
 In **Thread Memory**, **Dependencies** shows which optional features the plugin's Python can run. **Install missing dependencies** uses that interpreter's pip and standard `site-packages` directory. It installs wheels for the unavailable packages shown in the panel. Installation requires network access, pip, and write permission to that Python installation.
 
 Window and token queries fully decode records when they need their payloads. Skipped payloads are checked for envelope closure. Window queries and image recovery reuse byte offsets within one invocation for uncompressed JSONL. Zstandard archives are read sequentially. A scan that reaches a truncated frame reports the affected archive as `invalid_rollout`.
+
+### Build and validate
+
+From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include `bin/Thread Memory Hook.exe` and `THIRD-PARTY-NOTICES.txt` in the plugin package.
+
+```powershell
+$plugin = 'plugins/thread-memory'
+$artifacts = Join-Path (Resolve-Path .) 'tmp/thread-memory-native'
+$publish = Join-Path $artifacts 'publish'
+dotnet publish "$plugin/src/thread-memory-hook.csproj" -c Release -r win-x64 --artifacts-path $artifacts -o $publish
+$publishExit = $LASTEXITCODE
+if ($publishExit -ne 0) { throw "Native AOT publish failed ($publishExit)" }
+New-Item -ItemType Directory -Path "$plugin/bin" -Force | Out-Null
+Copy-Item "$publish/Thread Memory Hook.exe" "$plugin/bin/"
+```
+
+Run the Python suite after packaging the executable. Hook integration tests send UTF-8 JSON on stdin to `bin/Thread Memory Hook.exe` and verify its output and shared SQLite state through the Python CLI. Set `THREAD_MEMORY_TEST_HOOK_EXE` to test another published binary in isolation.
 
 ```text
 python -m unittest discover -s plugins/thread-memory/tests -p "test_*.py"

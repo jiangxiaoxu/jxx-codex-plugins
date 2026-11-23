@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
+from native_hook_fixture import run_native_hook
 
 SCRIPT = (
     Path(__file__).resolve().parents[1] / "skills" / "thread-memory" / "scripts" / "rollout.py"
@@ -250,7 +251,7 @@ class ThreadMemoryTest(unittest.TestCase):
             "session_id": child,
             "transcript_path": str(child_path),
         }
-        result = self.run_command("hook", stdin=json.dumps(event))
+        result = run_native_hook(event, env=self.env)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.memory(child, "read")["summary"], "Goal\nChild edits\nNext")
         self.assertEqual(self.memory(parent, "read")["summary"], parent_edit)
@@ -368,7 +369,7 @@ class ThreadMemoryTest(unittest.TestCase):
             with rollout.open("a", encoding="utf-8") as stream:
                 row = {"type": "compacted", "payload": {"replacement_history": [], "message": checkpoint}}
                 stream.write(json.dumps(row) + "\n")
-            result = self.run_command("hook", stdin=json.dumps(event))
+            result = run_native_hook(event, env=self.env)
             self.assertEqual(result.returncode, 0, result.stderr)
             context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
             self.assertIn("memory read", context)
