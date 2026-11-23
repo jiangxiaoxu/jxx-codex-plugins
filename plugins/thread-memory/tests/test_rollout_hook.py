@@ -146,7 +146,7 @@ class RolloutHookTest(unittest.TestCase):
     def test_main_forks_copy_notes_silently_and_forked_subagents_start_empty(self):
         self.write_rollout(self.header)
         summary = "A private parent note \u7ebf\u7a0b"
-        saved = self.handoff("write", stdin=summary)
+        saved = self.note_command("write", stdin=summary)
         self.assertEqual(saved.returncode, 0, saved.stderr)
         forked_at = datetime.now(timezone.utc).isoformat()
 
@@ -792,59 +792,13 @@ class RolloutHookTest(unittest.TestCase):
             ),
         )
 
-    def handoff(self, action, window=None, stdin=None, *, current=False):
-        command = [
-            sys.executable,
-            "-B",
-            str(SCRIPT),
-            "handoff",
-            action,
-            "--codex-home",
-            str(self.codex_home),
-        ]
-        if window is not None:
-            command.extend(("--window", window))
-        if current:
-            command.append("--current")
+    def note_command(self, action, *, stdin=""):
         return subprocess.run(
-            command,
-            input=stdin.encode("utf-8") if stdin is not None else b"",
+            [sys.executable, "-B", str(SCRIPT), "memory", action, "--codex-home", str(self.codex_home)],
+            input=stdin.encode("utf-8"),
             env={**self.env, "CODEX_THREAD_ID": self.session_id},
             capture_output=True,
         )
-
-    def test_manual_compaction_recovers_handoff_written_without_a_window_hint(self):
-        self.append_records(("session_meta", self.header))
-        summary = "Continue the manual handoff from this saved note."
-        saved = self.handoff("write", stdin=summary)
-        self.assertEqual(saved.returncode, 0, saved.stderr)
-        receipt = json.loads(saved.stdout)
-        self.assertEqual(receipt["thread_id"], self.session_id)
-        window = receipt["window"]
-
-        active_window = self.handoff("read")
-        self.assertEqual(active_window.returncode, 1, active_window.stderr)
-        self.assertEqual(json.loads(active_window.stderr)["error"]["code"], "not_found")
-
-        self.append_records(("compacted", {"replacement_history": []}))
-        outcome = json.loads(self.invoke(self.request, check=True).stdout)
-        context = self.recovery_context(outcome["hookSpecificOutput"]["additionalContext"])
-        self.assertIn("memory read", context)
-        diagnostic, = (item for item in self.diagnostics(self.session_id)
-                       if item["event"] == "compact_context_prepared")
-        self.assertEqual(diagnostic["event"], "compact_context_prepared")
-        self.assertEqual(diagnostic["details"], {"note_status": "available"})
-
-        result = self.handoff("read")
-        self.assertEqual(result.returncode, 0, result.stderr)
-        restored = json.loads(result.stdout)
-        self.assertEqual(restored["window"], window)
-        self.assertEqual(restored["summary"], summary)
-
-        self.append_records(("compacted", {"replacement_history": []}))
-        missing_note = self.handoff("read")
-        self.assertEqual(missing_note.returncode, 1, missing_note.stderr)
-        self.assertEqual(json.loads(missing_note.stderr)["error"]["code"], "not_found")
 
     def test_main_compaction_without_a_note_renews_memory_maintenance(self):
         self.write_rollout(self.header)
@@ -856,74 +810,73 @@ class RolloutHookTest(unittest.TestCase):
                        if item["event"] == "compact_context_prepared")
         self.assertEqual(diagnostic["details"], {"note_status": "missing"})
 
-    def test_handoff_caps_saved_utf8_bytes_and_marks_truncation(self):
+    def test_memory_caps_saved_utf8_bytes_and_marks_truncation(self):
         self.append_records(("session_meta", self.header))
-        exact = "x" * 8192
-        # The next character straddles the 8171-byte allowance before the marker.
-        prefix = "x" * 8167 + "\u76ee"
+        limit = 12_288
+        exact = "x" * limit
+        marker = "\n\n[Summary truncated]"
+        # The next character begins one byte before the marker's reserved space.
+        prefix = "x" * (limit - len(marker) - 4) + "\u76ee"
         cases = (
             ("exact limit", "\ufeff" + exact + "\r\n", exact, False),
             (
                 "oversized",
                 prefix + "\u6807" + "y" * 70_000 + "\r\n",
-                prefix + "\n\n[Summary truncated]",
+                prefix + marker,
                 True,
             ),
-            ("oversized blank prefix", " " * 8192 + "Earlier decisions", "[Summary truncated]", True),
+            ("oversized blank prefix", " " * limit + "Earlier decisions", "[Summary truncated]", True),
         )
         for label, submitted, expected, truncated in cases:
             with self.subTest(label=label):
-                result = self.handoff("write", stdin=submitted)
+                result = self.note_command("write", stdin=submitted)
                 self.assertEqual(result.returncode, 0, result.stderr)
                 receipt = json.loads(result.stdout)
                 self.assertIs(receipt["truncated"], truncated)
                 self.assertEqual(receipt["bytes"], len(expected.encode("utf-8")))
-                self.assertLessEqual(receipt["bytes"], 8192)
+                self.assertLessEqual(receipt["bytes"], limit)
 
-                self.append_records(("compacted", {"replacement_history": [], "message": label}))
-                saved = self.handoff("read")
+                saved = self.note_command("read")
                 self.assertEqual(saved.returncode, 0, saved.stderr)
                 self.assertEqual(json.loads(saved.stdout)["summary"], expected)
 
-    def test_handoff_patches_current_and_previous_notes_without_partial_writes(self):
+    def test_memory_patches_remain_atomic_across_compaction(self):
         self.append_records(("session_meta", self.header))
-        original = "Goal\nOld task\nKeep heading\nNext steps\n" + "x" * 7000
-        result = self.handoff("write", stdin=original)
+        limit = 12_288
+        expected_head = "Goal\nCurrent task\nKeep heading\nReview results\n"
+        tail = "x" * (limit - len(expected_head))
+        original = "Goal\nOld task\nKeep heading\nNext steps\n" + tail
+        result = self.note_command("write", stdin=original)
         self.assertEqual(result.returncode, 0, result.stderr)
-        window = json.loads(result.stdout)["window"]
-        result = self.handoff("read", current=True)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(json.loads(result.stdout)["summary"], original)
 
-        headers = "--- a/handoff\n+++ b/handoff\n"
+        headers = "--- a/note\n+++ b/note\n"
         patch = headers + "@@ -1,3 +1,3 @@\n Goal\n-Old task\n+Current task\n Keep heading\n"
-        result = self.handoff("patch", window, patch, current=True)
+        result = self.note_command("patch", stdin=patch)
         self.assertEqual(result.returncode, 0, result.stderr)
 
         self.append_records(("compacted", {"replacement_history": []}))
         patch = headers + "@@ -2,3 +2,3 @@\n Current task\n Keep heading\n-Next steps\n+Review results\n"
-        result = self.handoff("patch", stdin=patch)
+        result = self.note_command("patch", stdin=patch)
         self.assertEqual(result.returncode, 0, result.stderr)
-        expected = original.replace("Old task", "Current task").replace(
-            "Next steps", "Review results"
-        )
-        result = self.handoff("read")
+        self.assertEqual(json.loads(result.stdout)["bytes"], limit)
+        expected = expected_head + tail
+        result = self.note_command("read")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["summary"], expected)
 
         invalid_patches = (
             headers + "@@ -2 +2 @@\n-Current task\n+Partial edit\n"
             "@@ -4 +4 @@\n-Wrong original text\n+Invalid edit\n",
-            headers + "@@ -3 +3 @@\n-Keep heading\n+" + "z" * 2000 + "\n",
+            headers + "@@ -3 +3 @@\n-Keep heading\n+" + "\u754c" * 5 + "\n",
         )
         for patch in invalid_patches:
-            result = self.handoff("patch", stdin=patch)
+            result = self.note_command("patch", stdin=patch)
             self.assertNotEqual(result.returncode, 0)
-            result = self.handoff("read")
+            result = self.note_command("read")
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)["summary"], expected)
 
-    def test_handoff_is_written_once_and_reopened_only_for_the_next_checkpoint(self):
+    def test_current_turn_emits_one_reminder_and_note_recovers_across_compactions(self):
         (self.codex_home / "config.toml").write_text(
             "model_context_window = 500000\n"
             "[features.async_compaction]\n"
@@ -993,8 +946,6 @@ class RolloutHookTest(unittest.TestCase):
         prompts = [output for output in outputs if output]
         self.assertEqual(len(prompts), 1, outputs)
         self.reminder_context(prompts[0], "65")
-        window = snapshot(self.transcript, include_previous=False).current
-
         summary = "Next: review the saved result for \u76ee\u6807."
         # A crash can leave a partial checkpoint ending in the nested item's braces.
         partial_checkpoint = json.dumps(
@@ -1006,7 +957,7 @@ class RolloutHookTest(unittest.TestCase):
         with self.transcript.open("ab") as stream:
             original_size = stream.tell()
             stream.write(partial_checkpoint)
-        result = self.handoff("write", window, summary)
+        result = self.note_command("write", stdin=summary)
         self.assertEqual(result.returncode, 0, result.stderr)
         with self.transcript.open("r+b") as stream:
             stream.truncate(original_size)
@@ -1020,8 +971,7 @@ class RolloutHookTest(unittest.TestCase):
         context = output["additionalContext"]
         self.assertIn("memory read", context)
         self.assertNotIn(summary, context)
-        self.assertNotEqual(self.handoff("write", window, "Late replacement").returncode, 0)
-        result = self.handoff("read", window)
+        result = self.note_command("read")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["summary"], summary)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
@@ -1029,9 +979,9 @@ class RolloutHookTest(unittest.TestCase):
         self.append_records(("compacted", {"replacement_history": [], "message": "second"}))
         output = json.loads(self.invoke(self.request, check=True).stdout)["hookSpecificOutput"]
         self.assertIn("memory read", output["additionalContext"])
-        result = self.handoff("read", window)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stderr)["error"]["code"], "not_found")
+        result = self.note_command("read")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["summary"], summary)
 
 
 if __name__ == "__main__":

@@ -14,14 +14,14 @@ import sys
 from collections import deque
 from collections.abc import Iterator
 from contextlib import ExitStack
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
 from uuid import UUID
 
 from rollout_checkpoint_instructions import checkpoint_instructions
 from rollout_handoff_store import MAX_HOOK_DIAGNOSTICS, read_hook_diagnostics, read_reminder_telemetry
-from rollout_hook import MAX_SUMMARY_BYTES, handoff, hook_instructions, memory
+from rollout_hook import MAX_NOTE_BYTES, hook_instructions, memory
 from rollout_inventory import inventory
 from rollout_lineage import describe_lineage, segment_info
 from rollout_media import (
@@ -60,9 +60,8 @@ from rollout_tool_outputs import (
 )
 from rollout_transcript import transcript
 
-HANDOFF_TRUNCATION = "\n\n[Summary truncated]"
-MAX_HANDOFF_PATCH_BYTES = 128 * 1024
-MAX_TIMESTAMP_STDIN_BYTES = 1024
+NOTE_TRUNCATION = "\n\n[Summary truncated]"
+MAX_NOTE_PATCH_BYTES = 128 * 1024
 
 PAGE_ITEMS = {
     "windows": "windows",
@@ -543,29 +542,15 @@ def parse_args() -> argparse.Namespace:
     hook_cmd = commands.add_parser(
         "hook", help="handle a Codex usage or compaction hook on stdin"
     )
-    handoff_cmd = commands.add_parser("handoff", help="read, write, or patch a window handoff")
-    handoff_cmd.add_argument("action", choices=("read", "write", "patch"))
-    handoff_cmd.add_argument("--thread", help="thread UUID (defaults to CODEX_THREAD_ID)")
-    handoff_cmd.add_argument(
-        "--window", help="expected window key (defaults: active for write, preceding for read and patch)",
-    )
-    handoff_cmd.add_argument(
-        "--current", action="store_true", help="read or patch the active window instead",
-    )
     memory_cmd = commands.add_parser("memory", help="maintain one durable note per thread")
-    memory_cmd.add_argument("action", choices=("read", "write", "patch", "history"))
+    memory_cmd.add_argument("action", choices=("read", "write", "patch"))
     memory_cmd.add_argument("--thread", help="thread UUID (defaults to CODEX_THREAD_ID)")
-    memory_cmd.add_argument(
-        "--at", metavar="TIME", type=lambda value: value if value == "-" else date_value(value),
-        help="read or list versions at or before this timestamp (use - to read it from stdin)",
-    )
-    memory_cmd.add_argument("--limit", type=positive, help="maximum history versions (default: 10)")
     diagnostics_cmd = commands.add_parser("diagnostics", help="read recent Thread Memory hook decisions")
     diagnostics_source = diagnostics_cmd.add_mutually_exclusive_group()
     diagnostics_source.add_argument("--thread", help="thread UUID (defaults to CODEX_THREAD_ID)")
     diagnostics_source.add_argument("--summary", action="store_true", help="aggregate reminder metrics across threads")
     diagnostics_cmd.add_argument("--limit", type=positive, help="maximum number of thread events (default: 20)")
-    for command in (hook_cmd, handoff_cmd, memory_cmd, diagnostics_cmd):
+    for command in (hook_cmd, memory_cmd, diagnostics_cmd):
         command.add_argument(
             "--codex-home", type=Path,
             default=Path(os.getenv("CODEX_HOME", Path.home() / ".codex")),
@@ -582,11 +567,6 @@ def parse_args() -> argparse.Namespace:
                 args.thread = str(UUID(args.thread or os.getenv("CODEX_THREAD_ID") or ""))
             except ValueError:
                 parser.error("diagnostics requires --thread UUID or CODEX_THREAD_ID")
-    if args.command == "memory":
-        if args.at is not None and args.action not in {"read", "history"}:
-            parser.error("memory --at requires read or history")
-        if args.limit is not None and (args.action != "history" or args.limit > 100):
-            parser.error("memory --limit requires history and a value from 1 to 100")
     if (
         getattr(args, "since", None) is not None
         and args.until is not None
@@ -763,22 +743,17 @@ def window_page(segments: list[Segment], args: argparse.Namespace) -> dict:
 
 def resolve_stdin_selectors(args: argparse.Namespace) -> None:
     selectors = [
-        name for name in ("cursor", "id", "ref", "at") if getattr(args, name, None) == "-"
+        name for name in ("cursor", "id", "ref") if getattr(args, name, None) == "-"
     ]
     image_ids_from_stdin = (getattr(args, "ids", None) or []).count("-")
     readers = len(selectors) + image_ids_from_stdin
     if not readers:
         return
     if readers > 1:
-        raise ValueError("use - only once across --id, --ref, --cursor and --at")
+        raise ValueError("use - only once across --id, --ref and --cursor")
 
     option = "--id" if image_ids_from_stdin else f"--{selectors[0]}"
-    if option == "--at":
-        raw = sys.stdin.buffer.read(MAX_TIMESTAMP_STDIN_BYTES + 1)
-        if len(raw) > MAX_TIMESTAMP_STDIN_BYTES:
-            raise ValueError(f"{option} - is limited to {MAX_TIMESTAMP_STDIN_BYTES} UTF-8 bytes")
-    else:
-        raw = sys.stdin.buffer.read()
+    raw = sys.stdin.buffer.read()
     try:
         values = [line.decode("utf-8") for line in raw.splitlines()]
     except UnicodeDecodeError as error:
@@ -792,11 +767,6 @@ def resolve_stdin_selectors(args: argparse.Namespace) -> None:
         args.ids[index : index + 1] = values
     elif len(values) != 1:
         raise ValueError(f"{option} - requires exactly one input line")
-    elif option == "--at":
-        try:
-            args.at = date_value(values[0])
-        except argparse.ArgumentTypeError as error:
-            raise ValueError(f"{option} - {error}") from error
     else:
         setattr(args, selectors[0], values[0])
 
@@ -856,10 +826,10 @@ def write_stdout(data: bytes) -> int:
     return 0
 
 
-def read_handoff_summary(stream: BinaryIO) -> tuple[str, bool]:
-    raw = stream.read(MAX_SUMMARY_BYTES + len(codecs.BOM_UTF8) + 1)
+def read_note(stream: BinaryIO) -> tuple[str, bool]:
+    raw = stream.read(MAX_NOTE_BYTES + len(codecs.BOM_UTF8) + 1)
     raw = raw.removeprefix(codecs.BOM_UTF8)
-    prefix, overflow = raw[:MAX_SUMMARY_BYTES], raw[MAX_SUMMARY_BYTES:]
+    prefix, overflow = raw[:MAX_NOTE_BYTES], raw[MAX_NOTE_BYTES:]
     truncated = bool(overflow.strip(b"\r\n"))
     if overflow:
         # Drain the producer with bounded memory so a long pipe still completes.
@@ -867,16 +837,16 @@ def read_handoff_summary(stream: BinaryIO) -> tuple[str, bool]:
             truncated = truncated or bool(chunk.strip(b"\r\n"))
 
     if truncated:
-        limit = MAX_SUMMARY_BYTES - len(HANDOFF_TRUNCATION.encode("utf-8"))
+        limit = MAX_NOTE_BYTES - len(NOTE_TRUNCATION.encode("utf-8"))
         decoder = codecs.getincrementaldecoder("utf-8")()
         summary = decoder.decode(prefix[:limit], final=False)
     else:
         summary = prefix.decode("utf-8")
     summary = summary.rstrip("\r\n")
     if truncated:
-        summary = summary + HANDOFF_TRUNCATION if summary.strip() else HANDOFF_TRUNCATION.lstrip()
+        summary = summary + NOTE_TRUNCATION if summary.strip() else NOTE_TRUNCATION.lstrip()
     elif not summary.strip():
-        raise ValueError("handoff write requires a nonempty UTF-8 summary on stdin")
+        raise ValueError("memory write requires a nonempty UTF-8 note on stdin")
     return summary, truncated
 
 
@@ -903,31 +873,18 @@ def main() -> int:
                     }
                 )
             )
-        if args.command in {"handoff", "memory"}:
+        if args.command == "memory":
             summary, truncated = (
-                read_handoff_summary(sys.stdin.buffer) if args.action == "write" else (None, False)
+                read_note(sys.stdin.buffer) if args.action == "write" else (None, False)
             )
             patch = None
             if args.action == "patch":
-                raw = sys.stdin.buffer.read(MAX_HANDOFF_PATCH_BYTES + 1)
-                if len(raw) > MAX_HANDOFF_PATCH_BYTES:
-                    raise ValueError(f"handoff patch is limited to {MAX_HANDOFF_PATCH_BYTES} UTF-8 bytes")
+                raw = sys.stdin.buffer.read(MAX_NOTE_PATCH_BYTES + 1)
+                if len(raw) > MAX_NOTE_PATCH_BYTES:
+                    raise ValueError(f"memory patch input is limited to {MAX_NOTE_PATCH_BYTES} UTF-8 bytes")
                 patch = raw.decode("utf-8-sig")
             thread = args.thread or os.getenv("CODEX_THREAD_ID")
-            if args.command == "memory":
-                resolve_stdin_selectors(args)
-                at_us = None
-                if args.at is not None:
-                    epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
-                    at_us = (args.at - epoch) // timedelta(microseconds=1)
-                result = memory(
-                    args.codex_home, thread, args.action,
-                    summary=summary, patch=patch, at_us=at_us, limit=args.limit or 10,
-                )
-            else:
-                result = handoff(
-                    args.codex_home, thread, args.window, summary, current=args.current, patch=patch,
-                )
+            result = memory(args.codex_home, thread, args.action, summary=summary, patch=patch)
             if args.action == "write":
                 result["truncated"] = truncated
             return write_stdout(json_bytes(result))

@@ -7,11 +7,6 @@
 ```powershell
 python $cli memory read | jq -er '.summary // ""' | Select-Object -Skip 9 -First 11
 
-python $cli memory history --limit 5 |
-    jq -er '.items[-1].effective_at // empty' |
-    python $cli memory read --at - |
-    jq -er '.summary // ""'
-
 @'
 --- a/memory
 +++ b/memory
@@ -21,9 +16,7 @@ python $cli memory history --limit 5 |
 '@ | python $cli memory patch
 ```
 
-Hunk locations and original lines must match. A mismatch, empty result, or result over 8,192 UTF-8 bytes leaves the stored note unchanged.
-
-`handoff read` and `handoff patch` still address legacy window notes. They default to the preceding window and accept `--current` or a matching `--window KEY`.
+Hunk locations and original lines must match. A mismatch, empty result, or result over 12,288 UTF-8 bytes leaves the stored note unchanged.
 
 ## Find the checkpoint
 

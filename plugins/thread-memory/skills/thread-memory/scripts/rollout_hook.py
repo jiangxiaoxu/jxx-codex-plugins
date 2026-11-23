@@ -15,20 +15,14 @@ from rollout_handoff_snapshot import (
     WindowSnapshot,
     reminder_snapshot,
     reminder_window_id,
-    snapshot,
 )
 from rollout_handoff_store import (
     claim_reminder,
-    load_handoff,
     load_rollout_checkpoint,
     mark_child_compaction,
-    memory_history,
-    memory_revision,
     memory_timestamp,
     record_hook_diagnostic,
     record_reminder_telemetry,
-    replace_handoff,
-    save_handoff,
     save_memory,
     save_rollout_checkpoint,
     take_child_compaction,
@@ -62,7 +56,7 @@ _SUBAGENT_RECOVERY_HINT = _RECOVERY_TEMPLATE.format(
     "Context was compacted in this subagent. Use `memory read` to recover your thread note. "
     "Search the rollout for missing details as needed."
 )
-MAX_SUMMARY_BYTES = 8_192
+MAX_NOTE_BYTES = 12_288
 
 
 def _thread_id(value: object) -> UUID | None:
@@ -320,57 +314,18 @@ def hook_instructions(request: dict, home: Path) -> str | None:
         return None
 
 
-def handoff(
-    home: Path, thread: str | None, window: str | None, summary: str | None,
-    *, current: bool = False, patch: str | None = None,
-) -> dict:
-    session_id = _thread_id(thread)
-    if session_id is None:
-        raise ValueError("handoff requires --thread or CODEX_THREAD_ID with a thread UUID")
-    thread_id = str(session_id)
-    path = find_rollout(home, thread_id, thread=True)
-    if path is None or not _is_root(path, session_id):
-        raise FileNotFoundError("root rollout is unavailable for this thread")
-    active = summary is not None or current
-    state = snapshot(path, include_previous=not active)
-    scope = "active" if active else "preceding"
-    target = None
-    if state is not None:
-        target = state.current if active else state.previous
-    if target is None:
-        raise FileNotFoundError(f"could not identify the {scope} handoff window")
-    if window is not None and window != target:
-        message = (
-            "handoff window is no longer active" if active
-            else "handoff does not belong to the preceding window"
-        )
-        raise FileNotFoundError(message)
-    if summary is not None:
-        return save_handoff(home, thread_id, target, summary)
-    saved = load_handoff(home, thread_id, target)
-    if saved is None:
-        raise FileNotFoundError(f"no handoff was saved for the {scope} window")
-    if patch is None:
-        return {"thread_id": thread_id, "window": target, "summary": saved}
-
-    edited = patch_note(saved, patch)
-    if not replace_handoff(home, thread_id, target, saved, edited):
-        raise ValueError("handoff changed while applying the patch; read it again")
-    return {"saved": True, "thread_id": thread_id, "window": target, "bytes": len(edited.encode("utf-8"))}
-
-
 def patch_note(summary: str, patch: str) -> str:
     edited = apply_handoff_diff(summary, patch)
     if not edited.strip():
         raise ValueError("patch would leave an empty note")
-    if len(edited.encode("utf-8")) > MAX_SUMMARY_BYTES:
-        raise ValueError(f"patched note would exceed {MAX_SUMMARY_BYTES} UTF-8 bytes")
+    if len(edited.encode("utf-8")) > MAX_NOTE_BYTES:
+        raise ValueError(f"patched note would exceed {MAX_NOTE_BYTES} UTF-8 bytes")
     return edited
 
 
 def memory(
     home: Path, thread: str | None, action: str, *,
-    summary: str | None, patch: str | None, at_us: int | None, limit: int,
+    summary: str | None, patch: str | None,
 ) -> dict:
     session_id = _thread_id(thread)
     if session_id is None:
@@ -384,16 +339,12 @@ def memory(
             raise
         current = None
         inheritance_error = str(error)
-    if action == "history":
-        return {"thread_id": thread_id, "items": memory_history(home, thread_id, at_us=at_us, limit=limit)}
     if action == "read":
-        note = current if at_us is None else memory_revision(home, thread_id, at_us=at_us)
-        if note is None or note.summary is None:
-            return {"thread_id": thread_id, "summary": None, "updated_at": None, "effective_at": None}
+        if current is None or current.summary is None:
+            return {"thread_id": thread_id, "summary": None, "updated_at": None}
         return {
-            "thread_id": thread_id, "summary": note.summary,
-            "updated_at": memory_timestamp(note.updated_us),
-            "effective_at": memory_timestamp(note.effective_us),
+            "thread_id": thread_id, "summary": current.summary,
+            "updated_at": memory_timestamp(current.updated_us),
         }
 
     if patch is not None:

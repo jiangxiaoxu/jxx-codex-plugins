@@ -11,7 +11,7 @@ In PowerShell examples, set `$cli` to the bundled script path and `$source` to `
 
 ## Thread memory
 
-Keep the thread note concise. Preserve useful prior details, and record open requests, decisions and constraints, verified progress, findings, and next steps. Include known rollout references for details that may be needed later.
+Keep a concise note of the current work. Update existing sections in place, consolidate repeated information, and remove obsolete details. Record the active goal, open requests, important decisions and constraints, verified progress, and next steps. Keep rollout references for details that may be needed later.
 
 Use `memory write` to create or replace the whole note and `memory patch` for a targeted edit to an existing note. Read the current note first if you need its contents. Pass UTF-8 text or a unified diff on stdin.
 
@@ -21,9 +21,9 @@ $patch | python $cli memory patch
 python $cli memory read | jq -er '.summary // ""'
 ```
 
-The note belongs to the thread across compaction. A main-thread fork starts with its own copy as of its recorded creation time. Subagents start with an empty note, including when they inherit chat history. `memory read` returns `.summary` and `.updated_at`. A null `.summary` means the thread has no note at the selected time. Find an `.effective_at` with `memory history --limit 5`, then pass it to `memory read --at TIME` or pipe it into `memory read --at -`.
+The note belongs to the thread across compaction. A main-thread fork starts with its own copy as of its recorded creation time. Subagents start with an empty note, including when they inherit chat history. `memory read` returns the current `.summary` and `.updated_at`. A null `.summary` means the thread has no saved note.
 
-Use the same commands when a hook asks you to update the note. Patches require exact matching lines. Writes over 8,192 UTF-8 bytes save a truncated note and report `.truncated`. If the user requested a save before manual compaction, confirm success before they run `/compact`.
+Use the same commands when a hook asks you to update the note. Patches require exact matching lines and a result within 12,288 UTF-8 bytes. Writes over that limit save a truncated note and report `.truncated`. If the user requested a save before manual compaction, confirm success before they run `/compact`.
 
 After compaction, follow the recovery hint when available. Otherwise, read the full note with `memory read` to resume. Search the rollout for missing details as needed.
 

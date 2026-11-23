@@ -468,37 +468,6 @@ def read_reminder_telemetry(home: Path) -> list[dict]:
         ]
 
 
-def memory_history(
-    home: Path, thread_id: str, *, at_us: int | None = None, limit: int = 10
-) -> list[dict]:
-    """List maintained versions without loading their contents."""
-    connection = _open_existing(home)
-    if connection is None:
-        return []
-    with closing(connection):
-        scope = "thread_id = ? AND summary IS NOT NULL"
-        params = (thread_id,)
-        if at_us is not None:
-            scope += " AND effective_us <= ?"
-            params += (at_us,)
-        return [
-            {
-                "updated_at": memory_timestamp(updated_us),
-                "effective_at": memory_timestamp(effective_us),
-                "bytes": size,
-            }
-            for updated_us, effective_us, size in connection.execute(
-                f"""
-                SELECT updated_us, effective_us, length(CAST(summary AS BLOB))
-                FROM memory_revisions
-                WHERE {scope}
-                ORDER BY effective_us DESC, revision DESC LIMIT ?
-                """,
-                (*params, limit),
-            )
-        ]
-
-
 _LEGACY_TIME_SORT_KEY = """
     CASE LENGTH(saved_at)
         WHEN 20 THEN SUBSTR(saved_at, 1, 19) || '.000000Z'
@@ -697,15 +666,11 @@ def take_child_compaction(home: Path, thread_id: str) -> bool:
         ).rowcount == 1
 
 
-def _begin_handoff_edit(connection: sqlite3.Connection) -> str:
-    # Timestamp the new version after obtaining the write lock, as for canonical notes.
-    connection.execute("BEGIN IMMEDIATE")
-    return memory_timestamp(time.time_ns() // 1_000)
-
-
 def save_handoff(home: Path, thread_id: str, window: str, summary: str) -> dict:
     with closing(_open_writable(home)) as connection, connection:
-        saved_at = _begin_handoff_edit(connection)
+        # Timestamp the new version after obtaining the write lock, as for canonical notes.
+        connection.execute("BEGIN IMMEDIATE")
+        saved_at = memory_timestamp(time.time_ns() // 1_000)
         connection.execute(
             """
             INSERT INTO handoffs (thread_id, window, summary, saved_at)
@@ -722,34 +687,6 @@ def save_handoff(home: Path, thread_id: str, window: str, summary: str) -> dict:
         "window": window,
         "bytes": len(summary.encode("utf-8")),
     }
-
-
-def load_handoff(home: Path, thread_id: str, window: str) -> str | None:
-    connection = _open_existing(home)
-    if connection is None:
-        return None
-    with closing(connection):
-        row = connection.execute(
-            "SELECT summary FROM handoffs WHERE thread_id = ? AND window = ?",
-            (thread_id, window),
-        ).fetchone()
-    return row[0] if row is not None else None
-
-
-def replace_handoff(home: Path, thread_id: str, window: str, original: str, summary: str) -> bool:
-    connection = _open_existing(home, writable=True)
-    if connection is None:
-        return False
-    with closing(connection), connection:
-        saved_at = _begin_handoff_edit(connection)
-        changed = connection.execute(
-            """
-            UPDATE handoffs SET summary = ?, saved_at = ?
-            WHERE thread_id = ? AND window = ? AND summary = ?
-            """,
-            (summary, saved_at, thread_id, window, original),
-        )
-        return changed.rowcount == 1
 
 
 def list_saved_threads(home: Path) -> list[dict]:
