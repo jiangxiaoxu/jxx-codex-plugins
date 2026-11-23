@@ -5,7 +5,7 @@ import os
 import re
 import sqlite3
 import sys
-from base64 import urlsafe_b64decode, urlsafe_b64encode
+from base64 import b64encode, urlsafe_b64decode, urlsafe_b64encode
 from bisect import bisect_right
 from collections.abc import Iterator
 from contextlib import closing
@@ -40,6 +40,7 @@ RESOURCE = {
     "_meta": {"ui": {"permissions": {"clipboardWrite": {}}}},
 }
 ASSET = Path(__file__).resolve().parent.parent / "assets" / "handoffs.html"
+ENTRYPOINT_ICON = ASSET.with_name("thread-memory-entrypoint.png")
 THREAD = {"type": "string", "format": "uuid"}
 QUERY = {"type": "string", "maxLength": 256}
 PAGE_LIMIT = {"type": "integer", "minimum": 1, "maximum": 100}
@@ -78,12 +79,9 @@ def tool_descriptors() -> list[dict]:
     descriptors = []
     for name, (title, description, properties, required) in TOOLS.items():
         meta = {"ui": {"visibility": ["app"]}}
-        if name == "handoff_manager":
-            meta["ui"]["resourceUri"] = RESOURCE["uri"]
-            meta["openai/ui"] = {"entrypoints": [{"type": "global"}]}
         destructive = name == "handoff_cleanup"
         installs = name == "install_dependencies"
-        descriptors.append({
+        descriptor = {
             "name": name,
             "title": title,
             "description": description,
@@ -93,7 +91,21 @@ def tool_descriptors() -> list[dict]:
                             "destructiveHint": destructive or installs,
                             "idempotentHint": destructive, "openWorldHint": installs},
             "_meta": meta,
-        })
+        }
+        if name == "handoff_manager":
+            meta["ui"]["resourceUri"] = RESOURCE["uri"]
+            meta["openai/ui"] = {"entrypoints": [{"type": "global"}]}
+            try:
+                encoded = b64encode(ENTRYPOINT_ICON.read_bytes()).decode("ascii")
+            except OSError:
+                pass
+            else:
+                descriptor["icons"] = [{
+                    "src": f"data:image/png;base64,{encoded}",
+                    "mimeType": "image/png",
+                    "sizes": ["64x64"],
+                }]
+        descriptors.append(descriptor)
     return descriptors
 
 

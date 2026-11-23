@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from base64 import b64decode
 from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
@@ -14,7 +15,7 @@ from uuid import UUID, uuid4
 SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "thread-memory" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from rollout_handoff_app import cleanup
+from rollout_handoff_app import cleanup, dispatch
 from rollout_handoff_store import (
     claim_reminder,
     initialize_memory,
@@ -38,6 +39,29 @@ class HandoffAppTest(unittest.TestCase):
         self.search_index = self.home / "state" / "plugins" / "thread-memory" / "rollout-index.sqlite3"
         self.env = {**os.environ, "CODEX_HOME": str(self.home)}
         self.env.pop("CODEX_SQLITE_HOME", None)
+
+    def test_tools_list_advertises_a_sidebar_entrypoint_icon(self):
+        encoded = (
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+            "/x8AAwMCAO+Xv1sAAAAASUVORK5CYII="
+        )
+        icon_path = self.home / "thread-memory-entrypoint.png"
+        with patch("rollout_handoff_app.ENTRYPOINT_ICON", icon_path):
+            tools = dispatch(self.home, "tools/list", {})["tools"]
+            manager = next(tool for tool in tools if tool["name"] == "handoff_manager")
+            self.assertEqual(manager["_meta"]["openai/ui"]["entrypoints"], [{"type": "global"}])
+            self.assertNotIn("icons", manager)
+
+            icon_path.write_bytes(b64decode(encoded))
+            tools = dispatch(self.home, "tools/list", {})["tools"]
+
+        self.assertEqual({tool["name"]: tool["icons"] for tool in tools if "icons" in tool}, {
+            "handoff_manager": [{
+                "src": f"data:image/png;base64,{encoded}",
+                "mimeType": "image/png",
+                "sizes": ["64x64"],
+            }],
+        })
 
     def call_tool(self, name, arguments=None):
         request = {

@@ -1,6 +1,6 @@
 {
   "name": "thread-memory",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "mcpServers": "./mcp.json",
   "description": "Maintain persistent Codex thread notes and retrieve details from local rollout history.",
   "author": {
@@ -12,6 +12,7 @@
     "longDescription": "Maintain notes across Codex context compaction. Main-thread forks receive their own copies, and subagents start with fresh notes. Use $thread-memory to update notes or find messages, instructions, tool details, and image or audio attachments in accessible local rollouts. Browse main-thread notes in Codex Desktop.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
+    "logo": "./assets/thread-memory-icon.png",
     "capabilities": []
   }
 }

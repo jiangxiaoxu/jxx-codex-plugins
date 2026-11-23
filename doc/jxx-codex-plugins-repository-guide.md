@@ -19,6 +19,7 @@ For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, market
 | --- | --- |
 | Skill trigger, routing, or agent UX | Plugin manifest, `SKILL.md`, `agents/openai.yaml`, and skill validator. |
 | Plugin identity, metadata, or marketplace inventory | Plugin manifest, `.agents/plugins/marketplace.json`, root README, and repository inventory. |
+| Codex Desktop MCP App views, entrypoints, or icons | [Codex MCP Apps](codex-mcp-apps.md) and the owning plugin's maintenance documentation. |
 | `task-memory` behavior | Plugin package scripts, shared CLI source, command entrypoints, and tests. |
 | Thread notes, fork copies, and compaction reminders | The Thread Memory skill, its `scripts/rollout_thread_memory.py` and `scripts/rollout_hook.py`, and `plugins/thread-memory/hooks/hooks.json`. |
 | Rollout inspection, search, and recovery | `plugins/thread-memory/skills/thread-memory/scripts/rollout.py`, the Thread Memory skill, and plugin tests. |
