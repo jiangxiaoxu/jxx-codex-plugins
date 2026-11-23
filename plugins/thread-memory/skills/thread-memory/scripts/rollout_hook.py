@@ -332,8 +332,7 @@ def memory(
     if action == "read":
         note = current if at_us is None else memory_revision(home, thread_id, at_us=at_us)
         if note is None or note.summary is None:
-            reason = " at or before the requested time" if at_us is not None else ""
-            raise FileNotFoundError(f"no thread note was saved{reason}")
+            return {"thread_id": thread_id, "summary": None, "updated_at": None, "effective_at": None}
         return {
             "thread_id": thread_id, "summary": note.summary,
             "updated_at": memory_timestamp(note.updated_us),

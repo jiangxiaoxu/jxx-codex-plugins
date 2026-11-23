@@ -18,8 +18,26 @@ SCRIPT = (
 sys.path.insert(0, str(SCRIPT.parent))
 
 import rollout_hook
+from rollout_handoff_diff import apply_handoff_diff
 from rollout_handoff_snapshot import reminder_window_id, snapshot
 from rollout_handoff_store import memory_timestamp, save_handoff
+
+
+class ThreadMemoryDiffTest(unittest.TestCase):
+    def test_git_diff_accepts_blank_context_without_a_prefix(self):
+        diff = (
+            "diff --git a/note b/note\n"
+            "--- a/note\n"
+            "+++ b/note\n"
+            "@@ -1,3 +1,3 @@\n"
+            " Heading\n"
+            "\n"
+            "-Before\n"
+            "+After\n"
+        )
+        self.assertEqual(apply_handoff_diff("Heading\n\nBefore", diff), "Heading\n\nAfter")
+        with self.assertRaises(ValueError):
+            apply_handoff_diff("Heading\nUnexpected\nBefore", diff)
 
 
 class ThreadMemoryTest(unittest.TestCase):
@@ -57,10 +75,10 @@ class ThreadMemoryTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         return json.loads(result.stdout)
 
-    def assert_no_memory(self, thread):
-        result = self.run_command("memory", "read", thread=thread)
-        self.assertEqual(result.returncode, 1, result.stderr)
-        self.assertEqual(json.loads(result.stderr)["error"]["code"], "not_found")
+    def assert_no_memory(self, thread, *, at=None):
+        self.assertEqual(self.memory(thread, "read", at=at), {
+            "thread_id": thread, "summary": None, "updated_at": None, "effective_at": None,
+        })
 
     def append(self, path, kind, payload):
         with path.open("a", encoding="utf-8") as stream:
@@ -111,6 +129,43 @@ class ThreadMemoryTest(unittest.TestCase):
             )
         self.memory(thread, "write", "Updated note")
         self.assertEqual(self.memory(thread, "read")["summary"], "Updated note")
+
+    def test_source_errors_and_patching_an_empty_note_still_fail(self):
+        unknown, damaged, empty = (str(uuid4()) for _ in range(3))
+        self.rollout(damaged).write_text("{", encoding="utf-8")
+        self.rollout(empty)
+        diff = "--- a/note\n+++ b/note\n@@ -0,0 +1 @@\n+First line\n"
+        for thread, action, stdin, code in (
+            (unknown, "read", "", "not_found"),
+            (damaged, "read", "", "invalid_rollout"),
+            (empty, "patch", diff, "not_found"),
+        ):
+            with self.subTest(action=action, code=code):
+                result = self.run_command("memory", action, stdin=stdin, thread=thread)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(result.stdout, b"")
+                self.assertEqual(json.loads(result.stderr)["error"]["code"], code)
+
+    def test_invalid_piped_timestamps_return_a_single_json_error(self):
+        thread = str(uuid4())
+        self.rollout(thread)
+        timestamp = "2026-01-01T00:00:00Z\n"
+        for label, stdin in (
+            ("empty", ""),
+            ("multiline", timestamp * 2),
+            ("no offset", "2026-01-01T00:00:00"),
+            ("oversized", "0" * 2048),
+        ):
+            with self.subTest(input=label):
+                result = self.run_command("memory", "read", "--at", "-", stdin=stdin, thread=thread)
+                self.assertEqual(result.returncode, 1, result.stderr)
+                self.assertEqual(result.stdout, b"")
+                self.assertEqual(json.loads(result.stderr)["error"]["code"], "invalid_input")
+
+        result = self.run_command("memory", "write", "--at", "-", stdin=timestamp, thread=thread)
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(json.loads(result.stderr)["error"]["code"], "invalid_arguments")
 
     def test_memory_write_does_not_replace_a_concurrent_edit(self):
         save = rollout_hook.save_memory
@@ -172,11 +227,12 @@ class ThreadMemoryTest(unittest.TestCase):
             [version["updated_at"] for version in versions],
             [later["updated_at"], first["updated_at"]],
         )
-        old_versions = self.memory(parent, "history", at=first["updated_at"])["items"]
+        old_versions = self.memory(parent, "history", first["updated_at"] + "\r\n", at="-")["items"]
         self.assertEqual(old_versions, [versions[1]])
-        at_fork = self.memory(parent, "read", at=versions[1]["effective_at"])
+        at_fork = self.memory(parent, "read", versions[1]["effective_at"] + "\n", at="-")
         self.assertEqual(at_fork["summary"], original)
         self.assertEqual(at_fork["updated_at"], first["updated_at"])
+        self.assert_no_memory(parent, at="2026-01-01T00:00:00Z")
 
         self.assertEqual(self.memory(grandchild, "read")["summary"], original)
         inherited = self.memory(child, "read")

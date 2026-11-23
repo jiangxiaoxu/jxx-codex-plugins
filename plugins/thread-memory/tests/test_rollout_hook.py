@@ -191,8 +191,8 @@ class RolloutHookTest(unittest.TestCase):
                 ]
                 if event == "SubagentStart":
                     before = subprocess.run(memory_read, capture_output=True, env=self.env)
-                    self.assertEqual(before.returncode, 1, before.stdout)
-                    self.assertEqual(json.loads(before.stderr)["error"]["code"], "not_found")
+                    self.assertEqual(before.returncode, 0, before.stderr)
+                    self.assertIsNone(json.loads(before.stdout)["summary"])
                 result = self.invoke(request, check=True)
                 (diagnostic,) = self.diagnostics(child_id)
                 note = subprocess.run(memory_read, capture_output=True, env=self.env)
@@ -208,8 +208,8 @@ class RolloutHookTest(unittest.TestCase):
                     self.assertEqual(output["additionalContext"], MAINTENANCE_GUIDANCE)
                     self.assertEqual(diagnostic["event"], "subagent_start_context_prepared")
                     self.assertEqual(diagnostic["details"], {"note_status": "not_checked"})
-                    self.assertEqual(note.returncode, 1, note.stdout)
-                    self.assertEqual(json.loads(note.stderr)["error"]["code"], "not_found")
+                    self.assertEqual(note.returncode, 0, note.stderr)
+                    self.assertIsNone(json.loads(note.stdout)["summary"])
 
     def test_ineligible_hooks_produce_no_output(self):
         parent_id = str(uuid4())

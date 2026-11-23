@@ -27,7 +27,7 @@ from rollout_text import (
 )
 from rollout_tokens import encrypted_record
 from rollout_tool_outputs import tool_record_metadata
-from rollout_transcript import read_transcript_reference, verify_transcript_reference
+from rollout_transcript import verify_transcript_reference
 
 IndexedTextField = tuple[int, TextField]
 
@@ -527,6 +527,11 @@ def _hit(
 def _project_reference(
     location: RolloutRow, ref: Reference
 ) -> tuple[dict, Iterable[IndexedTextField]]:
+    if ref.view == "chat":
+        locator, _ = verify_transcript_reference(location, ref)
+        text = locator.pop("text")
+        locator["ref"] = str(ref)
+        return locator, [(0, ("text", text))]
     source, line, row = location
     tool = _tool_metadata(source, line, row)
     kind, item_type, role, fields = _projection(row, tool)
@@ -569,10 +574,6 @@ def read_reference(
     if max_chars < 1 or (chars is not None and not 0 <= chars[0] < chars[1]):
         raise ValueError(
             "reference read requires a positive budget and 0 <= START < END"
-        )
-    if ref.view == "chat":
-        return read_transcript_reference(
-            location, ref, max_chars=max_chars, chars=chars
         )
     locator, fields = _project_reference(location, ref)
     if ref.anchor is not None:

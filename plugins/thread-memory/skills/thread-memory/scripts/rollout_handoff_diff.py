@@ -51,9 +51,11 @@ def apply_handoff_diff(summary: str, patch: str) -> str:
         index += 1
 
         while source_index < old_end or len(result) < new_end:
-            if index >= len(lines) or lines[index][:1] not in {" ", "-", "+"}:
+            body = lines[index] if index < len(lines) else None
+            if body is None or body[:1] not in {"", " ", "-", "+"}:
                 raise ValueError(f"expected a unified diff body at patch line {index + 1}")
-            prefix, content = lines[index][0], lines[index][1:]
+            # Git can suppress the context prefix on empty lines.
+            prefix, content = body[:1] or " ", body[1:]
             if prefix != "+":
                 if source_index >= old_end:
                     raise ValueError(f"too many source lines at patch line {index + 1}")

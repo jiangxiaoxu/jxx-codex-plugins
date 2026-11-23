@@ -65,9 +65,20 @@ class TranscriptTests(unittest.TestCase):
         )
         ref = parse_ref(transcript([exact], max_chars=2)["messages"][0]["ref"])
         expanded = read_reference(exact, ref, max_chars=6, chars=(3, 20))
-        self.assertEqual(expanded["text"], "answer")
-        self.assertEqual(expanded["text_offset"], 3)
-        self.assertEqual(expanded["text_total_chars"], len("你好\nanswer here"))
+        self.assertEqual(
+            expanded["fields"],
+            [
+                {
+                    "field": "text",
+                    "field_index": 0,
+                    "text": "answer",
+                    "text_offset": 3,
+                    "text_total_chars": len("你好\nanswer here"),
+                }
+            ],
+        )
+        self.assertNotIn("text", expanded)
+        self.assertTrue(expanded["text_truncated"])
         exact[2]["payload"]["content"][2]["text"] = "rewritten answer"
         with self.assertRaisesRegex(ValueError, "stale"):
             read_reference(exact, ref)
@@ -167,6 +178,9 @@ class TranscriptTests(unittest.TestCase):
         self.assertEqual(preview["audio_count"], 1)
         self.assertNotIn("image_count", preview)
         ref = parse_ref(preview["ref"])
+        expanded = read_reference(exact, ref)
+        self.assertEqual(expanded["fields"], [])
+        self.assertEqual(expanded["audio_count"], 1)
         self.assertEqual(verify_transcript_reference(exact, ref)[1], (1,))
         visible_audio["audio_url"] = "data:audio/wav;base64,Qg=="
         with self.assertRaisesRegex(ValueError, "stale"):
@@ -190,7 +204,7 @@ class TranscriptTests(unittest.TestCase):
         )
         self.assertIsNone(result["next_cursor"])
         ref = parse_ref(messages[0]["ref"])
-        self.assertEqual(read_reference(rows[4], ref)["text"], "abcd")
+        self.assertEqual(read_reference(rows[4], ref)["fields"][0]["text"], "abcd")
         self.assertEqual(
             [
                 hit["line"]

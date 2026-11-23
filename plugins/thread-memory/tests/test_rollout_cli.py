@@ -374,15 +374,33 @@ class RolloutCLITest(unittest.TestCase):
                 subprocess.check_output([*cli, "transcript", *source, "--lines", "3:3"])
             )
             (chat,) = transcript["items"]
+            self.assertTrue(chat["text"].startswith("image references"))
+            chat_stdin = (chat["ref"] + "\n").encode("utf-8")
             chat_detail = json.loads(
-                subprocess.check_output([*cli, "read", *source, "--ref", chat["ref"]])
+                subprocess.check_output(
+                    [
+                        *cli,
+                        "read",
+                        *source,
+                        "--ref",
+                        "-",
+                        "--chars",
+                        "6:16",
+                        "--budget-chars",
+                        "5",
+                    ],
+                    input=chat_stdin,
+                )
             )
             (expanded_chat,) = chat_detail["items"]
-            self.assertTrue(expanded_chat["text"].startswith("image references"))
+            (chat_field,) = expanded_chat["fields"]
+            self.assertEqual(chat_field["text"], "refer")
+            self.assertEqual(chat_field["text_offset"], 6)
+            self.assertEqual(expanded_chat["image_count"], 3)
             images = json.loads(
                 subprocess.check_output(
                     [*cli, "images", *source, "--ref", "-"],
-                    input=(chat["ref"] + "\n").encode("utf-8"),
+                    input=chat_stdin,
                 )
             )
             self.assertIsNone(images["next_cursor"])

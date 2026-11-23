@@ -179,30 +179,6 @@ def verify_transcript_reference(
     return projected
 
 
-def read_transcript_reference(
-    location: RolloutRow,
-    ref: Reference,
-    *,
-    max_chars: int,
-    chars: tuple[int, int] | None,
-) -> dict:
-    message, _ = verify_transcript_reference(location, ref)
-    body = message["text"]
-    start, end = chars or (0, len(body))
-    start = min(start, len(body))
-    stop = min(end, len(body), start + max_chars)
-    excerpt = {
-        **message,
-        "ref": str(ref),
-        "text": body[start:stop],
-        "text_offset": start,
-        "text_total_chars": len(body),
-    }
-    if stop - start < len(body):
-        excerpt["omitted_chars"] = len(body) - (stop - start)
-    return excerpt
-
-
 def transcript(
     rows: Iterable[RolloutRow],
     *,

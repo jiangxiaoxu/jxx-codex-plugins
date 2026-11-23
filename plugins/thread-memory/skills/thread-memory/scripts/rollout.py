@@ -62,6 +62,7 @@ from rollout_transcript import transcript
 
 HANDOFF_TRUNCATION = "\n\n[Summary truncated]"
 MAX_HANDOFF_PATCH_BYTES = 128 * 1024
+MAX_TIMESTAMP_STDIN_BYTES = 1024
 
 PAGE_ITEMS = {
     "windows": "windows",
@@ -554,7 +555,10 @@ def parse_args() -> argparse.Namespace:
     memory_cmd = commands.add_parser("memory", help="maintain one durable note per thread")
     memory_cmd.add_argument("action", choices=("read", "write", "patch", "history"))
     memory_cmd.add_argument("--thread", help="thread UUID (defaults to CODEX_THREAD_ID)")
-    memory_cmd.add_argument("--at", type=date_value, help="read or list versions at or before this timestamp")
+    memory_cmd.add_argument(
+        "--at", metavar="TIME", type=lambda value: value if value == "-" else date_value(value),
+        help="read or list versions at or before this timestamp (use - to read it from stdin)",
+    )
     memory_cmd.add_argument("--limit", type=positive, help="maximum history versions (default: 10)")
     diagnostics_cmd = commands.add_parser("diagnostics", help="read recent Thread Memory hook decisions")
     diagnostics_cmd.add_argument("--thread", help="thread UUID (defaults to CODEX_THREAD_ID)")
@@ -753,18 +757,24 @@ def window_page(segments: list[Segment], args: argparse.Namespace) -> dict:
 
 def resolve_stdin_selectors(args: argparse.Namespace) -> None:
     selectors = [
-        name for name in ("cursor", "id", "ref") if getattr(args, name, None) == "-"
+        name for name in ("cursor", "id", "ref", "at") if getattr(args, name, None) == "-"
     ]
     image_ids_from_stdin = (getattr(args, "ids", None) or []).count("-")
     readers = len(selectors) + image_ids_from_stdin
     if not readers:
         return
     if readers > 1:
-        raise ValueError("use - only once across --id, --ref and --cursor")
+        raise ValueError("use - only once across --id, --ref, --cursor and --at")
 
     option = "--id" if image_ids_from_stdin else f"--{selectors[0]}"
+    if option == "--at":
+        raw = sys.stdin.buffer.read(MAX_TIMESTAMP_STDIN_BYTES + 1)
+        if len(raw) > MAX_TIMESTAMP_STDIN_BYTES:
+            raise ValueError(f"{option} - is limited to {MAX_TIMESTAMP_STDIN_BYTES} UTF-8 bytes")
+    else:
+        raw = sys.stdin.buffer.read()
     try:
-        values = [line.decode("utf-8") for line in sys.stdin.buffer.read().splitlines()]
+        values = [line.decode("utf-8") for line in raw.splitlines()]
     except UnicodeDecodeError as error:
         raise ValueError(
             f"{option} - requires UTF-8 input; use jq -r or jq -er"
@@ -776,6 +786,11 @@ def resolve_stdin_selectors(args: argparse.Namespace) -> None:
         args.ids[index : index + 1] = values
     elif len(values) != 1:
         raise ValueError(f"{option} - requires exactly one input line")
+    elif option == "--at":
+        try:
+            args.at = date_value(values[0])
+        except argparse.ArgumentTypeError as error:
+            raise ValueError(f"{option} - {error}") from error
     else:
         setattr(args, selectors[0], values[0])
 
@@ -894,6 +909,7 @@ def main() -> int:
                 patch = raw.decode("utf-8-sig")
             thread = args.thread or os.getenv("CODEX_THREAD_ID")
             if args.command == "memory":
+                resolve_stdin_selectors(args)
                 at_us = None
                 if args.at is not None:
                     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)

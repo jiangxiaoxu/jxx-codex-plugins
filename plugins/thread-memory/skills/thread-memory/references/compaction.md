@@ -2,10 +2,15 @@
 
 ## Edit a thread note
 
-`memory read` returns the complete `.summary`. Filter it in the shell. Use `memory patch` with a UTF-8 unified diff on stdin to edit the current thread note.
+`memory read` returns the complete `.summary` when a note exists. Filter it in the shell. Use `memory patch` with a UTF-8 unified diff on stdin to edit the current thread note.
 
 ```powershell
-python $cli memory read | jq -er '.summary' | Select-Object -Skip 9 -First 11
+python $cli memory read | jq -er '.summary // ""' | Select-Object -Skip 9 -First 11
+
+python $cli memory history --limit 5 |
+    jq -er '.items[-1].effective_at // empty' |
+    python $cli memory read --at - |
+    jq -er '.summary // ""'
 
 @'
 --- a/memory
