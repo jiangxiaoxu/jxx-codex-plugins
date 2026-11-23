@@ -1,6 +1,6 @@
 ---
 name: thread-memory
-description: Maintain a Codex thread note across context compaction, with independent copies for main-thread forks and fresh notes for subagents. Use when the user or a hook requests saving or reading a note, or when searching accessible local rollout history for messages, instructions, tool activity, images, or audio.
+description: Keep a concise note for the current Codex thread and update it when important decisions, constraints, progress, or next steps change. Read the note as needed for earlier context, including after compaction. Look up messages, instructions, tool calls and results, and image or audio attachments in this or another accessible local Codex thread.
 ---
 
 # Thread Memory
