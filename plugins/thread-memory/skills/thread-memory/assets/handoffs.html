@@ -30,7 +30,7 @@
     h1, h2, p { margin: 0; }
     h1 { font-size: 1.42rem; letter-spacing: -.023em; }
     h2 { font-size: 1.05rem; }
-    button, input {
+    button, input, select {
       border: 1px solid var(--line);
       border-radius: 7px;
       padding: 7px 11px;
@@ -38,10 +38,10 @@
       color: var(--ink);
       font: inherit;
     }
-    button, summary { cursor: var(--cursor-interaction, pointer); }
+    button, select, summary { cursor: var(--cursor-interaction, pointer); }
     button:enabled:hover, summary:hover { background: var(--panel); }
-    :is(button, input, summary, #detail-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    button:disabled { opacity: .5; cursor: default; }
+    :is(button, input, select, summary, #detail-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    :is(button, select):disabled { opacity: .5; cursor: default; }
     .danger { color: var(--danger); }
     .status { color: var(--muted); overflow-wrap: anywhere; }
     .status:empty { display: none; }
@@ -53,6 +53,8 @@
     .directory { background: var(--panel); }
     .directory-tools { display: grid; gap: 9px; padding: 12px; border-bottom: 1px solid var(--line); }
     .directory-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+    .directory-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+    .directory-filters select { padding: 6px 8px; font-size: 12px; max-width: 100%; }
     #search { min-width: 0; width: 100%; }
     #threads { flex: 1; min-height: 0; list-style: none; padding: 6px; margin: 0; max-height: clamp(200px, 62vh, 760px); overflow: auto; }
     #threads li + li { margin-top: 3px; }
@@ -148,6 +150,17 @@
             <p id="results-count" class="meta" role="status"></p>
           </div>
           <input id="search" type="search" maxlength="200" aria-label="Search main threads" placeholder="Search title or thread ID" disabled>
+          <div class="directory-filters">
+            <select id="archive-status" aria-label="Filter by archive status" disabled>
+              <option value="all">All</option>
+              <option value="active">Active</option>
+              <option value="archived">Archived</option>
+            </select>
+            <select id="sort-by" aria-label="Sort threads" disabled>
+              <option value="note_updated">Note updated</option>
+              <option value="thread_updated">Thread updated</option>
+            </select>
+          </div>
         </div>
         <ul id="threads"></ul>
         <footer id="pagination" hidden>
@@ -239,9 +252,7 @@
     let listRequest = 0;
     let searchTimer;
     let pageIndex = 0;
-    let displayedQuery = "";
     let cursors = [null];
-    let rows = [];
     let activeThread = null;
     let noteRequest = 0;
     let noteLoading = false;
@@ -313,7 +324,9 @@
       byId("manage").disabled = !connected;
       byId("check-cleanup").disabled = !connected || blocked;
       byId("search").disabled = !connected || installingDependencies;
-      const paginationBlocked = blocked || listLoading || displayedQuery !== byId("search").value.trim();
+      byId("archive-status").disabled = !connected || installingDependencies;
+      byId("sort-by").disabled = !connected || installingDependencies;
+      const paginationBlocked = blocked || listLoading;
       byId("previous").disabled = paginationBlocked || pageIndex === 0;
       byId("next").disabled = paginationBlocked || !cursors[pageIndex + 1];
       byId("retry-note").disabled = installingDependencies || noteLoading;
@@ -393,7 +406,7 @@
       return preview && preview !== row.title?.trim() ? preview : "";
     }
 
-    function renderRows(query) {
+    function renderRows(rows, filtered, sortBy) {
       const items = rows.map((row) => {
         const label = document.createElement("span");
         label.className = "label";
@@ -401,9 +414,13 @@
         label.title = label.textContent;
         const meta = document.createElement("span");
         meta.className = "meta";
+        const noteDate = formatDate(row.latest_at);
+        const displayedDate = sortBy === "thread_updated"
+          ? formatDate(row.thread_updated_at) || (noteDate && "Note updated " + noteDate)
+          : noteDate;
         meta.textContent = [
           !row.title?.trim() && row.thread_id.slice(0, 13),
-          formatDate(row.latest_at),
+          displayedDate,
           row.archived && "Archived",
         ].filter(Boolean).join(" | ");
         const button = document.createElement("button");
@@ -427,7 +444,7 @@
       if (!items.length) {
         const item = document.createElement("li");
         item.className = "empty";
-        item.textContent = query ? "No matching main threads." : "No main-thread notes saved yet.";
+        item.textContent = filtered ? "No matching main threads." : "No main-thread notes saved yet.";
         items.push(item);
       }
       byId("threads").replaceChildren(...items);
@@ -526,28 +543,37 @@
       if (!connected || installingDependencies) return;
       const revision = ++listRequest;
       const query = byId("search").value.trim();
+      const archiveStatus = byId("archive-status").value;
+      const sortBy = byId("sort-by").value;
       listLoading = true;
       updateControls();
       byId("results-count").textContent = "Loading threads...";
       try {
         const cursor = cursors[index];
-        const args = {limit: pageSize};
+        const args = {limit: pageSize, archive_status: archiveStatus, sort_by: sortBy};
         if (cursor) args.cursor = cursor;
         if (query) args.query = query;
         const result = await callTool("handoff_list", args);
         if (listRequest !== revision) return;
-        displayedQuery = query;
         pageIndex = index;
         cursors.splice(index + 1, cursors.length, result.next_cursor);
-        rows = result.items;
+        const rows = result.items;
         const retained = rows.find((row) => row.thread_id === activeThread?.thread_id);
-        renderRows(query);
-        byId("results-count").textContent = result.total ? result.total + (result.total === 1 ? " thread" : " threads") : "";
-        setStatus("");
         if (retained) {
           activeThread = retained;
           updateThreadHeading(retained);
+        } else if (activeThread && archiveStatus !== "all" && activeThread.archived !== (archiveStatus === "archived")) {
+          activeThread = null;
+          ++noteRequest;
+          noteLoading = false;
+          main.dataset.view = "directory";
+          byId("reader-empty").hidden = false;
+          byId("reader-header").hidden = true;
+          byId("reader-body").hidden = true;
         }
+        renderRows(rows, Boolean(query) || archiveStatus !== "all", sortBy);
+        byId("results-count").textContent = result.total ? result.total + (result.total === 1 ? " thread" : " threads") : "";
+        setStatus("");
       } catch (error) {
         if (listRequest !== revision) return;
         byId("results-count").textContent = "";
@@ -558,6 +584,19 @@
           updateControls();
         }
       }
+    }
+
+    function reloadDirectory(delay = 0) {
+      ++listRequest;
+      clearTimeout(searchTimer);
+      pageIndex = 0;
+      cursors = [null];
+      byId("threads").replaceChildren();
+      byId("pagination").hidden = true;
+      listLoading = true;
+      updateControls();
+      byId("results-count").textContent = "Loading threads...";
+      searchTimer = setTimeout(() => loadPage(0), delay);
     }
 
     async function refresh() {
@@ -634,13 +673,9 @@
     byId("refresh").addEventListener("click", refresh);
     byId("previous").addEventListener("click", () => loadPage(pageIndex - 1));
     byId("next").addEventListener("click", () => loadPage(pageIndex + 1));
-    byId("search").addEventListener("input", () => {
-      ++listRequest;
-      clearTimeout(searchTimer);
-      listLoading = true;
-      updateControls();
-      searchTimer = setTimeout(() => loadPage(0), 200);
-    });
+    byId("search").addEventListener("input", () => reloadDirectory(200));
+    byId("archive-status").addEventListener("change", () => reloadDirectory());
+    byId("sort-by").addEventListener("change", () => reloadDirectory());
     byId("back-to-threads").addEventListener("click", showDirectory);
     byId("retry-note").addEventListener("click", () => loadNote(true));
     byId("copy-summary").addEventListener("click", copySummary);

@@ -489,6 +489,7 @@ class HandoffAppTest(unittest.TestCase):
             "preview": "First message preview",
             "archived": False,
             "latest_at": "2026-01-02T00:00:00Z",
+            "thread_updated_at": None,
         }])
         self.assertIsNone(final["next_cursor"])
 
@@ -528,8 +529,78 @@ class HandoffAppTest(unittest.TestCase):
                          [(fork, True), (main, False)])
         last = self.call_tool("handoff_list", {"limit": 2, "cursor": listed["next_cursor"]})
         self.assertEqual([(item["thread_id"], item["archived"]) for item in last["items"]], [(unindexed, True)])
-        search = self.call_tool("handoff_list", {"query": "needle"})
+        search = self.call_tool("handoff_list", {"query": "needle", "archive_status": "all"})
         self.assertEqual([item["thread_id"] for item in search["items"]], [fork, main])
+
+        archived = {"archive_status": "archived", "limit": 1}
+        page = self.call_tool("handoff_list", archived)
+        self.assertEqual(page["total"], 2)
+        self.assertEqual([item["thread_id"] for item in page["items"]], [fork])
+        last = self.call_tool("handoff_list", {**archived, "cursor": page["next_cursor"]})
+        self.assertEqual(last["total"], 2)
+        self.assertEqual([item["thread_id"] for item in last["items"]], [unindexed])
+        self.assertIsNone(last["next_cursor"])
+
+        for status, expected in (("active", main), ("archived", fork)):
+            with self.subTest(archive_status=status):
+                page = self.call_tool("handoff_list", {"query": "needle", "archive_status": status, "limit": 1})
+                self.assertEqual(page["total"], 1)
+                self.assertEqual([item["thread_id"] for item in page["items"]], [expected])
+                self.assertIsNone(page["next_cursor"])
+
+    def test_thread_listing_rejects_invalid_filter_and_sort_options(self):
+        for key, values in (
+            ("archive_status", ("all ", "deleted", None, ["active"])),
+            ("sort_by", ("updated_at", None, ["note_updated"])),
+        ):
+            for value in values:
+                with self.subTest(option=key, value=value):
+                    result = dispatch(self.home, "tools/call", {
+                        "name": "handoff_list", "arguments": {key: value},
+                    })
+                    self.assertTrue(result["isError"])
+
+    def test_thread_sort_uses_index_activity_and_paginates_with_missing_values(self):
+        first, second, legacy, fallback = (
+            f"00000000-0000-4000-8000-00000000abc{number}" for number in range(4)
+        )
+        self.create_index(*(
+            (thread, "Needle thread", None, None, None) for thread in (first, second, legacy, fallback)
+        ))
+        for day, thread in enumerate((first, second, legacy, fallback), 1):
+            self.save_note(thread, "initial", "Saved note", f"2026-01-0{day}T00:00:00Z")
+        with closing(sqlite3.connect(self.index)) as connection, connection:
+            connection.execute("ALTER TABLE threads ADD COLUMN updated_at INTEGER")
+            connection.execute("UPDATE threads SET archived = 1")
+            connection.executemany("UPDATE threads SET updated_at = ? WHERE id = ?", (
+                (0, first), (1767744000, legacy), (2**62, fallback),
+            ))
+
+        filters = {"query": "needle", "archive_status": "archived", "limit": 2}
+        by_note = self.call_tool("handoff_list", filters)
+        self.assertEqual([item["thread_id"] for item in by_note["items"]], [fallback, legacy])
+        by_thread = {**filters, "sort_by": "thread_updated"}
+        legacy_page = self.call_tool("handoff_list", by_thread)
+        self.assertEqual(
+            [(item["thread_id"], item["thread_updated_at"]) for item in legacy_page["items"]],
+            [(legacy, "2026-01-07T00:00:00.000Z"), (fallback, None)],
+        )
+
+        with closing(sqlite3.connect(self.index)) as connection, connection:
+            connection.execute("ALTER TABLE threads ADD COLUMN updated_at_ms INTEGER")
+            connection.execute("UPDATE threads SET updated_at_ms = ? WHERE id IN (?, ?)",
+                               (1767657600456, first, second))
+
+        page = self.call_tool("handoff_list", by_thread)
+        self.assertEqual(page["total"], 4)
+        self.assertEqual(
+            [(item["thread_id"], item["thread_updated_at"]) for item in page["items"]],
+            [(legacy, "2026-01-07T00:00:00.000Z"), (first, "2026-01-06T00:00:00.456Z")],
+        )
+        self.assertEqual(page["items"][1]["latest_at"], "2026-01-01T00:00:00Z")
+        continuation = self.call_tool("handoff_list", {**by_thread, "cursor": page["next_cursor"]})
+        self.assertEqual([item["thread_id"] for item in continuation["items"]], [second, fallback])
+        self.assertIsNone(continuation["next_cursor"])
 
     def test_thread_listing_continues_after_visible_boundary_when_another_note_moves(self):
         first, updated, last = (str(uuid4()) for _ in range(3))

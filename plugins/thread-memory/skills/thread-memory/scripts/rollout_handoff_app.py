@@ -43,6 +43,8 @@ ASSET = Path(__file__).resolve().parent.parent / "assets" / "handoffs.html"
 ENTRYPOINT_ICON = ASSET.with_name("thread-memory-entrypoint.png")
 THREAD = {"type": "string", "format": "uuid"}
 QUERY = {"type": "string", "maxLength": 256}
+ARCHIVE_STATUS = {"type": "string", "enum": ["all", "active", "archived"], "default": "all"}
+LIST_SORT = {"type": "string", "enum": ["note_updated", "thread_updated"], "default": "note_updated"}
 PAGE_LIMIT = {"type": "integer", "minimum": 1, "maximum": 100}
 LIST_CURSOR_LENGTH = 32
 LIST_ANCHOR = Struct(">q16s")
@@ -53,8 +55,8 @@ MAX_ROLLOUT_HEADER = 1024 * 1024
 TOOLS = {
     "handoff_manager": ("Thread Memory", "Browse current notes by main thread.", {}, ()),
     "handoff_list": (
-        "List main threads with notes", "List or search main threads with a saved note.",
-        {"query": QUERY, "limit": PAGE_LIMIT,
+        "List main threads with notes", "Search main threads with notes, filter by archive status, and sort by update time.",
+        {"query": QUERY, "archive_status": ARCHIVE_STATUS, "sort_by": LIST_SORT, "limit": PAGE_LIMIT,
          "cursor": {"type": "string", "minLength": LIST_CURSOR_LENGTH, "maxLength": LIST_CURSOR_LENGTH}}, (),
     ),
     "handoff_read": (
@@ -122,10 +124,15 @@ def page_limit(args: dict) -> int:
     return limit
 
 
-def thread_list_key(row: dict) -> tuple[int, str]:
-    """Order by note maintenance time, with ascending thread IDs for ties."""
-    timestamp = datetime.fromisoformat(row["latest_at"].replace("Z", "+00:00"))
-    return -((timestamp - UTC_EPOCH) // MICROSECOND), row["thread_id"]
+def indexed_thread_updated_at(row: dict) -> datetime | None:
+    for column, multiplier in (("updated_at_ms", 1), ("updated_at", 1000)):
+        value = row.get(column)
+        if type(value) is int:
+            try:
+                return UTC_EPOCH + timedelta(milliseconds=value * multiplier)
+            except OverflowError:
+                continue
+    return None
 
 
 def thread_page(home: Path, args: dict) -> dict:
@@ -141,20 +148,37 @@ def thread_page(home: Path, args: dict) -> dict:
     if not isinstance(query, str) or len(query) > QUERY["maxLength"]:
         raise ValueError("Expected a handoff search query of at most 256 characters.")
     query = " ".join(query.split()).casefold()
+    archive_status = args.get("archive_status", ARCHIVE_STATUS["default"])
+    if not isinstance(archive_status, str) or archive_status not in ARCHIVE_STATUS["enum"]:
+        raise ValueError("Archive status must be all, active, or archived.")
+    sort_by = args.get("sort_by", LIST_SORT["default"])
+    if not isinstance(sort_by, str) or sort_by not in LIST_SORT["enum"]:
+        raise ValueError("Sort by must be note_updated or thread_updated.")
     rows = list_noted_threads(home)
     ids = {row["thread_id"] for row in rows}
     title_columns = ("name", "title")
     identity_columns = ("source", "thread_source", "agent_role", "agent_nickname", "attached_thread_parent_id", "archived")
-    indexed = thread_metadata(home, ids, identity_columns, with_spawn_edge=True)
+    indexed = thread_metadata(home, ids, identity_columns + ("updated_at_ms", "updated_at"), with_spawn_edge=True)
     main_threads = main_thread_archives(home, ids, indexed)
+    if archive_status != "all":
+        archived_only = archive_status == "archived"
+        main_threads = {thread: archived for thread, archived in main_threads.items() if archived == archived_only}
     rows = [row for row in rows if row["thread_id"] in main_threads]
     if query:
         main_ids = set(main_threads)
         titles = thread_titles(home, main_ids, thread_metadata(home, main_ids, title_columns))
         rows = [row for row in rows if query in row["thread_id"].casefold()
                 or query in titles.get(row["thread_id"], "").casefold()]
-    rows.sort(key=thread_list_key)
-    offset = bisect_right(rows, anchor, key=thread_list_key) if anchor else 0
+
+    def sort_key(row: dict) -> tuple[int, str]:
+        thread = row["thread_id"]
+        updated_at = indexed_thread_updated_at(indexed.get(thread, {})) if sort_by == "thread_updated" else None
+        if updated_at is None:
+            updated_at = datetime.fromisoformat(row["latest_at"].replace("Z", "+00:00"))
+        return -((updated_at - UTC_EPOCH) // MICROSECOND), thread
+
+    rows.sort(key=sort_key)
+    offset = bisect_right(rows, anchor, key=sort_key) if anchor else 0
     end = offset + limit
     page = rows[offset:end]
     page_ids = {row["thread_id"] for row in page}
@@ -167,9 +191,11 @@ def thread_page(home: Path, args: dict) -> dict:
         row["title"] = titles.get(thread, "")[:160] or None
         row["preview"] = thread_preview(details.get(thread, {}))
         row["archived"] = main_threads[thread]
+        updated_at = indexed_thread_updated_at(indexed.get(thread, {}))
+        row["thread_updated_at"] = updated_at.isoformat(timespec="milliseconds").replace("+00:00", "Z") if updated_at else None
     next_cursor = None
     if end < len(rows):
-        order_us, thread = thread_list_key(page[-1])
+        order_us, thread = sort_key(page[-1])
         next_cursor = urlsafe_b64encode(LIST_ANCHOR.pack(order_us, UUID(thread).bytes)).decode("ascii")
     return {"items": page, "next_cursor": next_cursor, "total": len(rows)}
 
