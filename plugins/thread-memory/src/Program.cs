@@ -12,7 +12,7 @@ internal static class Program
         if (args.Length != 0)
         {
             if (args is not ["--codex-home", var explicitHome] || explicitHome.Length == 0)
-                return Error("invalid_arguments", "Usage: thread-memory-hook [--codex-home PATH]");
+                return Error("invalid_arguments", "Usage: Thread-Memory-Hook [--codex-home PATH]");
             home = explicitHome;
         }
 

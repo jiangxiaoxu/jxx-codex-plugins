@@ -110,7 +110,7 @@ class RolloutHookTest(unittest.TestCase):
                 self.assertIs(handler["async"], True)
                 self.assertEqual(
                     handler["command"],
-                    '& "$env:PLUGIN_ROOT/bin/Thread Memory Hook.exe"',
+                    '& "$env:PLUGIN_ROOT/bin/Thread-Memory-Hook.exe"',
                 )
                 self.assertNotIn("commandWindows", handler)
 

@@ -4,7 +4,7 @@ Use `$thread-memory` to maintain versioned notes across context compaction in ma
 
 ## Thread lifecycle and compaction
 
-The plugin registers asynchronous `SessionStart(startup|compact|fork)`, `SubagentStart`, `PostCompact`, and `PostToolUse` hooks. On Windows x64, these hooks require PowerShell as the Codex environment shell. Each callback runs the bundled Native AOT executable directly with `& "$env:PLUGIN_ROOT/bin/Thread Memory Hook.exe"`. It reads a UTF-8 JSON request from stdin and returns `hookSpecificOutput` on stdout when it has additional context. Codex queues that context for delivery when it checks completed hooks. A reminder can arrive after compaction, and recovery guidance can arrive after the first continuation. With manual `/compact`, Codex normally dispatches `SessionStart` on the next regular turn.
+The plugin registers asynchronous `SessionStart(startup|compact|fork)`, `SubagentStart`, `PostCompact`, and `PostToolUse` hooks. On Windows x64, these hooks require PowerShell as the Codex environment shell. Each callback runs the bundled Native AOT executable directly with `& "$env:PLUGIN_ROOT/bin/Thread-Memory-Hook.exe"`. It reads a UTF-8 JSON request from stdin and returns `hookSpecificOutput` on stdout when it has additional context. Codex queues that context for delivery when it checks completed hooks. A reminder can arrive after compaction, and recovery guidance can arrive after the first continuation. With manual `/compact`, Codex normally dispatches `SessionStart` on the next regular turn.
 
 After a Desktop plugin update, check the Hook list for enabled and trusted Thread Memory hooks. Codex ties hook trust to plugin content and can request approval again for an updated package.
 
@@ -355,7 +355,7 @@ Window and token queries fully decode records when they need their payloads. Ski
 
 ### Build and validate
 
-From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include `bin/Thread Memory Hook.exe` and `THIRD-PARTY-NOTICES.txt` in the plugin package.
+From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include `bin/Thread-Memory-Hook.exe` and `THIRD-PARTY-NOTICES.txt` in the plugin package.
 
 ```powershell
 $plugin = 'plugins/thread-memory'
@@ -365,10 +365,10 @@ dotnet publish "$plugin/src/thread-memory-hook.csproj" -c Release -r win-x64 --a
 $publishExit = $LASTEXITCODE
 if ($publishExit -ne 0) { throw "Native AOT publish failed ($publishExit)" }
 New-Item -ItemType Directory -Path "$plugin/bin" -Force | Out-Null
-Copy-Item "$publish/Thread Memory Hook.exe" "$plugin/bin/"
+Copy-Item "$publish/Thread-Memory-Hook.exe" "$plugin/bin/"
 ```
 
-Run the Python suite after packaging the executable. Hook integration tests send UTF-8 JSON on stdin to `bin/Thread Memory Hook.exe` and verify its output and shared SQLite state through the Python CLI. Set `THREAD_MEMORY_TEST_HOOK_EXE` to test another published binary in isolation.
+Run the Python suite after packaging the executable. Hook integration tests send UTF-8 JSON on stdin to `bin/Thread-Memory-Hook.exe` and verify its output and shared SQLite state through the Python CLI. Set `THREAD_MEMORY_TEST_HOOK_EXE` to test another published binary in isolation.
 
 ```text
 python -m unittest discover -s plugins/thread-memory/tests -p "test_*.py"

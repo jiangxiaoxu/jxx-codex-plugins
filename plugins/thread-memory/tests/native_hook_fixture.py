@@ -6,7 +6,7 @@ from pathlib import Path
 
 PLUGIN = Path(__file__).resolve().parents[1]
 HOOK_EXE = Path(
-    os.environ.get("THREAD_MEMORY_TEST_HOOK_EXE", PLUGIN / "bin" / "Thread Memory Hook.exe")
+    os.environ.get("THREAD_MEMORY_TEST_HOOK_EXE", PLUGIN / "bin" / "Thread-Memory-Hook.exe")
 ).resolve()
 
 
