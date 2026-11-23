@@ -5,20 +5,18 @@ description: Keep a concise note for the current Codex thread and update it when
 
 # Thread Memory
 
-Run `python "<skill-directory>/scripts/rollout.py" <command>`. The default source is `CODEX_THREAD_ID`, which selects your own thread in both main threads and subagents. Pass `--thread UUID` to access another thread. For rollout queries, pass `--rollout PATH` to read a known file. From a subagent, use `--thread $env:CODEX_SESSION_ID` to inspect the main thread's rollout.
+Run `python "<skill-directory>/scripts/rollout.py" <command>`. Set `$cli` to that script path in PowerShell examples. Commands default to your own thread via `CODEX_THREAD_ID`. Pass `--thread UUID` to select another thread.
 
-In PowerShell examples, set `$cli` to the bundled script path and `$source` to `@()` for the current thread, `@('--thread', $thread)` for another thread, or `@('--rollout', $path)` for a file.
-
-## Thread memory
+## Maintain the note
 
 Keep a concise note of the current work. Update existing sections in place, consolidate repeated information, and remove obsolete details. Record the active goal, open requests, important decisions and constraints, verified progress, and next steps. Keep rollout references for details that may be needed later.
 
 Use `memory write` to create or replace the whole note and `memory patch` for a targeted edit to an existing note. Read the current note first if you need its contents. Pass UTF-8 text or a unified diff on stdin.
 
 ```powershell
+python $cli memory read | jq -er '.summary // ""'
 $summary | python $cli memory write
 $patch | python $cli memory patch
-python $cli memory read | jq -er '.summary // ""'
 ```
 
 The note belongs to the thread across compaction. A main-thread fork starts with its own copy as of its recorded creation time. Subagents start with an empty note, including when they inherit chat history. `memory read` returns the current `.summary` and `.updated_at`. A null `.summary` means the thread has no saved note.
@@ -27,7 +25,9 @@ Use the same commands when a hook asks you to update the note. Patches require e
 
 After compaction, follow the recovery hint when available. Otherwise, read the full note with `memory read` to resume. Search the rollout for missing details as needed.
 
-## Rollout queries
+## Look up rollout history
+
+Pass `--rollout PATH` to query a known rollout file. From a subagent, use `--thread $env:CODEX_SESSION_ID` to query the main thread's rollout. In PowerShell reference examples, set `$source` to `@()` for your thread, `@('--thread', $thread)` for another thread, or `@('--rollout', $path)` for a file.
 
 Start with the command that answers the question. Open a reference only if you need its details.
 
