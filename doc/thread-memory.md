@@ -52,6 +52,8 @@ Open **Thread Memory** from Codex Desktop's sidebar to browse main threads with 
 
 The local stdio server's `handoff_manager` tool opens `ui://thread-memory/notes` as a global MCP Apps entrypoint. The plugin list uses `assets/thread-memory-icon.png`. The sidebar uses `skills/thread-memory/assets/thread-memory-entrypoint.png`. [Server implementation](../plugins/thread-memory/skills/thread-memory/scripts/rollout_handoff_app.py) · [Shared Codex MCP Apps guide](codex-mcp-apps.md)
 
+Opening a new panel loads the directory. When the existing panel becomes visible again, it refreshes the current page and the selected note, keeping the search, filters, and sort order.
+
 Cleanup covers notes and search index entries for deleted main threads and their deleted subagents, including threads that only have search entries. It requires a completed local Codex index and checks thread rows, spawn and attachment relationships, the session name index, and active and archived rollout names. Surviving evidence protects stored data for those threads. On confirmation it rechecks the selected IDs and initializes any surviving ordinary fork that still depends on the source note. When an uninitialized fork cannot be verified, the cleanup result identifies sources kept for protection. Codex deletes the spawn subtree together. It blocks deletion while a surviving attached thread or external rollout reference depends on the source. The local index has no retained deletion log, so cleanup infers deletion from the verified absence of all local records.
 
 ## Progressive reads

@@ -599,10 +599,27 @@
       searchTimer = setTimeout(() => loadPage(0), delay);
     }
 
-    async function refresh() {
+    async function refresh(index = 0) {
       const selected = activeThread?.thread_id;
-      await loadPage(0);
-      if (selected && activeThread?.thread_id === selected) await loadNote(true);
+      await loadPage(index);
+      if (selected && activeThread?.thread_id === selected && !noteLoading) await loadNote(true);
+    }
+
+    function observePanelVisibility() {
+      let wasVisible = false;
+      let shown = false;
+      // Codex can hide the retained iframe without changing its document visibility.
+      new IntersectionObserver((entries) => {
+        for (const {isIntersecting} of entries) {
+          const reopened = isIntersecting && !wasVisible && shown;
+          wasVisible = isIntersecting;
+          shown ||= isIntersecting;
+          if (reopened && !busy && !installingDependencies) {
+            if (!listLoading) refresh(pageIndex);
+            else if (!noteLoading) loadNote(true);
+          }
+        }
+      }).observe(main);
     }
 
     async function previewCleanup() {
@@ -670,7 +687,7 @@
       }
     }
 
-    byId("refresh").addEventListener("click", refresh);
+    byId("refresh").addEventListener("click", () => refresh());
     byId("previous").addEventListener("click", () => loadPage(pageIndex - 1));
     byId("next").addEventListener("click", () => loadPage(pageIndex + 1));
     byId("search").addEventListener("input", () => reloadDirectory(200));
@@ -719,6 +736,7 @@
             send({method: "ui/notifications/size-changed", params: dimensions});
           }
         }).observe(main);
+        observePanelVisibility();
         await loadPage(0);
       } catch (error) {
         setStatus(error.message, true);
