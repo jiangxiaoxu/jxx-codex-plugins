@@ -23,9 +23,9 @@ PREFIX_BYTES = 512
 
 # These envelope fields precede the potentially large payload in Codex JSONL.
 HEADER = re.compile(
-    rb'\s*\{\s*(?:"timestamp"\s*:\s*"[^"\\]{0,64}"\s*,\s*)?'
-    rb'(?:"ordinal"\s*:\s*([0-9]{1,20})\s*,\s*)?'
-    rb'"type"\s*:\s*"([a-z_]+)"\s*,\s*"payload"\s*:\s*\{\s*'
+    rb'\s*\{\s*(?:"timestamp"\s*:\s*"(?P<timestamp>[^"\\]{0,64})"\s*,\s*)?'
+    rb'(?:"ordinal"\s*:\s*(?P<ordinal>[0-9]{1,20})\s*,\s*)?'
+    rb'"type"\s*:\s*"(?P<kind>[a-z_]+)"\s*,\s*"payload"\s*:\s*\{\s*'
 )
 SUBTYPE = re.compile(rb'"type"\s*:\s*"([a-z_]+)"\s*[,}]')
 REMINDER_TAG = "thread_memory_reminder"
@@ -55,6 +55,19 @@ class WindowSnapshot:
     used: int | None
     capacity: int | None
     received_reminder_levels: frozenset[int] = frozenset()
+
+
+@dataclass
+class ReminderObservations:
+    """Physical receipts and checkpoints seen by the bounded rollout scan."""
+
+    receipts: list[tuple[str, int, str, str | None]] = field(default_factory=list)
+    compactions: list[tuple[str, str | None, str | None]] = field(default_factory=list)
+
+    def _link_previous(self, window: str) -> None:
+        if self.compactions and self.compactions[-1][2] is None:
+            current, timestamp, _ = self.compactions[-1]
+            self.compactions[-1] = current, timestamp, window
 
 
 @dataclass
@@ -119,8 +132,8 @@ def _positive(value: object) -> int | None:
 
 def _record(raw: bytes, trailer: bytes, clipped: bool) -> tuple[str, dict, int | None]:
     if header := HEADER.match(raw):
-        ordinal = int(header[1]) if header[1] is not None else None
-        kind = header[2].decode("ascii")
+        ordinal = int(header["ordinal"]) if header["ordinal"] is not None else None
+        kind = header["kind"].decode("ascii")
         if kind == "compacted" and clipped and trailer.rstrip().endswith(b"}}"):
             return kind, {}, ordinal
         if kind == "event_msg":
@@ -173,7 +186,7 @@ def reminder_window_id(window: str) -> str:
     return urlsafe_b64encode(digest).decode("ascii")
 
 
-def _collect_reminder_receipts(payload: object, receipts: dict[str, set[int]]) -> None:
+def _reminder_receipts(payload: object) -> Iterator[tuple[int, str, set[int]]]:
     if not isinstance(payload, dict) or (
         payload.get("type") != "message" or payload.get("role") != "developer"
     ):
@@ -186,7 +199,7 @@ def _collect_reminder_receipts(payload: object, receipts: dict[str, set[int]]) -
     metadata = annotations.get("content_item_metadata")
     if not isinstance(kinds, list) or not isinstance(metadata, list):
         return
-    for part, kind, source in zip(parts, kinds, metadata):
+    for index, (part, kind, source) in enumerate(zip(parts, kinds, metadata)):
         if kind != "hooks.additional_context" or not isinstance(source, dict):
             continue
         provenance = source.get("provenance")
@@ -199,7 +212,55 @@ def _collect_reminder_receipts(payload: object, receipts: dict[str, set[int]]) -
         text = part.get("text")
         if isinstance(text, str) and (receipt := _reminder_receipt(text)):
             receipt_id, levels = receipt
+            yield index, receipt_id, levels
+
+
+def _scan_receipts(
+    raw: bytes, offset: int, ordinal: int | None,
+    receipts: dict[str, set[int]] | None, observations: ReminderObservations | None,
+) -> None:
+    if not (
+        b'"developer"' in raw[:PREFIX_BYTES] and b'"hooks.additional_context"' in raw
+        and (REMINDER_MARKER_PREFIX.encode("ascii") in raw or b"[thread-memory:" in raw)
+    ):
+        return
+    try:
+        row = json.loads(raw)
+    except (ValueError, RecursionError):
+        return
+    if not isinstance(row, dict):
+        return
+    timestamp = row.get("timestamp")
+    timestamp = timestamp if isinstance(timestamp, str) and len(timestamp) <= 64 and timestamp.isascii() else None
+    digest = None
+    # The rollout is read backward. Visit parts in the same direction so the
+    # resulting batch can be reversed to delivery order.
+    for index, receipt_id, levels in reversed(list(_reminder_receipts(row.get("payload")))):
+        if receipts is not None:
             receipts.setdefault(receipt_id, set()).update(levels)
+        if observations is not None:
+            if digest is None:
+                digest = blake2s(raw.rstrip(b"\r"), digest_size=16).hexdigest()
+            # Ordinals survive relocation. Older rows use the byte offset to
+            # distinguish identical deliveries recorded in the same millisecond.
+            position = f"n{ordinal}" if ordinal is not None else f"b{offset}"
+            record_key = f"{position}:{index}:{digest}"
+            observations.receipts.extend(
+                (receipt_id, tier, record_key, timestamp) for tier in sorted(levels, reverse=True)
+            )
+
+
+def _rollout_timestamp(raw: bytes, clipped: bool) -> str | None:
+    match = HEADER.match(raw)
+    timestamp = match["timestamp"] if match else None
+    if timestamp is None and not clipped and match is None:
+        # Nonstandard field order is supported for complete records.
+        try:
+            value = json.loads(raw).get("timestamp")
+        except ValueError:
+            return None
+        return value if isinstance(value, str) and len(value) <= 64 and value.isascii() else None
+    return timestamp.decode("ascii") if timestamp is not None and timestamp.isascii() else None
 
 
 def _reminder_receipt(text: str) -> tuple[str, set[int]] | None:
@@ -253,7 +314,7 @@ def snapshot(
                 stream, header, stream.seek(0, os.SEEK_END),
                 include_previous=include_previous, minimum_used=minimum_used,
                 expected_turn=expected_turn, expected_model=expected_model,
-                collect_reminder_receipts=collect_reminder_receipts,
+                collect_reminder_receipts=collect_reminder_receipts, scan_bytes=SCAN_BYTES,
             )
     except (OSError, ValueError, RecursionError):
         return None
@@ -280,32 +341,47 @@ def reminder_snapshot(
     minimum_used: int,
     expected_turn: str | None = None,
     expected_model: str | None = None,
+    observations: ReminderObservations | None = None,
+    scan_bytes: int = SCAN_BYTES,
 ) -> tuple[WindowSnapshot | None, str | None]:
     """Reuse a verified rollout prefix for asynchronous reminder checks."""
     if path.suffix == ".zst":
         return None, None
+    scan_bytes = min(scan_bytes, SCAN_BYTES)
     try:
         with path.open("rb") as stream:
             stat = os.fstat(stream.fileno())
             header = _read_header(path, stream)
             if header is None or header.end > stat.st_size:
                 return None, None
+            # The probe budget covers new bytes. A verified older boundary
+            # remains usable without reading its full window again.
             previous = read_checkpoint(
                 path, stream, stat, header.segment, header.end, checkpoint, SCAN_BYTES,
             )
+            if previous is not None and stat.st_size - previous.offset > scan_bytes:
+                previous = None
             capture = _CheckpointCapture()
+            observed = ReminderObservations() if observations is not None else None
             options = {
                 "include_previous": False, "minimum_used": minimum_used,
                 "expected_turn": expected_turn, "expected_model": expected_model,
-                "collect_reminder_receipts": True, "capture": capture,
+                "collect_reminder_receipts": True, "scan_bytes": scan_bytes,
             }
             if previous is not None:
                 try:
-                    state = _snapshot(stream, header, stat.st_size, checkpoint=previous, **options)
+                    state = _snapshot(
+                        stream, header, stat.st_size, checkpoint=previous,
+                        capture=capture, observations=observed, **options,
+                    )
                 except (ValueError, OSError, RecursionError):
                     previous = None
+                    capture = _CheckpointCapture()
+                    observed = ReminderObservations() if observations is not None else None
             if previous is None:
-                state = _snapshot(stream, header, stat.st_size, **options)
+                state = _snapshot(
+                    stream, header, stat.st_size, capture=capture, observations=observed, **options,
+                )
             after = os.fstat(stream.fileno())
             if after.st_size < stat.st_size or (
                 after.st_size == stat.st_size and after.st_mtime_ns != stat.st_mtime_ns
@@ -313,15 +389,19 @@ def reminder_snapshot(
                 return None, None
             retained = checkpoint if previous is not None else None
             if (
-                state is None or capture.boundary is None
-                or (previous is not None and previous.offset == stat.st_size)
+                state is not None and capture.boundary is not None
+                and (previous is None or previous.offset != stat.st_size)
             ):
-                return state, retained
-            encoded = write_checkpoint(
-                path, stream, stat, header.segment, capture.boundary, state.current,
-                state.received_reminder_levels, capture.signals, capture.turn_coverage,
-            )
-            return state, encoded if encoded is not None else retained
+                encoded = write_checkpoint(
+                    path, stream, stat, header.segment, capture.boundary, state.current,
+                    state.received_reminder_levels, capture.signals, capture.turn_coverage,
+                )
+                if encoded is not None:
+                    retained = encoded
+            if observations is not None and observed is not None:
+                observations.receipts.extend(reversed(observed.receipts))
+                observations.compactions.extend(reversed(observed.compactions))
+            return state, retained
     except (OSError, ValueError, RecursionError):
         return None, None
 
@@ -336,10 +416,12 @@ def _snapshot(
     expected_turn: str | None,
     expected_model: str | None,
     collect_reminder_receipts: bool,
+    scan_bytes: int,
     checkpoint: ReminderCheckpoint | None = None,
     capture: _CheckpointCapture | None = None,
+    observations: ReminderObservations | None = None,
 ) -> WindowSnapshot | None:
-    lower = checkpoint.offset if checkpoint is not None else max(header.end, size - SCAN_BYTES)
+    lower = checkpoint.offset if checkpoint is not None else max(header.end, size - scan_bytes)
     at_start = lower == header.end
     segment = header.segment
     start_key = f"{segment}:start"
@@ -357,6 +439,7 @@ def _snapshot(
     has_turnless_model = has_settings_model = False
     latest_turn_model_at = None
     omitted_turn_models = False
+    below_minimum = False
     lines = _reverse_lines(stream, size, lower, at_start or checkpoint is not None)
     if checkpoint is not None:
         # Reuse sparse records only when the physical suffix has no newer boundary.
@@ -366,7 +449,15 @@ def _snapshot(
             ((None, b"", b"", False),),
         )
     for order, (offset, raw, trailer, clipped) in enumerate(lines):
+        evidence_only = below_minimum or current is not None and not include_previous
+        # At a normal stop, diagnostics can consume at most one more physical
+        # block to link boundaries or find a late delivery in the known suffix.
+        can_drain = observations is not None and offset is not None and offset - lower <= BLOCK_BYTES
         if offset is None:
+            if observations is not None and checkpoint is not None:
+                observations._link_previous(checkpoint.window)
+            if evidence_only:
+                break
             if replay_start is None and checkpoint is not None:
                 replay_start = order
                 coverage = checkpoint.turn_coverage
@@ -386,14 +477,26 @@ def _snapshot(
                 break
         if not raw.strip():
             continue
-        kind, payload, ordinal = _record(raw, trailer, clipped)
+        try:
+            kind, payload, ordinal = _record(raw, trailer, clipped)
+        except (ValueError, RecursionError):
+            if evidence_only:
+                break
+            raise
         first_owned_record = False
         first_owned = header.first_owned
         if offset is not None and first_owned is not None:
             if ordinal is None:
+                if evidence_only:
+                    break
+                if observations is not None:
+                    observations.receipts.clear()
+                    observations.compactions.clear()
                 return None
             if ordinal < first_owned:
                 at_start = True
+                if observations is not None:
+                    observations._link_previous(start_key)
                 if current is None:
                     boundary = offset
                 break
@@ -403,36 +506,39 @@ def _snapshot(
                 boundary = offset
         event = payload.get("type") if kind == "event_msg" else None
         if event is not None and not isinstance(event, str):
+            if evidence_only:
+                break
             raise ValueError("invalid rollout event")
         if offset is None and kind not in USAGE_KINDS and event not in REPLAY_EVENTS:
             raise ValueError("invalid checkpoint signal")
         if kind == "compacted" or event == "thread_rolled_back":
             fingerprint = blake2s(raw + trailer, digest_size=8).hexdigest()
             key = f"{segment}:{offset}:{fingerprint}"
-            if current is not None:
-                previous = key
-                break
-            current = key
-            boundary = offset
-            compacted = kind == "compacted"
-            if not compacted or not include_previous:
-                break
-        if current is not None:
+            if observations is not None:
+                observations._link_previous(key)
+                if kind == "compacted":
+                    observations.compactions.append((key, _rollout_timestamp(raw, clipped), None))
+            if not evidence_only:
+                if current is not None:
+                    previous = key
+                    break
+                current = key
+                boundary = offset
+                compacted = kind == "compacted"
+                if (not compacted or not include_previous) and not can_drain:
+                    break
+        if offset is not None and kind == "response_item" and not clipped:
+            active_receipts = (
+                receipts if collect_reminder_receipts and current is None and not below_minimum else None
+            )
+            if active_receipts is not None or observations is not None:
+                _scan_receipts(raw, offset, ordinal, active_receipts, observations)
+        if current is not None or below_minimum:
             if first_owned_record:
+                if observations is not None:
+                    observations._link_previous(start_key)
                 break
             continue
-        if (
-            collect_reminder_receipts and kind == "response_item" and not clipped
-            and b'"developer"' in raw[:PREFIX_BYTES]
-            and b'"hooks.additional_context"' in raw
-            and (REMINDER_MARKER_PREFIX.encode("ascii") in raw or b"[thread-memory:" in raw)
-        ):
-            try:
-                candidate = payload or json.loads(raw)["payload"]
-            except (ValueError, RecursionError):
-                pass
-            else:
-                _collect_reminder_receipts(candidate, receipts)
         signal = None
         if kind == "token_usage_record" and response is None and native is None:
             response = _sample(kind, payload)
@@ -449,7 +555,12 @@ def _snapshot(
                 and native.used < minimum_used
                 and (response is None or response.used < minimum_used)
             ):
-                return None
+                if checkpoint is None or not can_drain:
+                    return None
+                below_minimum = True
+                if first_owned_record:
+                    break
+                continue
             if capture is not None and native is not None:
                 signal = {"type": event, "info": {
                     "last_token_usage": {"total_tokens": native.used},
@@ -522,7 +633,14 @@ def _snapshot(
         if signal is not None:
             signals[order] = {"type": kind, "payload": signal}
         if first_owned_record:
+            if observations is not None:
+                observations._link_previous(start_key)
             break
+    else:
+        if at_start and observations is not None:
+            observations._link_previous(start_key)
+    if below_minimum:
+        return None
     marked_turn = latest_turn
     latest_turn = latest_turn or (response.turn if response is not None else None)
     if (

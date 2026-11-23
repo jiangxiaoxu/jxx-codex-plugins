@@ -20,7 +20,7 @@ from typing import BinaryIO
 from uuid import UUID
 
 from rollout_checkpoint_instructions import checkpoint_instructions
-from rollout_handoff_store import MAX_HOOK_DIAGNOSTICS, read_hook_diagnostics
+from rollout_handoff_store import MAX_HOOK_DIAGNOSTICS, read_hook_diagnostics, read_reminder_telemetry
 from rollout_hook import MAX_SUMMARY_BYTES, handoff, hook_instructions, memory
 from rollout_inventory import inventory
 from rollout_lineage import describe_lineage, segment_info
@@ -561,8 +561,10 @@ def parse_args() -> argparse.Namespace:
     )
     memory_cmd.add_argument("--limit", type=positive, help="maximum history versions (default: 10)")
     diagnostics_cmd = commands.add_parser("diagnostics", help="read recent Thread Memory hook decisions")
-    diagnostics_cmd.add_argument("--thread", help="thread UUID (defaults to CODEX_THREAD_ID)")
-    diagnostics_cmd.add_argument("--limit", type=positive, default=20, help="maximum number of events (default: 20)")
+    diagnostics_source = diagnostics_cmd.add_mutually_exclusive_group()
+    diagnostics_source.add_argument("--thread", help="thread UUID (defaults to CODEX_THREAD_ID)")
+    diagnostics_source.add_argument("--summary", action="store_true", help="aggregate reminder metrics across threads")
+    diagnostics_cmd.add_argument("--limit", type=positive, help="maximum number of thread events (default: 20)")
     for command in (hook_cmd, handoff_cmd, memory_cmd, diagnostics_cmd):
         command.add_argument(
             "--codex-home", type=Path,
@@ -570,12 +572,16 @@ def parse_args() -> argparse.Namespace:
         )
     args = parser.parse_args()
     if args.command == "diagnostics":
-        if args.limit > MAX_HOOK_DIAGNOSTICS:
+        if args.summary and args.limit is not None:
+            parser.error("diagnostics --limit applies to thread events")
+        if args.limit is not None and args.limit > MAX_HOOK_DIAGNOSTICS:
             parser.error(f"diagnostics --limit must be from 1 to {MAX_HOOK_DIAGNOSTICS}")
-        try:
-            args.thread = str(UUID(args.thread or os.getenv("CODEX_THREAD_ID") or ""))
-        except ValueError:
-            parser.error("diagnostics requires --thread UUID or CODEX_THREAD_ID")
+        if not args.summary:
+            args.limit = args.limit or 20
+            try:
+                args.thread = str(UUID(args.thread or os.getenv("CODEX_THREAD_ID") or ""))
+            except ValueError:
+                parser.error("diagnostics requires --thread UUID or CODEX_THREAD_ID")
     if args.command == "memory":
         if args.at is not None and args.action not in {"read", "history"}:
             parser.error("memory --at requires read or history")
@@ -926,6 +932,8 @@ def main() -> int:
                 result["truncated"] = truncated
             return write_stdout(json_bytes(result))
         if args.command == "diagnostics":
+            if args.summary:
+                return write_stdout(json_bytes({"items": read_reminder_telemetry(args.codex_home)}))
             items = read_hook_diagnostics(args.codex_home, args.thread, limit=args.limit)
             return write_stdout(json_bytes({"thread_id": args.thread, "items": items}))
         if args.output is not None and args.output.exists():

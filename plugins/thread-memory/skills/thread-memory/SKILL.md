@@ -34,7 +34,7 @@ Start with the command that answers the question. Open a reference only if you n
 | Need | Start here |
 | --- | --- |
 | Recent chat or a known phrase | `transcript --last 6 --max-chars 240` or `search "phrase" --limit 5`. See [records](references/records.md) for bounds and lineage. |
-| Recent Hook activity | `diagnostics --limit 10` for context preparation, queued recovery, or observed reminder receipts. Use `--thread UUID` for another thread. |
+| Hook activity and reminder counts | `diagnostics --limit 10` for recent events in this thread or add `--thread UUID` for another thread. Use `diagnostics --summary` for grouped counts across threads. |
 | See what records exist | Narrow the scope before `inventory --limit 10`. Open a selected `example.ref` with `read --ref REF`. See [records](references/records.md) for metadata reads. |
 | Recorded system or developer instructions | `read --role system` or `read --role developer`. See [records](references/records.md) to distinguish their sources. |
 | Tool arguments or results | Locate the tool with `read --tool NAME`, then use its input or output ID. See [tool details](references/tools.md). |

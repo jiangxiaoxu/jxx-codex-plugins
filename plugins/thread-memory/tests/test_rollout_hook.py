@@ -336,7 +336,8 @@ class RolloutHookTest(unittest.TestCase):
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
         self.assertEqual(self.invoke({**child_event, **post_compact}, check=True).stdout, b"")
         self.assertEqual(
-            [item["event"] for item in self.diagnostics(child["agent_id"])],
+            [item["event"] for item in self.diagnostics(child["agent_id"])
+             if item["event"].startswith("subagent_")],
             ["subagent_compaction_pending", "subagent_start_context_prepared"],
         )
 
@@ -396,10 +397,16 @@ class RolloutHookTest(unittest.TestCase):
         self.record_reminder(follow_up)
         self.append_usage(375_000)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
-        diagnostics = self.diagnostics(request["agent_id"])
+        diagnostics = [
+            item for item in self.diagnostics(request["agent_id"])
+            if item["event"] in ("reminder_context_prepared", "reminder_receipt_observed")
+        ]
         self.assertEqual(len({item["window"] for item in diagnostics}), 1)
         self.assertEqual(
-            [(item["event"], item["details"]) for item in diagnostics],
+            [
+                (item["event"], {key: item["details"][key] for key in ("used", "capacity", "stages")})
+                for item in diagnostics
+            ],
             [
                 ("reminder_receipt_observed", {"used": 375_000, "capacity": 500_000, "stages": [[80, 3]]}),
                 ("reminder_context_prepared", {"used": 365_000, "capacity": 500_000, "stages": [[80, 1]]}),
@@ -447,6 +454,51 @@ class RolloutHookTest(unittest.TestCase):
         final = self.reminder_context(self.invoke(request, check=True).stdout, "65")
         self.assertIn(follow_up_notice, final)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
+
+    def test_reminder_timing_and_late_duplicate_survive_rollout_deletion(self):
+        self.env["THREAD_MEMORY_ASYNC_START_TOKENS"] = "350000"
+        request = self.start_reminder_window()
+        self.append_usage(305_000)
+        first = self.reminder_context(self.invoke(request, check=True).stdout, "0")
+        self.append_usage(315_000)
+        followup = self.reminder_context(self.invoke(request, check=True).stdout, "0")
+        self.record_reminder(first, timestamp="2026-01-01T00:00:01Z")
+        self.append_usage(320_000)
+        self.assertEqual(self.invoke(request, check=True).stdout, b"")
+
+        compacted_at = "2026-01-01T00:00:02Z"
+        duplicate_at = "2026-01-01T00:00:03Z"
+        with self.transcript.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({
+                "timestamp": compacted_at, "type": "compacted", "payload": {"replacement_history": []},
+            }) + "\n")
+        self.record_reminder(followup, timestamp=duplicate_at)
+        for _ in range(2):
+            self.recovery_context(json.loads(self.invoke(self.request, check=True).stdout)
+                                  ["hookSpecificOutput"]["additionalContext"])
+        self.transcript.unlink()
+
+        diagnostics = self.diagnostics(self.session_id)
+        deliveries = [item["details"] for item in diagnostics if item["event"] == "reminder_rollout_observed"]
+        self.assertEqual(len(deliveries), 2)
+        self.assertEqual(deliveries[0]["recorded_at"], duplicate_at)
+        self.assertTrue(deliveries[0]["duplicate"])
+        checkpoint, = (item for item in diagnostics if item["event"] == "compaction_checkpoint_observed")
+        self.assertEqual(checkpoint["details"]["compacted_at"], compacted_at)
+        self.assertEqual(checkpoint["details"]["previous_window"], next(
+            item["window"] for item in diagnostics if item["event"] == "reminder_context_prepared"
+        ))
+
+        result = subprocess.run(
+            [sys.executable, "-B", str(SCRIPT), "diagnostics", "--summary", "--codex-home", str(self.codex_home)],
+            capture_output=True, check=True,
+        )
+        summary = json.loads(result.stdout)["items"]
+        self.assertEqual({item["metric"]: item["count"] for item in summary}, {
+            "first": 1, "followup_1": 1, "receipt_confirmed": 1,
+            "delivery_observed": 2, "duplicate_observed": 1,
+        })
+        self.assertNotIn(self.session_id, result.stdout.decode())
 
     @unittest.skipIf(sys.version_info < (3, 11), "automatic threshold needs tomllib")
     def test_reminder_coalesces_crossed_tiers_and_checks_only_current_window(self):
@@ -532,8 +584,8 @@ class RolloutHookTest(unittest.TestCase):
         )
         return context
 
-    def record_reminder(self, context):
-        self.append_records(("response_item", {
+    def record_reminder(self, context, *, timestamp=None):
+        row = {"type": "response_item", "payload": {
             "type": "message",
             "role": "developer",
             "content": [
@@ -547,7 +599,11 @@ class RolloutHookTest(unittest.TestCase):
                     {"provenance": {"type": "harness", "hook": True}},
                 ],
             },
-        }))
+        }}
+        if timestamp is not None:
+            row["timestamp"] = timestamp
+        with self.transcript.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(row) + "\n")
 
     def write_model_cache(self, *models):
         entries = [
@@ -615,7 +671,8 @@ class RolloutHookTest(unittest.TestCase):
         outcome = json.loads(self.invoke(self.request, check=True).stdout)
         context = self.recovery_context(outcome["hookSpecificOutput"]["additionalContext"])
         self.assertIn("memory read", context)
-        (diagnostic,) = self.diagnostics(self.session_id)
+        diagnostic, = (item for item in self.diagnostics(self.session_id)
+                       if item["event"] == "compact_context_prepared")
         self.assertEqual(diagnostic["event"], "compact_context_prepared")
         self.assertEqual(diagnostic["details"], {"note_status": "available"})
 
@@ -636,7 +693,8 @@ class RolloutHookTest(unittest.TestCase):
         context = self.recovery_context(outcome["hookSpecificOutput"]["additionalContext"])
         self.assertIn("Context was compacted", context)
         self.assertIn("earlier context", context)
-        (diagnostic,) = self.diagnostics(self.session_id)
+        diagnostic, = (item for item in self.diagnostics(self.session_id)
+                       if item["event"] == "compact_context_prepared")
         self.assertEqual(diagnostic["details"], {"note_status": "missing"})
 
     def test_handoff_caps_saved_utf8_bytes_and_marks_truncation(self):

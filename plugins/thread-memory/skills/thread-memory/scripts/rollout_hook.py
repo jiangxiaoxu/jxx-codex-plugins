@@ -6,9 +6,13 @@ from uuid import UUID
 
 from rollout_handoff_diff import apply_handoff_diff
 from rollout_handoff_snapshot import (
+    BLOCK_BYTES,
     REMINDER_CLOSE,
     REMINDER_MARKER_PREFIX,
     REMINDER_OPEN,
+    SCAN_BYTES,
+    ReminderObservations,
+    WindowSnapshot,
     reminder_snapshot,
     reminder_window_id,
     snapshot,
@@ -22,15 +26,23 @@ from rollout_handoff_store import (
     memory_revision,
     memory_timestamp,
     record_hook_diagnostic,
+    record_reminder_telemetry,
     replace_handoff,
     save_handoff,
     save_memory,
     save_rollout_checkpoint,
     take_child_compaction,
 )
-from rollout_handoff_threshold import ReminderStage, reminder_plan
+from rollout_handoff_threshold import (
+    CHECK_LEAD_TOKENS,
+    FINAL_CHECK_LEAD_TOKENS,
+    ReminderStage,
+    reminder_plan,
+)
 from rollout_source import find_rollout, metadata
 from rollout_thread_memory import MemoryInheritanceUnavailable, initialize_thread_memory
+
+_COMPACTION_DIAGNOSTIC_SCAN_BYTES = 4 * BLOCK_BYTES
 
 _MAINTENANCE_HINT = (
     "<thread_memory_maintenance>\n"
@@ -143,9 +155,11 @@ def _subagent_instructions(
     try:
         if event == "PostCompact":
             mark_child_compaction(home, thread_id)
+            _probe_reminder_window(home, path, thread_id)
             record_hook_diagnostic(home, thread_id, "subagent_compaction_pending")
         else:
             if take_child_compaction(home, thread_id):
+                _probe_reminder_window(home, path, thread_id)
                 record_hook_diagnostic(home, thread_id, "subagent_recovery_context_prepared")
                 return _SUBAGENT_RECOVERY_HINT
             return _compaction_reminder(request, home, path, thread_id)
@@ -154,30 +168,47 @@ def _subagent_instructions(
     return None
 
 
+def _probe_reminder_window(
+    home: Path, path: Path, thread_id: str, *, minimum_used: int = 0,
+    turn: str | None = None, model: str | None = None,
+    scan_bytes: int = _COMPACTION_DIAGNOSTIC_SCAN_BYTES,
+) -> WindowSnapshot | None:
+    rollout_path = str(path.absolute())
+    try:
+        checkpoint = load_rollout_checkpoint(home, thread_id, rollout_path)
+    except (OSError, sqlite3.Error):
+        checkpoint = None
+    observations = ReminderObservations()
+    state, next_checkpoint = reminder_snapshot(
+        path, checkpoint, minimum_used=minimum_used,
+        expected_turn=turn, expected_model=model, observations=observations, scan_bytes=scan_bytes,
+    )
+    if (observations.receipts or observations.compactions) and not record_reminder_telemetry(
+        home, thread_id, receipts=tuple(observations.receipts),
+        compactions=tuple(observations.compactions),
+    ):
+        return state  # Retry the evidence on the next scan of this prefix.
+    if next_checkpoint is not None and next_checkpoint != checkpoint:
+        try:
+            save_rollout_checkpoint(home, thread_id, rollout_path, checkpoint, next_checkpoint)
+        except (OSError, sqlite3.Error):
+            pass  # Cache persistence is optional after verifying the rollout.
+    return state
+
+
 def _compaction_reminder(request: dict, home: Path, path: Path, thread_id: str) -> str | None:
     model = request.get("model")
     turn = request.get("turn_id")
     plan = reminder_plan(home, model)
     if plan is None:
         return None
-    rollout_path = str(path.absolute())
-    try:
-        checkpoint = load_rollout_checkpoint(home, thread_id, rollout_path)
-    except (OSError, sqlite3.Error):
-        checkpoint = None
-    state, next_checkpoint = reminder_snapshot(
-        path, checkpoint, minimum_used=plan.levels[0][1],
-        expected_turn=turn if isinstance(turn, str) else None,
-        expected_model=model if isinstance(model, str) else None,
+    state = _probe_reminder_window(
+        home, path, thread_id, minimum_used=plan.levels[0][1],
+        turn=turn if isinstance(turn, str) else None,
+        model=model if isinstance(model, str) else None,
+        scan_bytes=SCAN_BYTES,
     )
-    if state is None:
-        return None
-    if next_checkpoint is not None and next_checkpoint != checkpoint:
-        try:
-            save_rollout_checkpoint(home, thread_id, rollout_path, checkpoint, next_checkpoint)
-        except (OSError, sqlite3.Error):
-            pass  # Cache persistence is optional after verifying the rollout.
-    if state.used is None or (
+    if state is None or state.used is None or (
         state.capacity is not None and plan.usable_window is not None
         and state.capacity != plan.usable_window
     ):
@@ -189,6 +220,17 @@ def _compaction_reminder(request: dict, home: Path, path: Path, thread_id: str) 
     claimed = claim_reminder(home, thread_id, state.current, phases)
     if not claimed:
         return None
+    marker = reminder_window_id(state.current)
+    leads = (
+        plan.lead_tokens,
+        CHECK_LEAD_TOKENS if plan.lead_tokens > CHECK_LEAD_TOKENS else 0,
+        FINAL_CHECK_LEAD_TOKENS if plan.lead_tokens > FINAL_CHECK_LEAD_TOKENS else 0,
+    )
+    startups = {level: first + plan.lead_tokens for level, first in plan.levels}
+    record_reminder_telemetry(
+        home, thread_id, window=state.current, notify_id=marker, leads=leads, used=state.used,
+        decisions=tuple((level, int(stage), startups[level]) for level, stage in phases if level in claimed),
+    )
     confirmations = [
         [level, int(stage)] for level, stage in phases
         if level in claimed and stage == ReminderStage.RECORDED
@@ -197,7 +239,10 @@ def _compaction_reminder(request: dict, home: Path, path: Path, thread_id: str) 
         (level, stage) for level, stage in phases
         if level in claimed and stage != ReminderStage.RECORDED
     ]
-    usage = {"used": state.used, "capacity": state.capacity}
+    usage = {
+        "used": state.used, "capacity": state.capacity, "notify_id": marker,
+        "leads": leads, "estimated_startups": [[level, tokens] for level, tokens in startups.items()],
+    }
     if confirmations:
         record_hook_diagnostic(
             home, thread_id, "reminder_receipt_observed", window=state.current,
@@ -221,7 +266,7 @@ def _compaction_reminder(request: dict, home: Path, path: Path, thread_id: str) 
         home, thread_id, "reminder_context_prepared", window=state.current,
         stages=[[level, int(stage)] for level, stage in notices], **usage,
     )
-    receipt = f"{REMINDER_MARKER_PREFIX}{levels}:{reminder_window_id(state.current)}]"
+    receipt = f"{REMINDER_MARKER_PREFIX}{levels}:{marker}]"
     return f"{REMINDER_OPEN}{context}\n{receipt}{REMINDER_CLOSE}"
 
 
@@ -253,6 +298,7 @@ def hook_instructions(request: dict, home: Path) -> str | None:
         if source == "fork":
             record_hook_diagnostic(home, thread_id, "fork_note_checked", note_status=note_status)
             return None
+        _probe_reminder_window(home, path, thread_id)
         record_hook_diagnostic(
             home, thread_id, "compact_context_prepared", note_status=note_status
         )

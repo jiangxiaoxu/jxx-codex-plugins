@@ -96,6 +96,48 @@ _STORED_STATE_TABLES = (
     "rollout_scan_checkpoints",
     "hook_diagnostics",
 )
+_REMINDER_THREAD_TABLES = ("reminder_delivery_policies", "reminder_deliveries", "reminder_compactions")
+_REMINDER_TELEMETRY_SCHEMA = (
+    """
+    CREATE TABLE IF NOT EXISTS reminder_delivery_policies (
+        thread_id TEXT NOT NULL,
+        notify_id TEXT NOT NULL,
+        tier INTEGER NOT NULL,
+        window TEXT NOT NULL,
+        leads TEXT NOT NULL,
+        PRIMARY KEY (thread_id, notify_id, tier)
+    ) WITHOUT ROWID
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS reminder_deliveries (
+        thread_id TEXT NOT NULL,
+        notify_id TEXT NOT NULL,
+        tier INTEGER NOT NULL,
+        record_key TEXT NOT NULL,
+        PRIMARY KEY (thread_id, notify_id, tier, record_key)
+    ) WITHOUT ROWID
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS reminder_compactions (
+        thread_id TEXT NOT NULL,
+        window TEXT NOT NULL,
+        PRIMARY KEY (thread_id, window)
+    ) WITHOUT ROWID
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS reminder_telemetry_totals (
+        leads TEXT NOT NULL,
+        tier INTEGER NOT NULL,
+        metric TEXT NOT NULL,
+        bucket INTEGER NOT NULL,
+        count INTEGER NOT NULL,
+        PRIMARY KEY (leads, tier, metric, bucket)
+    ) WITHOUT ROWID
+    """,
+)
+_REMINDER_PHASE_METRICS = ("first", "followup_1", "followup_2", "receipt_confirmed")
+_TOKEN_BUCKET_WIDTH = 5_000
+_NO_TOKEN_BUCKET = -(2 ** 63)
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 _MICROSECOND = timedelta(microseconds=1)
 
@@ -194,30 +236,40 @@ def memory_timestamp(timestamp_us: int) -> str:
     return timestamp.isoformat(timespec="microseconds").replace("+00:00", "Z")
 
 
+def _insert_hook_diagnostic(
+    connection: sqlite3.Connection, thread_id: str, event: str, window: str | None, details: dict,
+) -> None:
+    encoded = json.dumps(details, separators=(",", ":"), allow_nan=False) if details else None
+    if encoded is not None and len(encoded) > _HOOK_DIAGNOSTIC_DETAILS_LIMIT:
+        encoded = None
+    connection.execute(
+        """
+        INSERT INTO hook_diagnostics (thread_id, timestamp_us, event, window, details)
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (thread_id, time.time_ns() // 1_000, event, window, encoded),
+    )
+
+
+def _trim_hook_diagnostics(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        """
+        DELETE FROM hook_diagnostics WHERE id <= (
+            SELECT id FROM hook_diagnostics ORDER BY id DESC LIMIT 1 OFFSET ?
+        )
+        """,
+        (MAX_HOOK_DIAGNOSTICS,),
+    )
+
+
 def record_hook_diagnostic(
     home: Path, thread_id: str, event: str, *, window: str | None = None, **details: object,
 ) -> None:
     """Record curated hook metadata without waiting for the database write lock."""
     try:
-        encoded = json.dumps(details, separators=(",", ":"), allow_nan=False) if details else None
-        if encoded is not None and len(encoded) > _HOOK_DIAGNOSTIC_DETAILS_LIMIT:
-            encoded = None
         with closing(_open_writable(home, timeout=0.0)) as connection, connection:
-            connection.execute(
-                """
-                INSERT INTO hook_diagnostics (thread_id, timestamp_us, event, window, details)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (thread_id, time.time_ns() // 1_000, event, window, encoded),
-            )
-            connection.execute(
-                """
-                DELETE FROM hook_diagnostics WHERE id <= (
-                    SELECT id FROM hook_diagnostics ORDER BY id DESC LIMIT 1 OFFSET ?
-                )
-                """,
-                (MAX_HOOK_DIAGNOSTICS,),
-            )
+            _insert_hook_diagnostic(connection, thread_id, event, window, details)
+            _trim_hook_diagnostics(connection)
     except (OSError, sqlite3.Error, TypeError, ValueError):
         pass  # Diagnostic failures must not change hook behavior.
 
@@ -244,6 +296,176 @@ def read_hook_diagnostics(home: Path, thread_id: str, *, limit: int) -> list[dic
                 item["details"] = json.loads(encoded)
             items.append(item)
         return items
+
+
+def _has_reminder_telemetry(connection: sqlite3.Connection) -> bool:
+    return connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'reminder_telemetry_totals'"
+    ).fetchone() is not None
+
+
+def _thread_state_tables(connection: sqlite3.Connection) -> tuple[str, ...]:
+    if _has_reminder_telemetry(connection):
+        return _STORED_STATE_TABLES + _REMINDER_THREAD_TABLES
+    return _STORED_STATE_TABLES
+
+
+def _increment_reminder_totals(
+    connection: sqlite3.Connection, increments: Iterable[tuple[str, int, str, int]],
+) -> None:
+    connection.executemany(
+        """
+        INSERT INTO reminder_telemetry_totals (leads, tier, metric, bucket, count)
+        VALUES (?, ?, ?, ?, 1)
+        ON CONFLICT (leads, tier, metric, bucket) DO UPDATE SET count = count + 1
+        """,
+        increments,
+    )
+
+
+def _record_reminder_delivery(
+    connection: sqlite3.Connection, thread_id: str, notify_id: str, tier: int,
+    record_key: str, recorded_at: str | None,
+) -> bool:
+    key = (thread_id, notify_id, tier)
+    inserted = connection.execute(
+        """
+        INSERT INTO reminder_deliveries (thread_id, notify_id, tier, record_key)
+        VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING
+        """,
+        (*key, record_key),
+    ).rowcount
+    if not inserted:
+        return False
+
+    duplicate = connection.execute(
+        """
+        SELECT 1 FROM reminder_deliveries
+        WHERE thread_id = ? AND notify_id = ? AND tier = ? LIMIT 1 OFFSET 1
+        """,
+        key,
+    ).fetchone() is not None
+    policy = connection.execute(
+        """
+        SELECT window, leads FROM reminder_delivery_policies
+        WHERE thread_id = ? AND notify_id = ? AND tier = ?
+        """,
+        key,
+    ).fetchone()
+    details = {"notify_id": notify_id, "tier": tier, "recorded_at": recorded_at, "duplicate": duplicate}
+    window = None
+    if policy is not None:
+        window, encoded_leads = policy
+        metrics = ("delivery_observed", "duplicate_observed") if duplicate else ("delivery_observed",)
+        _increment_reminder_totals(
+            connection, ((encoded_leads, tier, metric, _NO_TOKEN_BUCKET) for metric in metrics),
+        )
+        details["leads"] = json.loads(encoded_leads)
+    _insert_hook_diagnostic(connection, thread_id, "reminder_rollout_observed", window, details)
+    return True
+
+
+def _record_reminder_compaction(
+    connection: sqlite3.Connection, thread_id: str, window: str,
+    compacted_at: str | None, previous_window: str | None,
+) -> bool:
+    inserted = connection.execute(
+        """
+        INSERT INTO reminder_compactions (thread_id, window) VALUES (?, ?) ON CONFLICT DO NOTHING
+        """,
+        (thread_id, window),
+    ).rowcount
+    if not inserted:
+        return False
+
+    note_updated_at = None
+    try:
+        cutoff = _legacy_timestamp_us(compacted_at) if compacted_at is not None else None
+    except (TypeError, ValueError, OverflowError):
+        cutoff = compacted_at = None
+    if cutoff is not None:
+        row = connection.execute(
+            """
+            SELECT CASE WHEN summary <> '' THEN updated_us END FROM memory_revisions
+            WHERE thread_id = ? AND effective_us <= ?
+            ORDER BY effective_us DESC, revision DESC LIMIT 1
+            """,
+            (thread_id, cutoff),
+        ).fetchone()
+        if row is not None and row[0] is not None:
+            note_updated_at = memory_timestamp(row[0])
+    _insert_hook_diagnostic(connection, thread_id, "compaction_checkpoint_observed", window, {
+        "compacted_at": compacted_at, "previous_window": previous_window, "note_updated_at": note_updated_at,
+    })
+    return True
+
+
+def record_reminder_telemetry(
+    home: Path, thread_id: str, *, window: str | None = None, notify_id: str | None = None,
+    leads: tuple[int, int, int] = (0, 0, 0), used: int | None = None,
+    decisions: tuple[tuple[int, int, int], ...] = (),
+    receipts: tuple[tuple[str, int, str, str | None], ...] = (),
+    compactions: tuple[tuple[str, str | None, str | None], ...] = (),
+) -> bool:
+    """Save observed evidence and grouped counts, or allow the caller to retry its scan."""
+    if not (decisions or receipts or compactions):
+        return True
+    try:
+        with closing(_open_writable(home, timeout=0.0)) as connection, connection:
+            if not _has_reminder_telemetry(connection):
+                # Add optional tables atomically without changing the note schema.
+                connection.execute("BEGIN IMMEDIATE")
+                for statement in _REMINDER_TELEMETRY_SCHEMA:
+                    connection.execute(statement)
+            if decisions:
+                encoded_leads = json.dumps(leads, separators=(",", ":"))
+                if window is not None and notify_id is not None:
+                    connection.executemany(
+                        """
+                        INSERT INTO reminder_delivery_policies (thread_id, notify_id, tier, window, leads)
+                        VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING
+                        """,
+                        ((thread_id, notify_id, tier, window, encoded_leads)
+                         for tier, stage, _ in decisions if stage != 3),
+                    )
+                _increment_reminder_totals(connection, (
+                    (
+                        encoded_leads, tier, _REMINDER_PHASE_METRICS[stage],
+                        (startup - used) // _TOKEN_BUCKET_WIDTH * _TOKEN_BUCKET_WIDTH
+                        if used is not None else _NO_TOKEN_BUCKET,
+                    )
+                    for tier, stage, startup in decisions
+                ))
+            observed = False
+            for receipt in receipts:
+                observed |= _record_reminder_delivery(connection, thread_id, *receipt)
+            for compaction in compactions:
+                observed |= _record_reminder_compaction(connection, thread_id, *compaction)
+            if observed:
+                _trim_hook_diagnostics(connection)
+        return True
+    except (OSError, sqlite3.Error, TypeError, ValueError, OverflowError):
+        return False  # Telemetry failure must not change reminder claims or delivery.
+
+
+def read_reminder_telemetry(home: Path) -> list[dict]:
+    """Return grouped reminder measurements without thread identifiers or content."""
+    connection = _open_existing(home)
+    if connection is None:
+        return []
+    with closing(connection):
+        if not _has_reminder_telemetry(connection):
+            return []
+        return [
+            {"leads": json.loads(leads), "tier": tier, "metric": metric,
+             "remaining_tokens_bucket": None if bucket == _NO_TOKEN_BUCKET else bucket, "count": count}
+            for leads, tier, metric, bucket, count in connection.execute(
+                """
+                SELECT leads, tier, metric, bucket, count FROM reminder_telemetry_totals
+                ORDER BY leads, tier, metric, bucket
+                """
+            )
+        ]
 
 
 def memory_history(
@@ -620,7 +842,7 @@ def stored_threads(home: Path) -> set[str]:
     with closing(connection):
         return {
             thread_id
-            for table in _STORED_STATE_TABLES
+            for table in _thread_state_tables(connection)
             for (thread_id,) in connection.execute(f"SELECT DISTINCT thread_id FROM {table}")
         }
 
@@ -639,5 +861,5 @@ def delete_handoff_threads(home: Path, thread_ids: Iterable[str]) -> int:
                 f"DELETE FROM {table} WHERE thread_id = ?",
                 ((thread_id,) for thread_id in ids),
             ).rowcount
-            for table in _STORED_STATE_TABLES
+            for table in _thread_state_tables(connection)
         )
