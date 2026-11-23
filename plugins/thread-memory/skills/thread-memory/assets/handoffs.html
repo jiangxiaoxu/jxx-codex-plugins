@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Thread Memory</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --page: var(--color-background-primary, light-dark(#fff, #171717));
+      --panel: var(--color-background-secondary, light-dark(#f8f9fa, #202020));
+      --selected: var(--color-background-info, light-dark(#e8f1ff, #213551));
+      --ink: var(--color-text-primary, light-dark(#171c24, #f2f2f2));
+      --muted: var(--color-text-secondary, light-dark(#525e6c, #b3bac4));
+      --line: var(--color-border-primary, light-dark(#dce1e7, #3e3e3e));
+      --accent: var(--color-ring-info, light-dark(#005fcc, #7ab5ff));
+      --danger: var(--color-text-danger, light-dark(#a52520, #ffa29a));
+      background: var(--page);
+      color: var(--ink);
+      font: 14px/1.45 var(--font-sans, system-ui, sans-serif);
+    }
+    :root[data-theme="light"] { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
+    body { margin: 0; }
+    main { max-width: 1280px; margin: auto; padding: clamp(12px, 2.5vw, 26px); }
+    header, .actions, footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    header { justify-content: space-between; margin-bottom: 14px; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: 1.42rem; letter-spacing: -.023em; }
+    h2 { font-size: 1.05rem; }
+    button, input {
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 7px 11px;
+      background: var(--page);
+      color: var(--ink);
+      font: inherit;
+    }
+    button, summary { cursor: var(--cursor-interaction, pointer); }
+    button:enabled:hover, summary:hover { background: var(--panel); }
+    :is(button, input, summary, #detail-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button:disabled { opacity: .5; cursor: default; }
+    .danger { color: var(--danger); }
+    .status { color: var(--muted); overflow-wrap: anywhere; }
+    .status:empty { display: none; }
+    #status:not(:empty) { margin-bottom: 10px; }
+    .status.error { color: var(--danger); }
+    .workspace { display: grid; grid-template-columns: clamp(225px, 30%, 328px) minmax(0, 1fr); gap: 14px; }
+    .panel { border: 1px solid var(--line); border-radius: 11px; min-width: 0; }
+    .directory, .reader { display: flex; flex-direction: column; min-height: 0; }
+    .directory { background: var(--panel); }
+    .directory-tools { display: grid; gap: 9px; padding: 12px; border-bottom: 1px solid var(--line); }
+    .directory-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+    #search { min-width: 0; width: 100%; }
+    #threads { flex: 1; min-height: 0; list-style: none; padding: 6px; margin: 0; max-height: clamp(200px, 62vh, 760px); overflow: auto; }
+    #threads li + li { margin-top: 3px; }
+    #threads button {
+      display: grid;
+      width: 100%;
+      text-align: start;
+      gap: 3px;
+      border-color: transparent;
+      padding: 9px 10px;
+      background: transparent;
+    }
+    #threads button:enabled:hover { background: var(--page); }
+    #threads button[aria-current="true"] { background: var(--selected); box-shadow: inset 2px 0 var(--accent); }
+    #threads .label {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+      overflow: hidden;
+      overflow-wrap: anywhere;
+      font-weight: 600;
+    }
+    .thread-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; }
+    #threads .preview {
+      display: -webkit-box;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 1;
+      overflow: hidden;
+    }
+    #threads .empty { color: var(--muted); padding: 16px 10px; }
+    .reader-empty { display: grid; place-items: center; flex: 1; min-height: 210px; padding: 20px; text-align: center; color: var(--muted); }
+    .reader-header { display: grid; gap: 8px; padding: 15px clamp(14px, 3vw, 26px); border-bottom: 1px solid var(--line); }
+    .reader-tools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    #detail-heading { font-size: 1.34rem; line-height: 1.34; overflow-wrap: anywhere; }
+    #back-to-threads { display: none; justify-self: start; }
+    #thread-id summary { width: fit-content; border-radius: 3px; }
+    .detail { flex: 1; min-height: 0; padding: 16px clamp(14px, 3vw, 26px); max-height: clamp(240px, 65vh, 900px); overflow: auto; }
+    #detail-status { flex: 1 1 12em; }
+    #note {
+      max-width: 76ch;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+      font-size: 15px;
+      line-height: 1.7;
+    }
+    #dependencies > summary { font-weight: 600; padding: 7px 0; }
+    .dependency-body { padding: 5px 0; }
+    .dependency-body dl:not([hidden]) { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 10px; margin: 0 0 10px; }
+    .dependency-body dd { margin: 0; }
+    #dependency-items { list-style: none; padding: 0; margin: 0 0 10px; }
+    #dependency-items li { border-top: 1px solid var(--line); padding: 6px 0; }
+    #dependency-items strong { margin-right: 8px; }
+    .thread { display: block; font: 12px/1.5 var(--font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
+    .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    footer { padding: 9px 14px; border-top: 1px solid var(--line); }
+    #page { margin-inline: auto; }
+    dialog { width: min(520px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 18px; color: var(--ink); background: var(--page); }
+    dialog::backdrop { background: rgb(0 0 0 / 45%); }
+    dialog p { margin-top: 8px; }
+    dialog ul, #missing-threads { max-height: 32vh; overflow: auto; }
+    dialog ul { padding-inline-start: 22px; }
+    #missing-threads { white-space: pre-wrap; }
+    dialog .actions { justify-content: flex-end; }
+    .management-section { border-top: 1px solid var(--line); padding: 12px 0; }
+    .management-section > .actions { justify-content: flex-start; margin-top: 7px; }
+    :root[data-display="fullscreen"] main { display: flex; flex-direction: column; height: 100dvh; }
+    :root[data-display="fullscreen"] .workspace { flex: 1; min-height: 0; }
+    :root[data-display="fullscreen"] :is(#threads, .detail) { max-height: none; }
+    @media (max-width: 700px) {
+      .workspace { grid-template-columns: 1fr; }
+      main[data-view="directory"] .reader, main[data-view="note"] .directory { display: none; }
+      #back-to-threads { display: inline-block; }
+      #threads button, #back-to-threads { min-height: 42px; }
+      #threads { max-height: clamp(200px, 69vh, 760px); }
+    }
+  </style>
+</head>
+<body>
+  <main data-view="directory">
+    <header>
+      <h1>Thread Memory</h1>
+      <div class="actions">
+        <button id="refresh" type="button" disabled>Refresh</button>
+        <button id="manage" type="button" disabled>Manage</button>
+      </div>
+    </header>
+    <p id="status" class="status" role="status">Connecting to Codex...</p>
+    <div class="workspace">
+      <nav id="directory" class="panel directory" aria-labelledby="threads-heading">
+        <div class="directory-tools">
+          <div class="directory-heading">
+            <h2 id="threads-heading">Main threads</h2>
+            <p id="results-count" class="meta" role="status"></p>
+          </div>
+          <input id="search" type="search" maxlength="200" aria-label="Search main threads" placeholder="Search title or thread ID" disabled>
+        </div>
+        <ul id="threads"></ul>
+        <footer id="pagination" hidden>
+          <button id="previous" type="button" disabled>Previous</button>
+          <span id="page" class="meta"></span>
+          <button id="next" type="button" disabled>Next</button>
+        </footer>
+      </nav>
+      <section id="reader" class="panel reader" aria-label="Current thread note">
+        <p id="reader-empty" class="reader-empty">Choose a main thread to read its note.</p>
+        <div id="reader-header" class="reader-header" hidden>
+          <button id="back-to-threads" type="button">Back to threads</button>
+          <h2 id="detail-heading" tabindex="-1"></h2>
+          <div class="reader-tools">
+            <div class="thread-meta meta">
+              <span id="note-date"></span>
+              <span id="note-archived" hidden>Archived</span>
+            </div>
+            <button id="copy-summary" type="button" hidden>Copy note</button>
+          </div>
+          <p id="copy-status" class="status meta" role="status"></p>
+          <details id="thread-id" class="meta">
+            <summary>Thread ID</summary>
+            <p id="detail-key" class="thread"></p>
+          </details>
+          <div id="note-feedback" class="reader-tools" hidden>
+            <p id="detail-status" class="status" role="status"></p>
+            <button id="retry-note" type="button" hidden>Retry</button>
+          </div>
+        </div>
+        <div id="reader-body" class="detail" tabindex="0" aria-label="Note text" hidden>
+          <article id="note"></article>
+        </div>
+      </section>
+    </div>
+  </main>
+  <dialog id="management-dialog" aria-labelledby="management-heading">
+    <header>
+      <h2 id="management-heading">Manage thread memory</h2>
+      <button id="close-manager" type="button" autofocus>Close</button>
+    </header>
+    <details id="dependencies" class="management-section">
+      <summary>Python dependencies</summary>
+      <div class="dependency-body">
+        <p id="dependency-status" class="status" role="status"></p>
+        <dl id="dependency-environment" hidden>
+          <dt>Interpreter</dt><dd id="dependency-python" class="thread"></dd>
+          <dt>Install target</dt><dd id="dependency-target" class="thread"></dd>
+        </dl>
+        <ul id="dependency-items"></ul>
+        <div class="actions">
+          <button id="check-dependencies" type="button" disabled>Check again</button>
+          <button id="install-dependencies" type="button" disabled>Install missing dependencies</button>
+        </div>
+      </div>
+    </details>
+    <section class="management-section" aria-labelledby="cleanup-label">
+      <h2 id="cleanup-label">Deleted threads</h2>
+      <p class="meta">Remove saved data for deleted threads and their subagents. Archived threads are kept.</p>
+      <p id="cleanup-status" class="status" role="status"></p>
+      <div class="actions">
+        <button id="check-cleanup" type="button" disabled>Find deleted threads</button>
+      </div>
+    </section>
+  </dialog>
+  <dialog id="cleanup-dialog" aria-labelledby="cleanup-heading" aria-describedby="cleanup-description">
+    <h2 id="cleanup-heading">Remove saved thread data?</h2>
+    <p id="cleanup-description"></p>
+    <pre id="missing-threads" class="thread" role="region" tabindex="0" aria-label="Cleanup candidate thread IDs"></pre>
+    <div class="actions">
+      <button id="cancel-cleanup" type="button" autofocus>Cancel</button>
+      <button id="delete-cleanup" class="danger" type="button">Delete stored data</button>
+    </div>
+  </dialog>
+  <script>
+    "use strict";
+
+    const byId = (id) => document.getElementById(id);
+    const host = window.parent;
+    const main = document.querySelector("main");
+    const compactLayout = window.matchMedia("(max-width: 700px)");
+    const pending = new Map();
+    const pageSize = 25;
+    const dateFormat = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
+    let requestId = 0;
+    let connected = false;
+    let busy = false;
+    let listLoading = false;
+    let listRequest = 0;
+    let searchTimer;
+    let pageIndex = 0;
+    let displayedQuery = "";
+    let cursors = [null];
+    let rows = [];
+    let activeThread = null;
+    let noteRequest = 0;
+    let noteLoading = false;
+    let missingThreads = [];
+    let dependenciesBusy = false;
+    let installingDependencies = false;
+    let dependencyItems = [];
+
+    function send(fields) {
+      host.postMessage({jsonrpc: "2.0", ...fields}, "*");
+    }
+
+    function request(method, params, timeoutMs = 25000) {
+      const id = ++requestId;
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error("Codex did not respond. Check the current state before trying again."));
+        }, timeoutMs);
+        pending.set(id, {resolve, reject, timeout});
+        send({id, method, params});
+      });
+    }
+
+    function applyHostContext(context) {
+      if (context?.theme === "light" || context?.theme === "dark") {
+        document.documentElement.dataset.theme = context.theme;
+      }
+      if (context?.displayMode) document.documentElement.dataset.display = context.displayMode;
+      for (const [key, value] of Object.entries(context?.styles?.variables ?? {})) {
+        if (key.startsWith("--") && typeof value === "string") {
+          document.documentElement.style.setProperty(key, value);
+        }
+      }
+    }
+
+    window.addEventListener("message", ({source, data}) => {
+      if (source !== host || data?.jsonrpc !== "2.0") return;
+      if (data.method === "ui/notifications/host-context-changed") {
+        applyHostContext(data.params);
+      } else if (data.method === "ui/resource-teardown" || data.method === "ping") {
+        send({id: data.id, result: {}});
+      } else if (!data.method && pending.has(data.id)) {
+        const {resolve, reject, timeout} = pending.get(data.id);
+        clearTimeout(timeout);
+        pending.delete(data.id);
+        if (data.error) reject(new Error(data.error.message));
+        else resolve(data.result);
+      }
+    });
+
+    async function callTool(name, args, timeoutMs) {
+      const result = await request("tools/call", {name, arguments: args}, timeoutMs);
+      if (result?.isError) {
+        throw new Error(result.content?.find((item) => item.type === "text")?.text || "The request failed.");
+      }
+      if (!result?.structuredContent) throw new Error("No thread memory data was returned.");
+      return result.structuredContent;
+    }
+
+    function setStatus(message, error = false) {
+      byId("status").textContent = message;
+      byId("status").classList.toggle("error", error);
+    }
+
+    function updateControls() {
+      const blocked = busy || installingDependencies;
+      byId("refresh").disabled = !connected || blocked || listLoading || noteLoading;
+      byId("manage").disabled = !connected;
+      byId("check-cleanup").disabled = !connected || blocked;
+      byId("search").disabled = !connected || installingDependencies;
+      const paginationBlocked = blocked || listLoading || displayedQuery !== byId("search").value.trim();
+      byId("previous").disabled = paginationBlocked || pageIndex === 0;
+      byId("next").disabled = paginationBlocked || !cursors[pageIndex + 1];
+      byId("retry-note").disabled = installingDependencies || noteLoading;
+      byId("threads").setAttribute("aria-busy", String(listLoading));
+      byId("note").setAttribute("aria-busy", String(noteLoading));
+      for (const button of byId("threads").querySelectorAll("button")) {
+        button.disabled = installingDependencies;
+      }
+      updateDependencyControls();
+    }
+
+    function updateDependencyControls() {
+      byId("check-dependencies").disabled = !connected || dependenciesBusy;
+      byId("install-dependencies").disabled = !connected || busy || listLoading || noteLoading || dependenciesBusy ||
+        !dependencyItems.some((item) => !item.available);
+    }
+
+    function setDependencyStatus(message, error = false) {
+      byId("dependency-status").textContent = message;
+      byId("dependency-status").classList.toggle("error", error);
+    }
+
+    async function loadDependencies(install = false) {
+      if (!connected || dependenciesBusy) return;
+      dependenciesBusy = true;
+      installingDependencies = install;
+      updateControls();
+      setDependencyStatus(install ? "Installing missing dependencies..." : "Checking dependencies...");
+      if (install) setStatus("Installing Python dependencies...");
+      try {
+        const result = install
+          ? await callTool("install_dependencies", {}, 125000)
+          : await callTool("dependency_status", {});
+        dependencyItems = result.items;
+        byId("dependency-python").textContent = result.python;
+        byId("dependency-target").textContent = result.site_packages;
+        byId("dependency-environment").hidden = false;
+        byId("dependency-items").replaceChildren(...dependencyItems.map((item) => {
+          const entry = document.createElement("li");
+          const name = document.createElement("strong");
+          name.textContent = item.name;
+          const status = document.createElement("span");
+          status.className = "meta";
+          status.textContent = item.available ? "Available" : "Unavailable";
+          const purpose = document.createElement("p");
+          purpose.className = "meta";
+          purpose.textContent = item.purpose;
+          entry.append(name, status, purpose);
+          return entry;
+        }));
+        if (result.error) setDependencyStatus(result.error, true);
+        else if (dependencyItems.every((item) => item.available)) setDependencyStatus("All dependencies are available.");
+        else if (install) setDependencyStatus("Some dependencies are still missing.", true);
+        else setDependencyStatus("");
+      } catch (error) {
+        dependencyItems = [];
+        setDependencyStatus(error.message, true);
+      } finally {
+        dependenciesBusy = false;
+        installingDependencies = false;
+        if (install) setStatus("");
+        updateControls();
+      }
+    }
+
+    function formatDate(value) {
+      const date = new Date(value);
+      return value && Number.isFinite(date.getTime()) ? dateFormat.format(date) : "";
+    }
+
+    function threadTitle(row) {
+      return row.title?.trim() || "Untitled thread";
+    }
+
+    function threadPreview(row) {
+      const preview = row.preview?.trim();
+      return preview && preview !== row.title?.trim() ? preview : "";
+    }
+
+    function renderRows(query) {
+      const items = rows.map((row) => {
+        const label = document.createElement("span");
+        label.className = "label";
+        label.textContent = threadTitle(row);
+        label.title = label.textContent;
+        const meta = document.createElement("span");
+        meta.className = "meta";
+        meta.textContent = [
+          !row.title?.trim() && row.thread_id.slice(0, 13),
+          formatDate(row.latest_at),
+          row.archived && "Archived",
+        ].filter(Boolean).join(" | ");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.dataset.thread = row.thread_id;
+        button.setAttribute("aria-current", String(activeThread?.thread_id === row.thread_id));
+        button.addEventListener("click", () => openThread(row));
+        button.append(label);
+        const description = threadPreview(row);
+        if (description) {
+          const preview = document.createElement("span");
+          preview.className = "meta preview";
+          preview.textContent = description;
+          button.append(preview);
+        }
+        if (meta.textContent) button.append(meta);
+        const item = document.createElement("li");
+        item.append(button);
+        return item;
+      });
+      if (!items.length) {
+        const item = document.createElement("li");
+        item.className = "empty";
+        item.textContent = query ? "No matching main threads." : "No main-thread notes saved yet.";
+        items.push(item);
+      }
+      byId("threads").replaceChildren(...items);
+      byId("threads").scrollTop = 0;
+      byId("pagination").hidden = pageIndex === 0 && !cursors[1];
+      byId("page").textContent = "Page " + (pageIndex + 1);
+    }
+
+    function updateThreadHeading(row) {
+      byId("detail-heading").textContent = threadTitle(row);
+      byId("detail-key").textContent = row.thread_id;
+      byId("note-archived").hidden = !row.archived;
+    }
+
+    function openThread(row) {
+      activeThread = row;
+      main.dataset.view = "note";
+      for (const button of byId("threads").querySelectorAll("button")) {
+        button.setAttribute("aria-current", String(button.dataset.thread === row.thread_id));
+      }
+      updateThreadHeading(row);
+      byId("reader-empty").hidden = true;
+      byId("reader-header").hidden = false;
+      byId("reader-body").hidden = false;
+      byId("thread-id").open = false;
+      if (compactLayout.matches) byId("detail-heading").focus({preventScroll: true});
+      loadNote();
+    }
+
+    function showDirectory() {
+      main.dataset.view = "directory";
+      const selected = byId("threads").querySelector('[aria-current="true"]');
+      selected?.scrollIntoView({block: "nearest"});
+      (selected || byId("search")).focus({preventScroll: true});
+    }
+
+    function setNoteStatus(message, error = false) {
+      byId("detail-status").textContent = message;
+      byId("detail-status").classList.toggle("error", error);
+      byId("retry-note").hidden = !error;
+      byId("note-feedback").hidden = !message;
+    }
+
+    async function loadNote(preservePosition = false) {
+      if (!activeThread || installingDependencies) return;
+      const threadId = activeThread.thread_id;
+      const reading = ++noteRequest;
+      if (!preservePosition) {
+        byId("reader-body").scrollTop = 0;
+        byId("note").textContent = "";
+        byId("copy-summary").hidden = true;
+        byId("note-date").textContent = "";
+      }
+      byId("copy-status").textContent = "";
+      noteLoading = true;
+      updateControls();
+      setNoteStatus(preservePosition ? "Refreshing note..." : "Loading note...");
+      try {
+        const result = await callTool("handoff_read", {thread_id: threadId});
+        if (reading !== noteRequest) return;
+        byId("note").textContent = result.summary ?? "";
+        byId("copy-summary").hidden = !result.summary;
+        const savedAt = formatDate(result.updated_at);
+        byId("note-date").textContent = result.summary && savedAt ? "Last updated " + savedAt : "";
+        setNoteStatus(result.summary ? "" : "This thread has no saved note.");
+      } catch (error) {
+        if (reading === noteRequest) setNoteStatus(error.message, true);
+      } finally {
+        if (reading === noteRequest) {
+          noteLoading = false;
+          updateControls();
+        }
+      }
+    }
+
+    async function copySummary() {
+      const note = byId("note");
+      const summary = note.textContent;
+      try {
+        await navigator.clipboard.writeText(summary);
+        if (note.textContent === summary) byId("copy-status").textContent = "Copied.";
+      } catch {
+        if (note.textContent !== summary) return;
+        const range = document.createRange();
+        range.selectNodeContents(note);
+        byId("reader-body").focus({preventScroll: true});
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        byId("copy-status").textContent = "Clipboard access unavailable. Use your copy shortcut to copy the selected text.";
+      }
+    }
+
+    async function loadPage(index) {
+      clearTimeout(searchTimer);
+      if (!connected || installingDependencies) return;
+      const revision = ++listRequest;
+      const query = byId("search").value.trim();
+      listLoading = true;
+      updateControls();
+      byId("results-count").textContent = "Loading threads...";
+      try {
+        const cursor = cursors[index];
+        const args = {limit: pageSize};
+        if (cursor) args.cursor = cursor;
+        if (query) args.query = query;
+        const result = await callTool("handoff_list", args);
+        if (listRequest !== revision) return;
+        displayedQuery = query;
+        pageIndex = index;
+        cursors.splice(index + 1, cursors.length, result.next_cursor);
+        rows = result.items;
+        const retained = rows.find((row) => row.thread_id === activeThread?.thread_id);
+        renderRows(query);
+        byId("results-count").textContent = result.total ? result.total + (result.total === 1 ? " thread" : " threads") : "";
+        setStatus("");
+        if (retained) {
+          activeThread = retained;
+          updateThreadHeading(retained);
+        }
+      } catch (error) {
+        if (listRequest !== revision) return;
+        byId("results-count").textContent = "";
+        setStatus(error.message, true);
+      } finally {
+        if (listRequest === revision) {
+          listLoading = false;
+          updateControls();
+        }
+      }
+    }
+
+    async function refresh() {
+      const selected = activeThread?.thread_id;
+      await loadPage(0);
+      if (selected && activeThread?.thread_id === selected) await loadNote(true);
+    }
+
+    async function previewCleanup() {
+      busy = true;
+      updateControls();
+      setCleanupStatus("Checking for deleted threads...");
+      try {
+        const result = await callTool("handoff_cleanup", {});
+        if (result.status !== "ok") throw new Error(result.reason || "Could not verify which threads were deleted.");
+        missingThreads = result.thread_ids;
+        if (!missingThreads.length) {
+          setCleanupStatus(result.index_warning || "No saved data for deleted threads found.", Boolean(result.index_warning));
+          return;
+        }
+        const preview = byId("missing-threads");
+        preview.textContent = missingThreads.join("\n");
+        const count = missingThreads.length;
+        byId("cleanup-description").textContent = count + (count === 1 ? " cleanup candidate." : " cleanup candidates.") +
+          " Thread Memory checks them again before permanently removing saved notes and rollout indexes. Archived threads are kept." +
+          (result.index_warning ? " " + result.index_warning : "");
+        setCleanupStatus("");
+        byId("cleanup-dialog").showModal();
+        preview.scrollTop = 0;
+      } catch (error) {
+        setCleanupStatus(error.message, true);
+      } finally {
+        busy = false;
+        updateControls();
+      }
+    }
+
+    function setCleanupStatus(message, error = false) {
+      byId("cleanup-status").textContent = message;
+      byId("cleanup-status").classList.toggle("error", error);
+    }
+
+    async function confirmCleanup() {
+      if (!missingThreads.length) return;
+      const threadIds = missingThreads;
+      byId("cleanup-dialog").close();
+      busy = true;
+      updateControls();
+      setCleanupStatus("Deleting stored data...");
+      try {
+        const result = await callTool("handoff_cleanup", {thread_ids: threadIds});
+        if (result.status !== "ok") throw new Error(result.reason || "Could not verify which threads were deleted.");
+        const count = result.deleted;
+        const kept = result.kept_thread_ids?.length ?? 0;
+        let message = count ? "Deleted " + count + (count === 1 ? " stored record." : " stored records.")
+          : "No stored data deleted.";
+        if (kept) {
+          message += " Kept data for " + kept + (kept === 1 ? " thread. " : " threads. ") +
+            (result.reason || "Could not verify that surviving forks have independent copies.");
+        } else if (!count) {
+          message += " The listed threads may have changed.";
+        }
+        if (result.index_warning) message += " " + result.index_warning;
+        setCleanupStatus(message, Boolean(result.index_warning));
+        await refresh();
+      } catch (error) {
+        setCleanupStatus(error.message, true);
+      } finally {
+        busy = false;
+        updateControls();
+      }
+    }
+
+    byId("refresh").addEventListener("click", refresh);
+    byId("previous").addEventListener("click", () => loadPage(pageIndex - 1));
+    byId("next").addEventListener("click", () => loadPage(pageIndex + 1));
+    byId("search").addEventListener("input", () => {
+      ++listRequest;
+      clearTimeout(searchTimer);
+      listLoading = true;
+      updateControls();
+      searchTimer = setTimeout(() => loadPage(0), 200);
+    });
+    byId("back-to-threads").addEventListener("click", showDirectory);
+    byId("retry-note").addEventListener("click", () => loadNote(true));
+    byId("copy-summary").addEventListener("click", copySummary);
+    byId("manage").addEventListener("click", () => byId("management-dialog").showModal());
+    byId("close-manager").addEventListener("click", () => byId("management-dialog").close());
+    byId("check-cleanup").addEventListener("click", previewCleanup);
+    byId("cancel-cleanup").addEventListener("click", () => byId("cleanup-dialog").close());
+    byId("cleanup-dialog").addEventListener("close", () => {
+      missingThreads = [];
+      byId("missing-threads").textContent = "";
+    });
+    byId("delete-cleanup").addEventListener("click", confirmCleanup);
+    byId("dependencies").addEventListener("toggle", () => {
+      if (byId("dependencies").open) loadDependencies();
+    });
+    byId("check-dependencies").addEventListener("click", () => loadDependencies());
+    byId("install-dependencies").addEventListener("click", () => loadDependencies(true));
+
+    async function start() {
+      if (host === window) {
+        setStatus("Open Thread Memory in Codex to view local notes.");
+        return;
+      }
+      try {
+        const result = await request("ui/initialize", {
+          appInfo: {name: "thread-memory", version: "1"},
+          appCapabilities: {availableDisplayModes: ["inline", "fullscreen"]},
+          protocolVersion: "2026-01-26",
+        });
+        applyHostContext(result.hostContext);
+        send({method: "ui/notifications/initialized"});
+        connected = true;
+        updateControls();
+        let previousSize;
+        new ResizeObserver(() => {
+          const {width, height} = main.getBoundingClientRect();
+          const dimensions = {width: Math.ceil(width), height: Math.ceil(height)};
+          const size = dimensions.width + ":" + dimensions.height;
+          if (size !== previousSize) {
+            previousSize = size;
+            send({method: "ui/notifications/size-changed", params: dimensions});
+          }
+        }).observe(main);
+        await loadPage(0);
+      } catch (error) {
+        setStatus(error.message, true);
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>

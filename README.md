@@ -9,6 +9,7 @@ Codex plugin marketplace repository. See [Repository Guide](doc/jxx-codex-plugin
 | `task-memory` | Manually invoked with `$task-memory` to maintain resumable task state and task-local artifacts through a plugin-root npm CLI. |
 | `context-window-rollover-reminder` | Reports context usage starting at 200K and every 50K thereafter. Guides context rollover on Windows through PostToolUse reminders at 400K/500K/600K for model slugs starting with `gpt-6.1-` with an expanded context window of roughly 1M, and 300K/350K/400K for all other models. The audit skill reviews actual rollovers for a selected thread and its subagents. |
 | `subagent-reasoning-cap` | Inherits the latest applied thread reasoning effort for `worker` and `explorer` spawns that omit it, capped at `high` on Windows x64. |
+| `thread-memory` | Maintain versioned notes across compaction, copy notes on main-thread forks, start fresh notes for subagents, and search local rollout history with `$thread-memory`. |
 
 ## Repository Layout
 

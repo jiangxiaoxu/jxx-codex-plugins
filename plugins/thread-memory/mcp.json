@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "thread-memory": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-B", "./skills/thread-memory/scripts/rollout_handoff_app.py"],
+      "cwd": ".",
+      "tool_timeout_sec": 120,
+      "env_vars": ["CODEX_HOME", "CODEX_SQLITE_HOME"]
+    }
+  }
+}

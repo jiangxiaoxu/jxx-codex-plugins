@@ -1,0 +1,64 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|compact|fork)$",
+        "hooks": [
+          {
+            "type": "command",
+            "async": true,
+            "command": "python3 -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "commandWindows": "python -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "timeout": 10,
+            "statusMessage": "Checking thread memory"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "async": true,
+            "command": "python3 -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "commandWindows": "python -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "timeout": 10,
+            "statusMessage": "Checking subagent thread memory"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "^(manual|auto)$",
+        "hooks": [
+          {
+            "type": "command",
+            "async": true,
+            "command": "python3 -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "commandWindows": "python -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "timeout": 10,
+            "statusMessage": "Recording subagent compaction"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "async": true,
+            "command": "python3 -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "commandWindows": "python -B \"${PLUGIN_ROOT}/skills/thread-memory/scripts/rollout.py\" hook",
+            "timeout": 10,
+            "statusMessage": "Checking for a context handoff"
+          }
+        ]
+      }
+    ]
+  }
+}

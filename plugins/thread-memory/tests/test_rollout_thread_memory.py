@@ -1,0 +1,301 @@
+import json
+import os
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import unittest
+from contextlib import closing
+from datetime import datetime
+from pathlib import Path
+from unittest.mock import patch
+from uuid import uuid4
+
+
+SCRIPT = (
+    Path(__file__).resolve().parents[1] / "skills" / "thread-memory" / "scripts" / "rollout.py"
+)
+sys.path.insert(0, str(SCRIPT.parent))
+
+import rollout_hook
+from rollout_handoff_store import memory_timestamp, save_handoff
+
+
+class ThreadMemoryTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.home = Path(temp.name)
+        self.sessions = self.home / "sessions"
+        self.sessions.mkdir()
+        self.env = {**os.environ, "CODEX_HOME": str(self.home)}
+
+    def rollout(self, thread, *, forked_from=None, timestamp="2026-01-01T00:00:00Z"):
+        path = self.sessions / f"rollout-2026-01-01T00-00-00-{thread}.jsonl"
+        header = {"id": thread, "session_id": thread, "source": "vscode", "timestamp": timestamp}
+        if forked_from is not None:
+            header["forked_from_id"] = forked_from
+        path.write_text(
+            json.dumps({"type": "session_meta", "payload": header}) + "\n", encoding="utf-8"
+        )
+        return path
+
+    def run_command(self, *args, stdin="", thread=None):
+        return subprocess.run(
+            [sys.executable, "-B", str(SCRIPT), *args, "--codex-home", str(self.home)],
+            input=stdin.encode("utf-8"),
+            env={**self.env, "CODEX_THREAD_ID": thread or ""},
+            capture_output=True,
+        )
+
+    def memory(self, thread, action, stdin="", *, at=None):
+        args = ["memory", action]
+        if at is not None:
+            args.extend(("--at", at))
+        result = self.run_command(*args, stdin=stdin, thread=thread)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return json.loads(result.stdout)
+
+    def assert_no_memory(self, thread):
+        result = self.run_command("memory", "read", thread=thread)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(json.loads(result.stderr)["error"]["code"], "not_found")
+
+    def test_reminder_write_rechecks_window_after_loading_the_note(self):
+        thread = str(uuid4())
+        path = self.rollout(thread)
+        window = rollout_hook.snapshot(path).current
+        saved = rollout_hook.memory(
+            self.home, thread, "write", window=window, summary="Note for the original window",
+            patch=None, at_us=None, limit=10,
+        )
+        self.assertTrue(saved["saved"])
+        initialize = rollout_hook.initialize_thread_memory
+
+        def compact_during_initialization(home, thread_id):
+            note = initialize(home, thread_id)
+            checkpoint = {"type": "compacted", "payload": {"replacement_history": []}}
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(checkpoint) + "\n")
+            rollout_hook.save_memory(home, thread_id, "Note for the new window")
+            return note
+
+        with patch.object(rollout_hook, "initialize_thread_memory", compact_during_initialization):
+            with self.assertRaises(FileNotFoundError):
+                rollout_hook.memory(
+                    self.home, thread, "write", window=window, summary="Late reminder update",
+                    patch=None, at_us=None, limit=10,
+                )
+
+        self.assertEqual(self.memory(thread, "read")["summary"], "Note for the new window")
+
+    def test_reminder_write_does_not_replace_an_edit_committed_after_its_snapshot(self):
+        snapshot = rollout_hook.snapshot
+        for existing in (None, "Original note"):
+            with self.subTest(existing=existing):
+                thread = str(uuid4())
+                path = self.rollout(thread)
+                window = snapshot(path).current
+                if existing is not None:
+                    rollout_hook.save_memory(self.home, thread, existing)
+
+                def write_during_snapshot(*args, **kwargs):
+                    state = snapshot(*args, **kwargs)
+                    rollout_hook.save_memory(self.home, thread, "Concurrent note")
+                    return state
+
+                with patch.object(rollout_hook, "snapshot", write_during_snapshot):
+                    with self.assertRaises(ValueError):
+                        rollout_hook.memory(
+                            self.home, thread, "write", window=window, summary="Late reminder update",
+                            patch=None, at_us=None, limit=10,
+                        )
+
+                self.assertEqual(self.memory(thread, "read")["summary"], "Concurrent note")
+
+    def test_new_note_store_rejects_a_newer_schema_without_modifying_the_note(self):
+        thread = str(uuid4())
+        self.rollout(thread)
+        database = self.home / "state" / "plugins" / "thread-memory" / "handoff.sqlite3"
+        self.assert_no_memory(thread)
+        self.assertFalse(database.exists())
+
+        self.memory(thread, "write", "Keep this note")
+        with closing(sqlite3.connect(database)) as connection:
+            (version,) = connection.execute("PRAGMA user_version").fetchone()
+            self.assertGreater(version, 0)
+            connection.execute(f"PRAGMA user_version = {version + 1}")
+        before = database.read_bytes()
+
+        result = self.run_command("memory", "write", stdin="Do not replace it", thread=thread)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertIn("database schema version", json.loads(result.stderr)["error"]["message"])
+        self.assertEqual(database.read_bytes(), before)
+
+    def test_lazy_nested_forks_copy_the_note_at_birth(self):
+        parent, child, grandchild = (str(uuid4()) for _ in range(3))
+        self.rollout(parent)
+        original = "Goal\nParent at fork\nNext"
+        first = self.memory(parent, "write", original)
+        child_path = self.rollout(child, forked_from=parent, timestamp=first["updated_at"])
+        self.rollout(grandchild, forked_from=child, timestamp=first["updated_at"])
+
+        parent_edit = "Goal\nParent after fork\nNext"
+        later = self.memory(parent, "write", parent_edit)
+        self.assertGreater(
+            datetime.fromisoformat(later["updated_at"].replace("Z", "+00:00")),
+            datetime.fromisoformat(first["updated_at"].replace("Z", "+00:00")),
+        )
+        versions = self.memory(parent, "history")["items"]
+        self.assertEqual(
+            [version["updated_at"] for version in versions],
+            [later["updated_at"], first["updated_at"]],
+        )
+        old_versions = self.memory(parent, "history", at=first["updated_at"])["items"]
+        self.assertEqual(old_versions, [versions[1]])
+        at_fork = self.memory(parent, "read", at=first["updated_at"])
+        self.assertEqual(at_fork["summary"], original)
+        self.assertEqual(at_fork["updated_at"], first["updated_at"])
+
+        self.assertEqual(self.memory(grandchild, "read")["summary"], original)
+        inherited = self.memory(child, "read")
+        self.assertEqual(inherited["summary"], original)
+        self.assertEqual(inherited["updated_at"], first["updated_at"])
+
+        patch = "--- a/memory\n+++ b/memory\n@@ -2 +2 @@\n-Parent at fork\n+Child edits\n"
+        updated = self.memory(child, "patch", patch)
+        self.assertNotEqual(updated["updated_at"], inherited["updated_at"])
+        event = {
+            "hook_event_name": "SessionStart",
+            "source": "fork",
+            "session_id": child,
+            "transcript_path": str(child_path),
+        }
+        result = self.run_command("hook", stdin=json.dumps(event))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.memory(child, "read")["summary"], "Goal\nChild edits\nNext")
+        self.assertEqual(self.memory(parent, "read")["summary"], parent_edit)
+        self.assertEqual(self.memory(grandchild, "read")["summary"], original)
+
+    def test_fork_with_no_memory_never_adopts_a_later_parent_note(self):
+        parent, child = str(uuid4()), str(uuid4())
+        self.rollout(parent)
+        self.rollout(child, forked_from=parent)
+        self.assert_no_memory(child)
+        self.memory(parent, "write", "Parent note after child was created")
+        self.assert_no_memory(child)
+        self.memory(child, "write", "Independent child note")
+        self.assertEqual(self.memory(child, "read")["summary"], "Independent child note")
+
+    def test_nested_forks_preserve_preinitialization_handoff_edits(self):
+        parent, child, first, second, third = (str(uuid4()) for _ in range(5))
+        start = 1_767_225_600_000_000
+        self.rollout(parent)
+        with patch("rollout_handoff_store.time.time_ns", return_value=start * 1_000):
+            rollout_hook.save_memory(self.home, parent, "Original inherited note")
+        self.rollout(child, forked_from=parent, timestamp=memory_timestamp(start + 1))
+        with patch("rollout_handoff_store.time.time_ns", return_value=(start + 2) * 1_000):
+            save_handoff(self.home, child, "initial", "Handoff at fork")
+        fork_time = memory_timestamp(start + 3)
+        self.rollout(first, forked_from=child, timestamp=fork_time)
+        self.rollout(second, forked_from=child, timestamp=fork_time)
+        with patch("rollout_handoff_store.time.time_ns", return_value=(start + 4) * 1_000):
+            save_handoff(self.home, child, "initial", "Later handoff")
+
+        before = self.memory(first, "read")
+        current = self.memory(child, "read")
+        after = self.memory(second, "read")
+        self.assertEqual(current["summary"], "Later handoff")
+        for inherited in (before, after):
+            self.assertEqual(inherited["summary"], "Handoff at fork")
+            self.assertEqual(inherited["updated_at"], memory_timestamp(start + 2))
+            self.assertEqual(inherited["effective_at"], fork_time)
+        self.assertEqual(self.memory(child, "read", at=fork_time)["summary"], "Handoff at fork")
+
+        with patch("rollout_handoff_store.time.time_ns", return_value=(start + 5) * 1_000):
+            save_handoff(self.home, child, "initial", "Handoff after initialization")
+        self.rollout(third, forked_from=child, timestamp=memory_timestamp(start + 6))
+        self.assertEqual(self.memory(third, "read")["summary"], "Later handoff")
+
+    def test_verified_fork_can_start_an_independent_note_when_its_parent_is_unavailable(self):
+        parent, child, grandchild = (str(uuid4()) for _ in range(3))
+        self.rollout(child, forked_from=parent)
+        before_write = 1_767_225_600_000_001
+        earlier = "The child's own handoff before initialization"
+        with patch("rollout_handoff_store.time.time_ns", return_value=before_write * 1_000):
+            save_handoff(self.home, child, "initial", earlier)
+        fork_time = memory_timestamp(before_write)
+        self.rollout(grandchild, forked_from=child, timestamp=fork_time)
+
+        result = self.run_command("memory", "read", thread=child)
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertEqual(result.stdout, b"")
+        self.assertEqual(json.loads(result.stderr)["error"]["code"], "invalid_input")
+
+        summary = "Independent note for the verified child"
+        saved = self.memory(child, "write", summary)
+        self.assertTrue(saved["inheritance_unavailable"])
+        restored = self.memory(child, "read")
+        self.assertEqual(restored["thread_id"], child)
+        self.assertEqual(restored["summary"], summary)
+        self.assertEqual(self.memory(grandchild, "read")["summary"], earlier)
+
+    def test_lazy_fork_inherits_legacy_note_before_same_window_patch(self):
+        parent, child = str(uuid4()), str(uuid4())
+        self.rollout(parent)
+        original = "Goal\nLegacy note at fork\nNext"
+        result = self.run_command("handoff", "write", stdin=original, thread=parent)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        window = json.loads(result.stdout)["window"]
+        database = self.home / "state" / "plugins" / "thread-memory" / "handoff.sqlite3"
+        with closing(sqlite3.connect(database)) as connection:
+            (saved_at,) = connection.execute(
+                "SELECT saved_at FROM handoffs WHERE thread_id = ? AND window = ?",
+                (parent, window),
+            ).fetchone()
+        self.rollout(child, forked_from=parent, timestamp=saved_at)
+
+        patch = "--- a/handoff\n+++ b/handoff\n@@ -2 +2 @@\n-Legacy note at fork\n+Patched later\n"
+        result = self.run_command(
+            "handoff", "patch", "--current", "--window", window, stdin=patch, thread=parent,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        inherited = self.memory(child, "read")
+        self.assertEqual(inherited["summary"], original)
+        self.assertEqual(
+            datetime.fromisoformat(inherited["updated_at"].replace("Z", "+00:00")),
+            datetime.fromisoformat(saved_at.replace("Z", "+00:00")),
+        )
+        self.assertEqual(self.memory(parent, "read")["summary"], "Goal\nPatched later\nNext")
+        self.assertEqual(self.memory(parent, "read", at=saved_at)["summary"], original)
+
+    def test_legacy_note_becomes_stable_thread_memory_across_compactions(self):
+        thread = str(uuid4())
+        rollout = self.rollout(thread)
+        summary = "Legacy handoff for this thread"
+        result = self.run_command("handoff", "write", stdin=summary, thread=thread)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        adopted = self.memory(thread, "read")
+        self.assertEqual(adopted["summary"], summary)
+
+        event = {
+            "hook_event_name": "SessionStart",
+            "source": "compact",
+            "session_id": thread,
+            "transcript_path": str(rollout),
+        }
+        for checkpoint in ("first", "second"):
+            with rollout.open("a", encoding="utf-8") as stream:
+                row = {"type": "compacted", "payload": {"replacement_history": [], "message": checkpoint}}
+                stream.write(json.dumps(row) + "\n")
+            result = self.run_command("hook", stdin=json.dumps(event))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            context = json.loads(result.stdout)["hookSpecificOutput"]["additionalContext"]
+            self.assertIn("memory read", context)
+            self.assertNotIn(summary, context)
+            self.assertEqual(self.memory(thread, "read"), adopted)
+
+
+if __name__ == "__main__":
+    unittest.main()
