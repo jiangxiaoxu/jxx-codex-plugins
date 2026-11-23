@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from base64 import urlsafe_b64encode
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from hashlib import blake2s
@@ -31,15 +32,19 @@ REMINDER_TAG = "thread_memory_reminder"
 REMINDER_OPEN = f"<{REMINDER_TAG}>\n"
 REMINDER_CLOSE = f"\n</{REMINDER_TAG}>"
 REMINDER_TAG_PREFIX = re.compile(rf"</?{REMINDER_TAG}")
+REMINDER_MARKER_PREFIX = "Notify ID: ["
 REMINDER_LEVEL = r"(?:100|[1-9][0-9]?|0)"
+REMINDER_LEVELS = rf"{REMINDER_LEVEL}(?:,{REMINDER_LEVEL}){{0,100}}"
 REMINDER_MARKER = re.compile(
-    rf"\n\[thread-memory:({REMINDER_LEVEL}(?:,{REMINDER_LEVEL}){{0,100}})\]\Z"
+    rf"\n{re.escape(REMINDER_MARKER_PREFIX)}({REMINDER_LEVELS}):([A-Za-z0-9_-]{{8}})\]\Z"
 )
-REMINDER_WINDOW = re.compile(
+LEGACY_REMINDER_MARKER = re.compile(rf"\n\[thread-memory:({REMINDER_LEVELS})\]\Z")
+LEGACY_REMINDER_WINDOW = re.compile(
     r"`memory write --window ([0-9a-f]{24}:(?:start|[0-9]{1,20}:[0-9a-f]{16}))`"
 )
 USAGE_KINDS = {"token_usage_record", "turn_context"}
-REPLAY_EVENTS = {"token_count", "task_started", "turn_started", "thread_settings_applied"}
+TURN_START_EVENTS = {"task_started", "turn_started"}
+REPLAY_EVENTS = TURN_START_EVENTS | {"token_count", "thread_settings_applied"}
 EVENT_KINDS = REPLAY_EVENTS | {"thread_rolled_back"}
 
 
@@ -162,6 +167,12 @@ def _usable_sample(
     )
 
 
+def reminder_window_id(window: str) -> str:
+    """Encode the 48-bit window fingerprint used in a thread-local reminder receipt."""
+    digest = blake2s(window.encode("ascii"), digest_size=6).digest()
+    return urlsafe_b64encode(digest).decode("ascii")
+
+
 def _collect_reminder_receipts(payload: object, receipts: dict[str, set[int]]) -> None:
     if not isinstance(payload, dict) or (
         payload.get("type") != "message" or payload.get("role") != "developer"
@@ -186,26 +197,39 @@ def _collect_reminder_receipts(payload: object, receipts: dict[str, set[int]]) -
         if not isinstance(part, dict) or part.get("type") != "input_text":
             continue
         text = part.get("text")
-        if not isinstance(text, str):
-            continue
+        if isinstance(text, str) and (receipt := _reminder_receipt(text)):
+            receipt_id, levels = receipt
+            receipts.setdefault(receipt_id, set()).update(levels)
+
+
+def _reminder_receipt(text: str) -> tuple[str, set[int]] | None:
+    wrapped = text.startswith(REMINDER_OPEN) and text.endswith(REMINDER_CLOSE)
+    if wrapped:
+        start, end = len(REMINDER_OPEN), len(text) - len(REMINDER_CLOSE)
+    else:
         start, end = 0, len(text)
-        if REMINDER_TAG_PREFIX.search(text):
-            if not text.startswith(REMINDER_OPEN) or not text.endswith(REMINDER_CLOSE):
-                continue
-            start = len(REMINDER_OPEN)
-            end -= len(REMINDER_CLOSE)
-            if REMINDER_TAG_PREFIX.search(text, start, end):
-                continue
-        marker = REMINDER_MARKER.search(text, start, end)
+    if REMINDER_TAG_PREFIX.search(text, start, end):
+        return None
+    marker = REMINDER_MARKER.search(text, start, end)
+    if marker is not None:
+        if not wrapped:
+            return None
+        tiers, receipt_id = marker.groups()
+    else:
+        # Previously recorded reminders carried the complete window in the command.
+        marker = LEGACY_REMINDER_MARKER.search(text, start, end)
         if marker is None:
-            continue
-        window = REMINDER_WINDOW.search(text, start, marker.start())
+            return None
+        window = LEGACY_REMINDER_WINDOW.search(text, start, marker.start())
         if window is None:
-            continue
-        raw_levels = marker[1].split(",")
-        levels = {int(level) for level in raw_levels}
-        if len(levels) == len(raw_levels):
-            receipts.setdefault(window[1], set()).update(levels)
+            return None
+        tiers = marker[1]
+        receipt_id = reminder_window_id(window[1])
+    raw_levels = tiers.split(",")
+    levels = {int(level) for level in raw_levels}
+    if len(levels) != len(raw_levels):
+        return None
+    return receipt_id, levels
 
 
 def snapshot(
@@ -400,7 +424,8 @@ def _snapshot(
         if (
             collect_reminder_receipts and kind == "response_item" and not clipped
             and b'"developer"' in raw[:PREFIX_BYTES]
-            and b"[thread-memory:" in raw and b'"hooks.additional_context"' in raw
+            and b'"hooks.additional_context"' in raw
+            and (REMINDER_MARKER_PREFIX.encode("ascii") in raw or b"[thread-memory:" in raw)
         ):
             try:
                 candidate = payload or json.loads(raw)["payload"]
@@ -430,7 +455,7 @@ def _snapshot(
                     "last_token_usage": {"total_tokens": native.used},
                     "model_context_window": native.capacity,
                 }}
-        elif event in {"task_started", "turn_started"}:
+        elif event in TURN_START_EVENTS:
             capacity = _positive(payload.get("model_context_window"))
             turn = payload.get("turn_id")
             keep = capacity is not None and latest_capacity is None
@@ -510,7 +535,7 @@ def _snapshot(
         if replay_start is not None and checkpoint is not None:
             current = checkpoint.window
             boundary = checkpoint.boundary
-            receipts.setdefault(current, set()).update(checkpoint.receipts)
+            receipts.setdefault(reminder_window_id(current), set()).update(checkpoint.receipts)
         elif at_start:
             current = start_key
         else:
@@ -546,7 +571,7 @@ def _snapshot(
             omitted_models=coverage.omitted_models or omitted_turn_models,
             omitted_capacities=coverage.omitted_capacities or any(turn != marked_turn for turn in turn_capacities),
         )
-    received = frozenset(receipts.get(current, ()))
+    received = frozenset(receipts.get(reminder_window_id(current), ()))
     # A per-response record can land before PostToolUse runs. The native event
     # for the same response can land later, after in-flight tools finish.
     for usage in (response, native):

@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "skills" / "thread-memory" / "scripts"))
 
-from rollout_handoff_snapshot import reminder_snapshot, snapshot
+from rollout_handoff_snapshot import reminder_snapshot, reminder_window_id, snapshot
 from rollout_handoff_store import load_rollout_checkpoint
 from rollout_hook import hook_instructions
 
@@ -33,8 +33,14 @@ def usage(tokens, *, ordinal=None):
     )
 
 
-def receipt(window, level, *, ordinal=None, wrapper="{}"):
-    text = wrapper.format(f"Write the note with `memory write --window {window}`.\n[thread-memory:{level}]")
+def receipt(
+    window, level, *, ordinal=None,
+    wrapper="<thread_memory_reminder>\n{}\n</thread_memory_reminder>",
+    context_kind="hooks.additional_context", provenance_type="harness",
+):
+    text = wrapper.format(
+        f"Use $thread-memory to update the current note.\nNotify ID: [{level}:{reminder_window_id(window)}]"
+    )
     return record(
         "response_item",
         {
@@ -45,8 +51,8 @@ def receipt(window, level, *, ordinal=None, wrapper="{}"):
                 "text": text,
             }],
             "internal_chat_message_metadata_passthrough": {
-                "content_item_kinds": ["hooks.additional_context"],
-                "content_item_metadata": [{"provenance": {"type": "harness", "hook": True}}],
+                "content_item_kinds": [context_kind],
+                "content_item_metadata": [{"provenance": {"type": provenance_type, "hook": True}}],
             },
         },
         ordinal=ordinal,
@@ -125,7 +131,7 @@ class IncrementalRolloutScanTest(unittest.TestCase):
             self.assertEqual(state.used, 310_000)
             self.assertEqual(state.received_reminder_levels, {65})
 
-    def test_tagged_receipt_requires_a_complete_reminder_block(self):
+    def test_receipt_requires_a_complete_trusted_reminder_block(self):
         self.append(usage(315_000))
         start, checkpoint = self.compare_scan()
         self.assertTrue(checkpoint)
@@ -142,7 +148,11 @@ class IncrementalRolloutScanTest(unittest.TestCase):
                 incomplete, checkpoint = self.compare_scan(checkpoint)
                 self.assertFalse(incomplete.received_reminder_levels)
 
-        self.append(receipt(start.current, 80, wrapper="<thread_memory_reminder>\n{}\n</thread_memory_reminder>"))
+        self.append(
+            receipt(start.current, 65, context_kind="developer.instructions"),
+            receipt(start.current, 65, provenance_type="user"),
+            receipt(start.current, 80),
+        )
         complete, _ = self.compare_scan(checkpoint)
         self.assertEqual(complete.received_reminder_levels, {80})
 
@@ -231,8 +241,8 @@ class IncrementalRolloutScanTest(unittest.TestCase):
             "model": model,
         }
         settings = {
-            "THREAD_MEMORY_ASYNC_START_TOKENS": "325000",
-            "THREAD_MEMORY_HANDOFF_LEAD_TOKENS": "15000",
+            "THREAD_MEMORY_ASYNC_START_TOKENS": "355000",
+            "THREAD_MEMORY_HANDOFF_LEAD_TOKENS": "45000",
         }
         total = 0
         open_path = Path.open

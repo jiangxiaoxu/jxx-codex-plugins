@@ -19,9 +19,9 @@ $patch | python $cli memory patch
 python $cli memory read | jq -er '.summary'
 ```
 
-The note belongs to the thread across compaction. A main-thread fork starts with its own copy as of its recorded creation time. Subagents start with an empty note, including when they inherit chat history. `memory read` returns the latest note and `.updated_at`. Use `memory history --limit 5` for revision times. Pass a revision's `.effective_at` or another RFC 3339 time to `memory read --at TIME`.
+The note belongs to the thread across compaction. A main-thread fork starts with its own copy as of its recorded creation time. Subagents start with an empty note, including when they inherit chat history. `memory read` returns the latest note and `.updated_at`. Use `memory history --limit 5` to find an `.effective_at` timestamp, then use `memory read --at TIME` to read the note as of that time.
 
-Pass the hook's `--window KEY` to a requested write or patch. Patches require exact matching lines. Writes over 8,192 UTF-8 bytes save a truncated note and report `.truncated`. If the user requested a save before manual compaction, confirm success before they run `/compact`.
+Use the same commands when a hook asks you to update the note. Patches require exact matching lines. Writes over 8,192 UTF-8 bytes save a truncated note and report `.truncated`. If the user requested a save before manual compaction, confirm success before they run `/compact`.
 
 ## Rollout queries
 

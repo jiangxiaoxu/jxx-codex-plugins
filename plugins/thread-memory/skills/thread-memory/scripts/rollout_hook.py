@@ -5,7 +5,14 @@ from pathlib import Path
 from uuid import UUID
 
 from rollout_handoff_diff import apply_handoff_diff
-from rollout_handoff_snapshot import REMINDER_CLOSE, REMINDER_OPEN, reminder_snapshot, snapshot
+from rollout_handoff_snapshot import (
+    REMINDER_CLOSE,
+    REMINDER_MARKER_PREFIX,
+    REMINDER_OPEN,
+    reminder_snapshot,
+    reminder_window_id,
+    snapshot,
+)
 from rollout_handoff_store import (
     claim_reminder,
     load_handoff,
@@ -200,7 +207,7 @@ def _compaction_reminder(request: dict, home: Path, path: Path, thread_id: str) 
         return None
     context = (
         "The current context window may be compressed soon. Use $thread-memory to update "
-        f"the thread note with `memory write --window {state.current}`."
+        "the current thread note."
     )
     if any(stage != ReminderStage.FIRST for _, stage in notices):
         context += (
@@ -214,7 +221,8 @@ def _compaction_reminder(request: dict, home: Path, path: Path, thread_id: str) 
         home, thread_id, "reminder_context_prepared", window=state.current,
         stages=[[level, int(stage)] for level, stage in notices], **usage,
     )
-    return f"{REMINDER_OPEN}{context}\n[thread-memory:{levels}]{REMINDER_CLOSE}"
+    receipt = f"{REMINDER_MARKER_PREFIX}{levels}:{reminder_window_id(state.current)}]"
+    return f"{REMINDER_OPEN}{context}\n{receipt}{REMINDER_CLOSE}"
 
 
 def hook_instructions(request: dict, home: Path) -> str | None:
@@ -304,7 +312,7 @@ def patch_note(summary: str, patch: str) -> str:
 
 
 def memory(
-    home: Path, thread: str | None, action: str, *, window: str | None,
+    home: Path, thread: str | None, action: str, *,
     summary: str | None, patch: str | None, at_us: int | None, limit: int,
 ) -> dict:
     session_id = _thread_id(thread)
@@ -327,31 +335,24 @@ def memory(
             reason = " at or before the requested time" if at_us is not None else ""
             raise FileNotFoundError(f"no thread note was saved{reason}")
         return {
-            "thread_id": thread_id, "summary": note.summary, "revision": note.revision,
+            "thread_id": thread_id, "summary": note.summary,
             "updated_at": memory_timestamp(note.updated_us),
             "effective_at": memory_timestamp(note.effective_us),
         }
 
-    expected = None
     if patch is not None:
         if current is None or current.summary is None:
             raise FileNotFoundError("no thread note was saved to patch")
         summary = patch_note(current.summary, patch)
-        expected = current.revision
     assert summary is not None
-    if window is not None:
-        path = find_rollout(home, thread_id, thread=True)
-        state = snapshot(path, include_previous=False) if path is not None else None
-        if state is None or state.current != window:
-            raise FileNotFoundError("memory reminder window is no longer active. Read the thread note again.")
-        expected = current.revision if current is not None else 0
+    expected = current.revision if current is not None else 0
     note = save_memory(home, thread_id, summary, expected_revision=expected)
     if note is None:
         if patch is not None:
             raise ValueError("thread note changed while applying the patch; read it again")
-        raise ValueError("thread note changed before saving the reminder update. Read the thread note again.")
+        raise ValueError("thread note changed before saving. Read the thread note again.")
     result = {
-        "saved": True, "thread_id": thread_id, "revision": note.revision,
+        "saved": True, "thread_id": thread_id,
         "updated_at": memory_timestamp(note.updated_us), "bytes": len(summary.encode("utf-8")),
     }
     if inheritance_error is not None:

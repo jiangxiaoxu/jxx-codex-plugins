@@ -34,11 +34,11 @@ class HandoffThresholdTest(unittest.TestCase):
             }
             (home / "models_cache.json").write_text(json.dumps({"models": [model]}), encoding="utf-8")
             self.assertIsNone(reminder_plan(home, "unverified-model"))
-            standard = ((65, 310_000), (80, 385_000))
+            standard = ((65, 280_000), (80, 355_000))
             cases = (
                 ("", standard),
                 ("model_async_compact_threshold_percent = 65\n", standard),
-                ("model_async_compact_threshold_percent = 70\n", ((65, 310_000), (70, 335_000), (80, 385_000))),
+                ("model_async_compact_threshold_percent = 70\n", ((65, 280_000), (70, 305_000), (80, 355_000))),
             )
             for settings, expected in cases:
                 with self.subTest(settings=settings):
@@ -53,7 +53,7 @@ class HandoffThresholdTest(unittest.TestCase):
             with patch.dict(os.environ, {"THREAD_MEMORY_ASYNC_START_TOKENS": "350000"}):
                 plan = reminder_plan(home, "fixture-model")
                 self.assertIsNotNone(plan)
-                self.assertEqual(plan.levels, ((0, 335_000),))
+                self.assertEqual(plan.levels, ((0, 305_000),))
                 self.assertIsNone(plan.usable_window)
 
     def test_stages_are_relative_to_startup_tokens(self):
@@ -62,12 +62,12 @@ class HandoffThresholdTest(unittest.TestCase):
         ):
             plan = reminder_plan(Path(directory), None)
             cases = (
-                (334_999, ()),
-                (335_000, ((0, ReminderStage.FIRST),)),
-                (339_999, ((0, ReminderStage.FIRST),)),
-                (340_000, ((0, ReminderStage.CHECK),)),
-                (343_999, ((0, ReminderStage.CHECK),)),
-                (344_000, ((0, ReminderStage.FINAL_CHECK),)),
+                (304_999, ()),
+                (305_000, ((0, ReminderStage.FIRST),)),
+                (309_999, ((0, ReminderStage.FIRST),)),
+                (310_000, ((0, ReminderStage.CHECK),)),
+                (313_999, ((0, ReminderStage.CHECK),)),
+                (314_000, ((0, ReminderStage.FINAL_CHECK),)),
             )
             for used, expected in cases:
                 with self.subTest(used=used):
@@ -75,17 +75,17 @@ class HandoffThresholdTest(unittest.TestCase):
 
     def test_custom_lead_keeps_only_checks_after_the_first_reminder(self):
         with tempfile.TemporaryDirectory() as directory, patch.dict(
-            os.environ, {START_TOKENS_ENV: "350000", LEAD_TOKENS_ENV: "10000"}, clear=True
+            os.environ, {START_TOKENS_ENV: "350000", LEAD_TOKENS_ENV: "40000"}, clear=True
         ):
             home = Path(directory)
             plan = reminder_plan(home, None)
-            self.assertEqual(plan.reached(340_000), ((0, ReminderStage.FIRST),))
-            self.assertEqual(plan.reached(344_000), ((0, ReminderStage.FINAL_CHECK),))
+            self.assertEqual(plan.reached(310_000), ((0, ReminderStage.FIRST),))
+            self.assertEqual(plan.reached(314_000), ((0, ReminderStage.FINAL_CHECK),))
 
-            os.environ[LEAD_TOKENS_ENV] = "6000"
+            os.environ[LEAD_TOKENS_ENV] = "36000"
             plan = reminder_plan(home, None)
-            self.assertEqual(plan.reached(343_999), ())
-            self.assertEqual(plan.reached(349_000), ((0, ReminderStage.FIRST),))
+            self.assertEqual(plan.reached(313_999), ())
+            self.assertEqual(plan.reached(319_000), ((0, ReminderStage.FIRST),))
 
 
 if __name__ == "__main__":

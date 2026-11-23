@@ -261,14 +261,13 @@ def memory_history(
             params += (at_us,)
         return [
             {
-                "revision": revision,
                 "updated_at": memory_timestamp(updated_us),
                 "effective_at": memory_timestamp(effective_us),
                 "bytes": size,
             }
-            for revision, updated_us, effective_us, size in connection.execute(
+            for updated_us, effective_us, size in connection.execute(
                 f"""
-                SELECT revision, updated_us, effective_us, length(CAST(summary AS BLOB))
+                SELECT updated_us, effective_us, length(CAST(summary AS BLOB))
                 FROM memory_revisions
                 WHERE {scope}
                 ORDER BY effective_us DESC, revision DESC LIMIT ?

@@ -554,9 +554,8 @@ def parse_args() -> argparse.Namespace:
     memory_cmd = commands.add_parser("memory", help="maintain one durable note per thread")
     memory_cmd.add_argument("action", choices=("read", "write", "patch", "history"))
     memory_cmd.add_argument("--thread", help="thread UUID (defaults to CODEX_THREAD_ID)")
-    memory_cmd.add_argument("--at", type=date_value, help="read or list revisions at or before this timestamp")
-    memory_cmd.add_argument("--limit", type=positive, help="maximum history revisions (default: 10)")
-    memory_cmd.add_argument("--window", help="active window key supplied by a reminder for a write or patch")
+    memory_cmd.add_argument("--at", type=date_value, help="read or list versions at or before this timestamp")
+    memory_cmd.add_argument("--limit", type=positive, help="maximum history versions (default: 10)")
     diagnostics_cmd = commands.add_parser("diagnostics", help="read recent Thread Memory hook decisions")
     diagnostics_cmd.add_argument("--thread", help="thread UUID (defaults to CODEX_THREAD_ID)")
     diagnostics_cmd.add_argument("--limit", type=positive, default=20, help="maximum number of events (default: 20)")
@@ -578,8 +577,6 @@ def parse_args() -> argparse.Namespace:
             parser.error("memory --at requires read or history")
         if args.limit is not None and (args.action != "history" or args.limit > 100):
             parser.error("memory --limit requires history and a value from 1 to 100")
-        if args.window is not None and args.action not in {"write", "patch"}:
-            parser.error("memory --window requires write or patch")
     if (
         getattr(args, "since", None) is not None
         and args.until is not None
@@ -902,7 +899,7 @@ def main() -> int:
                     epoch = datetime(1970, 1, 1, tzinfo=timezone.utc)
                     at_us = (args.at - epoch) // timedelta(microseconds=1)
                 result = memory(
-                    args.codex_home, thread, args.action, window=args.window,
+                    args.codex_home, thread, args.action,
                     summary=summary, patch=patch, at_us=at_us, limit=args.limit or 10,
                 )
             else:

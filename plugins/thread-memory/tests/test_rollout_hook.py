@@ -12,6 +12,11 @@ from uuid import uuid4
 
 PLUGIN = Path(__file__).resolve().parents[1]
 SCRIPT = PLUGIN / "skills" / "thread-memory" / "scripts" / "rollout.py"
+sys.path.insert(0, str(SCRIPT.parent))
+
+from rollout_handoff_snapshot import snapshot
+
+
 HISTORY = "private historical chat to exclude from hook guidance"
 MAINTENANCE_GUIDANCE = (
     "<thread_memory_maintenance>\n"
@@ -354,61 +359,60 @@ class RolloutHookTest(unittest.TestCase):
     def test_usage_stays_silent_until_the_first_compaction_reminder(self):
         self.env["THREAD_MEMORY_ASYNC_START_TOKENS"] = "500000"
         request = self.start_reminder_window()
-        for tokens in (100_000, 200_000, 300_000, 400_000, 484_999):
+        for tokens in (100_000, 200_000, 300_000, 400_000, 454_999):
             with self.subTest(tokens=tokens):
                 self.append_usage(tokens)
                 self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
-        self.append_usage(485_000)
+        self.append_usage(455_000)
         self.reminder_context(self.invoke(request, check=True).stdout, "0")
 
     @unittest.skipIf(sys.version_info < (3, 11), "automatic threshold needs tomllib")
     def test_subagent_checks_each_reminder_tier_for_delivery(self):
         request = self.start_reminder_window(child=True)
-        self.append_usage(385_000, capacity=499_999)
+        self.append_usage(355_000, capacity=499_999)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
-        self.append_usage(309_999)
+        self.append_usage(279_999)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
-        self.append_usage(310_000)
+        self.append_usage(280_000)
         first = self.reminder_context(self.invoke(request, check=True).stdout, "65")
         self.assertIn("may be compressed soon", first)
-        self.assertRegex(first, r"memory write --window [A-Za-z0-9_.:-]+")
         receipt_offset = self.transcript.stat().st_size
         self.record_reminder(first)
-        self.append_usage(315_000)
+        self.append_usage(285_000)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
         # Keep the window key and remove the already observed receipt from the fixture.
         with self.transcript.open("r+b") as stream:
             stream.truncate(receipt_offset)
-        for tokens in (319_000, 384_999):
+        for tokens in (289_000, 354_999):
             self.append_usage(tokens)
             self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
-        self.append_usage(385_000)
+        self.append_usage(355_000)
         self.reminder_context(self.invoke(request, check=True).stdout, "80")
-        self.append_usage(390_000)
+        self.append_usage(360_000)
         follow_up = self.reminder_context(self.invoke(request, check=True).stdout, "80")
         self.record_reminder(follow_up)
-        self.append_usage(394_000)
+        self.append_usage(364_000)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
         diagnostics = self.diagnostics(request["agent_id"])
         self.assertEqual(len({item["window"] for item in diagnostics}), 1)
         self.assertEqual(
             [(item["event"], item["details"]) for item in diagnostics],
             [
-                ("reminder_receipt_observed", {"used": 394_000, "capacity": 500_000, "stages": [[80, 3]]}),
-                ("reminder_context_prepared", {"used": 390_000, "capacity": 500_000, "stages": [[80, 1]]}),
-                ("reminder_context_prepared", {"used": 385_000, "capacity": 500_000, "stages": [[80, 0]]}),
-                ("reminder_receipt_observed", {"used": 315_000, "capacity": 500_000, "stages": [[65, 3]]}),
-                ("reminder_context_prepared", {"used": 310_000, "capacity": 500_000, "stages": [[65, 0]]}),
+                ("reminder_receipt_observed", {"used": 364_000, "capacity": 500_000, "stages": [[80, 3]]}),
+                ("reminder_context_prepared", {"used": 360_000, "capacity": 500_000, "stages": [[80, 1]]}),
+                ("reminder_context_prepared", {"used": 355_000, "capacity": 500_000, "stages": [[80, 0]]}),
+                ("reminder_receipt_observed", {"used": 285_000, "capacity": 500_000, "stages": [[65, 3]]}),
+                ("reminder_context_prepared", {"used": 280_000, "capacity": 500_000, "stages": [[65, 0]]}),
             ],
         )
 
     @unittest.skipIf(sys.version_info < (3, 11), "automatic threshold needs tomllib")
     def test_main_thread_retries_missing_prompt_only_at_checkpoints(self):
         request = self.start_reminder_window()
-        self.append_usage(310_000)
+        self.append_usage(280_000)
         first = self.reminder_context(self.invoke(request, check=True).stdout, "65")
         follow_up_notice = "This is a follow-up reminder and may repeat an earlier prompt."
         self.assertNotIn(follow_up_notice, first)
@@ -421,10 +425,10 @@ class RolloutHookTest(unittest.TestCase):
                 "type": "function_call_output", "call_id": "call_echo", "output": first,
             }),
         )
-        self.append_usage(314_999)
+        self.append_usage(284_999)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
-        self.append_usage(315_000)
+        self.append_usage(285_000)
         with ThreadPoolExecutor(max_workers=2) as executor:
             outputs = list(executor.map(
                 lambda index: self.invoke(
@@ -437,9 +441,9 @@ class RolloutHookTest(unittest.TestCase):
         retry = self.reminder_context(prompts[0], "65")
         self.assertIn(follow_up_notice, retry)
 
-        self.append_usage(318_999)
+        self.append_usage(288_999)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
-        self.append_usage(319_000)
+        self.append_usage(289_000)
         final = self.reminder_context(self.invoke(request, check=True).stdout, "65")
         self.assertIn(follow_up_notice, final)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
@@ -447,18 +451,19 @@ class RolloutHookTest(unittest.TestCase):
     @unittest.skipIf(sys.version_info < (3, 11), "automatic threshold needs tomllib")
     def test_reminder_coalesces_crossed_tiers_and_checks_only_current_window(self):
         request = self.start_reminder_window()
-        self.append_usage(385_000)
+        self.append_usage(355_000)
         prompt = self.reminder_context(self.invoke(request, check=True).stdout, "65,80")
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
         self.record_reminder(prompt)
-        for tokens in (390_000, 394_000):
+        for tokens in (360_000, 364_000):
             self.append_usage(tokens)
             self.assertEqual(self.invoke(request, check=True).stdout, b"")
 
         self.append_records(("compacted", {"replacement_history": []}))
-        self.append_usage(310_000)
+        self.append_usage(280_000)
         self.reminder_context(self.invoke(request, check=True).stdout, "65")
-        self.append_usage(315_000)
+        self.record_reminder(prompt)
+        self.append_usage(285_000)
         self.reminder_context(self.invoke(request, check=True).stdout, "65")
 
     def start_reminder_window(self, *, child=False):
@@ -520,7 +525,11 @@ class RolloutHookTest(unittest.TestCase):
         self.assertEqual(output["hookEventName"], "PostToolUse")
         context = output["additionalContext"]
         self.assertTrue(context.startswith("<thread_memory_reminder>\n"), context)
-        self.assertTrue(context.endswith(f"\n[thread-memory:{levels}]\n</thread_memory_reminder>"), context)
+        self.assertIn("$thread-memory", context)
+        self.assertNotIn("--window", context)
+        self.assertRegex(
+            context, rf"\nNotify ID: \[{levels}:[A-Za-z0-9_-]{{8}}\]\n</thread_memory_reminder>\Z"
+        )
         return context
 
     def record_reminder(self, context):
@@ -742,12 +751,12 @@ class RolloutHookTest(unittest.TestCase):
             turn_id=turn_id,
         )
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
-        self.append_usage(309_999)
+        self.append_usage(279_999)
         self.assertEqual(self.invoke(request, check=True).stdout, b"")
         self.append_records(
             (
                 "token_usage_record",
-                {"turn_id": turn_id, "usage": {"total_tokens": 310_000}},
+                {"turn_id": turn_id, "usage": {"total_tokens": 280_000}},
             )
         )
         self.assertEqual(
@@ -767,13 +776,8 @@ class RolloutHookTest(unittest.TestCase):
             )
         prompts = [output for output in outputs if output]
         self.assertEqual(len(prompts), 1, outputs)
-        output = json.loads(prompts[0])["hookSpecificOutput"]
-        self.assertEqual(output["hookEventName"], "PostToolUse")
-        context = output["additionalContext"]
-        self.assertIn("memory write", context)
-        match = re.search(r"--window\s+[\"']?([A-Za-z0-9_.:-]+)", context)
-        self.assertIsNotNone(match, context)
-        window = match.group(1)
+        self.reminder_context(prompts[0], "65")
+        window = snapshot(self.transcript, include_previous=False).current
 
         summary = "Next: review the saved result for \u76ee\u6807."
         # A crash can leave a partial checkpoint ending in the nested item's braces.

@@ -18,6 +18,7 @@ SCRIPT = (
 sys.path.insert(0, str(SCRIPT.parent))
 
 import rollout_hook
+from rollout_handoff_snapshot import reminder_window_id, snapshot
 from rollout_handoff_store import memory_timestamp, save_handoff
 
 
@@ -61,53 +62,73 @@ class ThreadMemoryTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertEqual(json.loads(result.stderr)["error"]["code"], "not_found")
 
-    def test_reminder_write_rechecks_window_after_loading_the_note(self):
+    def append(self, path, kind, payload):
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({"type": kind, "payload": payload}) + "\n")
+
+    def append_reminder(self, path, window):
+        context = (
+            "<thread_memory_reminder>\n"
+            "The current context window may be compressed soon. Use $thread-memory to update the thread note.\n"
+            f"Notify ID: [65:{reminder_window_id(window)}]\n"
+            "</thread_memory_reminder>"
+        )
+        self.append(path, "response_item", {
+            "type": "message",
+            "role": "developer",
+            "content": [{"type": "input_text", "text": context}],
+            "internal_chat_message_metadata_passthrough": {
+                "content_item_kinds": ["hooks.additional_context"],
+                "content_item_metadata": [{"provenance": {"type": "harness", "hook": True}}],
+            },
+        })
+
+    def test_note_edits_continue_after_compaction_and_late_reminders(self):
         thread = str(uuid4())
         path = self.rollout(thread)
-        window = rollout_hook.snapshot(path).current
-        saved = rollout_hook.memory(
-            self.home, thread, "write", window=window, summary="Note for the original window",
-            patch=None, at_us=None, limit=10,
-        )
-        self.assertTrue(saved["saved"])
-        initialize = rollout_hook.initialize_thread_memory
+        previous = snapshot(path).current
+        self.append_reminder(path, previous)
+        self.memory(thread, "write", "Original note")
 
-        def compact_during_initialization(home, thread_id):
-            note = initialize(home, thread_id)
-            checkpoint = {"type": "compacted", "payload": {"replacement_history": []}}
-            with path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(checkpoint) + "\n")
-            rollout_hook.save_memory(home, thread_id, "Note for the new window")
-            return note
+        self.append(path, "compacted", {"replacement_history": []})
+        self.memory(thread, "write", "Updated after compaction")
 
-        with patch.object(rollout_hook, "initialize_thread_memory", compact_during_initialization):
-            with self.assertRaises(FileNotFoundError):
-                rollout_hook.memory(
-                    self.home, thread, "write", window=window, summary="Late reminder update",
-                    patch=None, at_us=None, limit=10,
-                )
+        self.append_reminder(path, previous)
+        diff = "--- a/note\n+++ b/note\n@@ -1 +1 @@\n-Updated after compaction\n+Edited note\n"
+        self.memory(thread, "patch", diff)
+        self.assertEqual(self.memory(thread, "read")["summary"], "Edited note")
 
-        self.assertEqual(self.memory(thread, "read")["summary"], "Note for the new window")
+    def test_saved_note_can_be_written_when_indexed_rollout_is_missing(self):
+        thread = str(uuid4())
+        self.env["CODEX_SQLITE_HOME"] = str(self.home)
+        self.rollout(thread)
+        self.memory(thread, "write", "Original note")
+        with closing(sqlite3.connect(self.home / "state_5.sqlite")) as connection, connection:
+            connection.execute("CREATE TABLE threads (id TEXT, rollout_path TEXT, history_mode TEXT)")
+            connection.execute(
+                "INSERT INTO threads VALUES (?, ?, 'paginated')",
+                (thread, str(self.sessions / "missing.jsonl")),
+            )
+        self.memory(thread, "write", "Updated note")
+        self.assertEqual(self.memory(thread, "read")["summary"], "Updated note")
 
-    def test_reminder_write_does_not_replace_an_edit_committed_after_its_snapshot(self):
-        snapshot = rollout_hook.snapshot
+    def test_memory_write_does_not_replace_a_concurrent_edit(self):
+        save = rollout_hook.save_memory
         for existing in (None, "Original note"):
             with self.subTest(existing=existing):
                 thread = str(uuid4())
-                path = self.rollout(thread)
-                window = snapshot(path).current
+                self.rollout(thread)
                 if existing is not None:
-                    rollout_hook.save_memory(self.home, thread, existing)
+                    save(self.home, thread, existing)
 
-                def write_during_snapshot(*args, **kwargs):
-                    state = snapshot(*args, **kwargs)
-                    rollout_hook.save_memory(self.home, thread, "Concurrent note")
-                    return state
+                def write_before_save(home, thread_id, summary, **kwargs):
+                    save(home, thread_id, "Concurrent note")
+                    return save(home, thread_id, summary, **kwargs)
 
-                with patch.object(rollout_hook, "snapshot", write_during_snapshot):
+                with patch.object(rollout_hook, "save_memory", write_before_save):
                     with self.assertRaises(ValueError):
                         rollout_hook.memory(
-                            self.home, thread, "write", window=window, summary="Late reminder update",
+                            self.home, thread, "write", summary="Overlapping update",
                             patch=None, at_us=None, limit=10,
                         )
 
@@ -153,7 +174,7 @@ class ThreadMemoryTest(unittest.TestCase):
         )
         old_versions = self.memory(parent, "history", at=first["updated_at"])["items"]
         self.assertEqual(old_versions, [versions[1]])
-        at_fork = self.memory(parent, "read", at=first["updated_at"])
+        at_fork = self.memory(parent, "read", at=versions[1]["effective_at"])
         self.assertEqual(at_fork["summary"], original)
         self.assertEqual(at_fork["updated_at"], first["updated_at"])
 
@@ -165,6 +186,8 @@ class ThreadMemoryTest(unittest.TestCase):
         patch = "--- a/memory\n+++ b/memory\n@@ -2 +2 @@\n-Parent at fork\n+Child edits\n"
         updated = self.memory(child, "patch", patch)
         self.assertNotEqual(updated["updated_at"], inherited["updated_at"])
+        for response in (first, at_fork, updated, *versions):
+            self.assertNotIn("revision", response)
         event = {
             "hook_event_name": "SessionStart",
             "source": "fork",
