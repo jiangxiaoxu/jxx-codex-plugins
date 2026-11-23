@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from base64 import urlsafe_b64encode
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from hashlib import blake2s
 from itertools import chain
@@ -19,6 +19,7 @@ from rollout_handoff_cursor import ReminderCheckpoint, TurnCoverage, read_checkp
 BLOCK_BYTES = 1024 * 1024
 SCAN_BYTES = 512 * BLOCK_BYTES
 RECORD_BYTES = 256 * 1024
+SESSION_META_BYTES = 4 * BLOCK_BYTES
 PREFIX_BYTES = 512
 
 # These envelope fields precede the potentially large payload in Codex JSONL.
@@ -84,6 +85,11 @@ class _WindowHeader:
     first_owned: int | None
     segment: str
     thread_id: object
+    name: str
+    raw: bytes
+
+    def segment_for_name(self, name: str) -> str:
+        return self.segment if name == self.name else _header_segment(name, self.raw)
 
 
 @dataclass
@@ -307,7 +313,7 @@ def snapshot(
         return None
     try:
         with path.open("rb") as stream:
-            header = _read_header(path, stream)
+            header = _read_header(_rollout_path(path, stream), stream)
             if header is None:
                 return None
             return _snapshot(
@@ -320,8 +326,45 @@ def snapshot(
         return None
 
 
+if os.name == "nt":
+    import ctypes
+    import msvcrt
+
+    _final_path = ctypes.WinDLL("kernel32").GetFinalPathNameByHandleW
+    _final_path.argtypes = (ctypes.c_void_p, ctypes.c_wchar_p, ctypes.c_uint32, ctypes.c_uint32)
+    _final_path.restype = ctypes.c_uint32
+
+
+def _rollout_path(path: Path, stream: BinaryIO) -> Path:
+    if os.name != "nt":
+        return path.absolute()
+
+    handle = msvcrt.get_osfhandle(stream.fileno())
+    buffer = ctypes.create_unicode_buffer(512)
+    for flags in (0, 8):  # FILE_NAME_NORMALIZED, then FILE_NAME_OPENED.
+        length = _final_path(handle, buffer, len(buffer), flags)
+        if len(buffer) <= length <= 32_768:
+            buffer = ctypes.create_unicode_buffer(length)
+            length = _final_path(handle, buffer, len(buffer), flags)
+        if 0 < length < len(buffer):
+            return Path(buffer.value)
+
+    absolute = os.path.abspath(path)
+    if absolute.startswith(("\\\\?\\", "\\\\.\\")):
+        return Path(absolute)
+    if absolute.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + absolute[2:])
+    return Path("\\\\?\\" + absolute)
+
+
+def _header_segment(name: str, raw: bytes) -> str:
+    digest = blake2s(os.fsencode(name) + b"\0", digest_size=12)
+    digest.update(raw)
+    return digest.hexdigest()
+
+
 def _read_header(path: Path, stream: BinaryIO) -> _WindowHeader | None:
-    header_raw = stream.readline(RECORD_BYTES + 1)
+    header_raw = stream.readline(SESSION_META_BYTES + 1)
     if not header_raw.endswith(b"\n"):
         return None
     kind, header, _ = _record(header_raw, b"", False)
@@ -330,13 +373,13 @@ def _read_header(path: Path, stream: BinaryIO) -> _WindowHeader | None:
         first_owned is None and header.get("forked_from_id") and not header.get("history_base")
     ):
         return None
-    segment = blake2s(os.fsencode(path.name) + b"\0" + header_raw, digest_size=12).hexdigest()
-    return _WindowHeader(len(header_raw), first_owned, segment, header.get("id"))
+    name = path.name
+    return _WindowHeader(len(header_raw), first_owned, _header_segment(name, header_raw), header.get("id"), name, header_raw)
 
 
 def reminder_snapshot(
     path: Path,
-    checkpoint: str | None,
+    checkpoint: str | None | Callable[[Path], str | None],
     *,
     minimum_used: int,
     expected_turn: str | None = None,
@@ -351,14 +394,18 @@ def reminder_snapshot(
     try:
         with path.open("rb") as stream:
             stat = os.fstat(stream.fileno())
+            path = _rollout_path(path, stream)
             header = _read_header(path, stream)
             if header is None or header.end > stat.st_size:
                 return None, None
+            if callable(checkpoint):
+                checkpoint = checkpoint(path)
             # The probe budget covers new bytes. A verified older boundary
             # remains usable without reading its full window again.
-            previous = read_checkpoint(
-                path, stream, stat, header.segment, header.end, checkpoint, SCAN_BYTES,
+            known_window = read_checkpoint(
+                path, stream, stat, header.segment_for_name, header.end, checkpoint, SCAN_BYTES,
             )
+            previous = known_window
             if previous is not None and stat.st_size - previous.offset > scan_bytes:
                 previous = None
             capture = _CheckpointCapture()
@@ -366,7 +413,7 @@ def reminder_snapshot(
             options = {
                 "include_previous": False, "minimum_used": minimum_used,
                 "expected_turn": expected_turn, "expected_model": expected_model,
-                "collect_reminder_receipts": True, "scan_bytes": scan_bytes,
+                "collect_reminder_receipts": True, "scan_bytes": scan_bytes, "known_window": known_window,
             }
             if previous is not None:
                 try:
@@ -394,7 +441,7 @@ def reminder_snapshot(
             ):
                 encoded = write_checkpoint(
                     path, stream, stat, header.segment, capture.boundary, state.current,
-                    state.received_reminder_levels, capture.signals, capture.turn_coverage,
+                    state.received_reminder_levels, capture.signals, capture.turn_coverage, known_window,
                 )
                 if encoded is not None:
                     retained = encoded
@@ -418,6 +465,7 @@ def _snapshot(
     collect_reminder_receipts: bool,
     scan_bytes: int,
     checkpoint: ReminderCheckpoint | None = None,
+    known_window: ReminderCheckpoint | None = None,
     capture: _CheckpointCapture | None = None,
     observations: ReminderObservations | None = None,
 ) -> WindowSnapshot | None:
@@ -425,6 +473,9 @@ def _snapshot(
     at_start = lower == header.end
     segment = header.segment
     start_key = f"{segment}:start"
+    aliases = {alias for _, alias in known_window.aliases} if known_window is not None else set()
+    if known_window is not None and start_key in aliases:
+        start_key = known_window.window
     current = previous = None
     compacted = False
     native = response = None
@@ -514,6 +565,8 @@ def _snapshot(
         if kind == "compacted" or event == "thread_rolled_back":
             fingerprint = blake2s(raw + trailer, digest_size=8).hexdigest()
             key = f"{segment}:{offset}:{fingerprint}"
+            if known_window is not None and key in aliases:
+                key = known_window.window
             if observations is not None:
                 observations._link_previous(key)
                 if kind == "compacted":
@@ -653,7 +706,6 @@ def _snapshot(
         if replay_start is not None and checkpoint is not None:
             current = checkpoint.window
             boundary = checkpoint.boundary
-            receipts.setdefault(reminder_window_id(current), set()).update(checkpoint.receipts)
         elif at_start:
             current = start_key
         else:
@@ -689,7 +741,12 @@ def _snapshot(
             omitted_models=coverage.omitted_models or omitted_turn_models,
             omitted_capacities=coverage.omitted_capacities or any(turn != marked_turn for turn in turn_capacities),
         )
-    received = frozenset(receipts.get(reminder_window_id(current), ()))
+    active_receipts = receipts.get(reminder_window_id(current), set())
+    if known_window is not None and current == known_window.window:
+        active_receipts.update(known_window.receipts)
+        for alias in aliases:
+            active_receipts.update(receipts.get(reminder_window_id(alias), ()))
+    received = frozenset(active_receipts)
     # A per-response record can land before PostToolUse runs. The native event
     # for the same response can land later, after in-flight tools finish.
     for usage in (response, native):

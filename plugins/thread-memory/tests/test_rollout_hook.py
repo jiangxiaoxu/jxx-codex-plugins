@@ -1,12 +1,15 @@
 import json
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import datetime, timezone
+from hashlib import blake2s
 from pathlib import Path
 from uuid import uuid4
 
@@ -349,6 +352,177 @@ class RolloutHookTest(unittest.TestCase):
         deep_tool_response = json.loads("[" * 70 + "0" + "]" * 70)
         response = self.invoke({**request, "tool_response": deep_tool_response}, check=True)
         self.reminder_context(response.stdout, "0")
+
+    def test_rollout_path_aliases_share_one_notice_and_checkpoint(self):
+        self.env["THREAD_MEMORY_ASYNC_START_TOKENS"] = "500000"
+        request = self.start_reminder_window()
+        junction = self.codex_home / "sessions alias"
+        created = subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", str(junction), str(self.transcript.parent)],
+            capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        self.assertEqual(created.returncode, 0, created.stderr)
+        self.addCleanup(junction.rmdir)
+        aliases = (
+            "\\\\?\\" + str(self.transcript),
+            self.transcript.parent.as_posix() + "\\" + self.transcript.name.upper(),
+            str(junction / self.transcript.name),
+        )
+        self.append_usage(455_000)
+        first = self.reminder_context(self.invoke(request, check=True).stdout, "0")
+        database = self.codex_home / "state" / "plugins" / "thread-memory" / "handoff.sqlite3"
+        with closing(sqlite3.connect(database)) as connection:
+            for alias in aliases:
+                with self.subTest(alias=alias):
+                    self.append_usage(455_000)
+                    output = self.invoke({**request, "transcript_path": alias}, check=True).stdout
+                    self.assertEqual(output, b"")
+                    (row,) = connection.execute("SELECT checkpoint FROM rollout_scan_checkpoints")
+                    self.assertEqual(json.loads(row[0])["offset"], self.transcript.stat().st_size)
+
+        self.record_reminder(first)
+        self.append_usage(465_000)
+        self.assertEqual(
+            self.invoke({**request, "transcript_path": aliases[-1]}, check=True).stdout, b""
+        )
+        relevant = [
+            item for item in self.diagnostics(self.session_id)
+            if item["event"] in ("reminder_context_prepared", "reminder_receipt_observed")
+        ]
+        self.assertCountEqual(
+            [item["event"] for item in relevant],
+            ["reminder_context_prepared", "reminder_receipt_observed"],
+        )
+        self.assertEqual(len({item["window"] for item in relevant}), 1)
+
+    def test_verified_legacy_alias_cursors_preserve_claims(self):
+        self.env["THREAD_MEMORY_ASYNC_START_TOKENS"] = "500000"
+        request = self.start_reminder_window()
+        self.append_usage(455_000)
+        self.reminder_context(self.invoke(request, check=True).stdout, "0")
+        with self.transcript.open("rb") as stream:
+            header_raw = stream.readline()
+        database = self.codex_home / "state" / "plugins" / "thread-memory" / "handoff.sqlite3"
+        with closing(sqlite3.connect(database)) as connection, connection:
+            canonical_path, raw = connection.execute(
+                "SELECT rollout_path, checkpoint FROM rollout_scan_checkpoints"
+            ).fetchone()
+            cursor = json.loads(raw)
+            self.assertEqual(cursor["version"], 2)
+            old_names = (self.transcript.name.upper(), self.transcript.name.capitalize())
+            bad_name = self.transcript.name.replace("rollout", "roLLout", 1)
+            bad_path = str(self.transcript.with_name(bad_name))
+            verified_windows = set()
+            connection.execute("DELETE FROM rollout_scan_checkpoints")
+            connection.execute("DELETE FROM reminder_claims")
+            for name, stage in zip((*old_names, bad_name), (0, 3, 0)):
+                alias = self.transcript.with_name(name)
+                path = str(alias)
+                legacy = self.legacy_start_cursor(cursor, alias, header_raw)
+                if path == bad_path:
+                    legacy["anchor"] = "0" * 32
+                else:
+                    verified_windows.add(legacy["window"])
+                    connection.execute(
+                        "INSERT INTO reminder_claims VALUES (?, ?, 0, ?)",
+                        (self.session_id, legacy["window"], stage),
+                    )
+                connection.execute(
+                    "INSERT INTO rollout_scan_checkpoints VALUES (?, ?, ?)",
+                    (self.session_id, path, json.dumps(legacy)),
+                )
+
+        self.append_usage(465_000)
+        self.assertEqual(self.invoke(request, check=True).stdout, b"")
+        with closing(sqlite3.connect(database)) as connection:
+            checkpoints = dict(connection.execute(
+                "SELECT rollout_path, checkpoint FROM rollout_scan_checkpoints"
+            ))
+            self.assertEqual(set(checkpoints), {canonical_path, bad_path})
+            active_window = json.loads(checkpoints[canonical_path])["window"]
+            self.assertIn(active_window, verified_windows)
+            self.assertEqual(
+                connection.execute(
+                    "SELECT stage FROM reminder_claims WHERE thread_id = ? AND window = ? AND level = 0",
+                    (self.session_id, active_window),
+                ).fetchone(),
+                (3,),
+            )
+
+        self.append_usage(475_000)
+        self.assertEqual(self.invoke(request, check=True).stdout, b"")
+
+    @staticmethod
+    def legacy_start_cursor(cursor, alias, header_raw):
+        segment = blake2s(os.fsencode(alias.name) + b"\0" + header_raw, digest_size=12).hexdigest()
+        legacy = {key: value for key, value in cursor.items() if key not in {"canonical_path", "alias_windows"}}
+        legacy["file"] = [str(alias), *cursor["file"][1:3], segment]
+        legacy["window"] = f"{segment}:start"
+        return legacy
+
+    def test_legacy_notice_id_survives_full_scan_after_incomplete_turn_replay(self):
+        self.env["THREAD_MEMORY_ASYNC_START_TOKENS"] = "500000"
+        request = self.start_reminder_window()
+        old_turn, old_model = str(uuid4()), "older-model"
+        self.append_records(
+            ("turn_context", {"turn_id": old_turn, "model": old_model}),
+            ("turn_context", {"turn_id": request["turn_id"], "model": request["model"]}),
+        )
+        self.append_usage(455_000)
+        first = self.reminder_context(self.invoke(request, check=True).stdout, "0")
+
+        alias = self.transcript.with_name(self.transcript.name.upper())
+        database = self.codex_home / "state" / "plugins" / "thread-memory" / "handoff.sqlite3"
+        with self.transcript.open("rb") as stream:
+            header_raw = stream.readline()
+        with closing(sqlite3.connect(database)) as connection, connection:
+            (raw,) = connection.execute("SELECT checkpoint FROM rollout_scan_checkpoints").fetchone()
+            cursor = json.loads(raw)
+            legacy = self.legacy_start_cursor(cursor, alias, header_raw)
+            # Legacy replay retains the current turn model and omits the prior turn's model.
+            legacy["turn_coverage"]["omitted_models"] = True
+            legacy["signals"] = [
+                row for row in legacy["signals"] if row["payload"].get("turn_id") != old_turn
+            ]
+            connection.execute(
+                "UPDATE rollout_scan_checkpoints SET rollout_path = ?, checkpoint = ?",
+                (str(alias), json.dumps(legacy)),
+            )
+            connection.execute("UPDATE reminder_claims SET window = ?", (legacy["window"],))
+        notify_id = reminder_window_id(legacy["window"])
+        first = first.replace(reminder_window_id(cursor["window"]), notify_id)
+
+        self.append_records(
+            ("event_msg", {"type": "task_started", "turn_id": old_turn, "model_context_window": 500_000}),
+            ("token_usage_record", {"turn_id": old_turn, "usage": {"total_tokens": 465_000}}),
+        )
+        previous_turn = {**request, "model": old_model, "turn_id": old_turn}
+        retry = self.reminder_context(self.invoke(previous_turn, check=True).stdout, "0")
+        self.assertIn(f"Notify ID: [0:{notify_id}]", retry)
+        self.assertIn("This may be a duplicate reminder.", retry)
+
+        self.record_reminder(first)
+        self.record_reminder(retry)
+        self.append_records(("token_usage_record", {"turn_id": old_turn, "usage": {"total_tokens": 475_000}}))
+        self.assertEqual(self.invoke(previous_turn, check=True).stdout, b"")
+        observed = [
+            (item["details"]["notify_id"], item["details"]["duplicate"])
+            for item in self.diagnostics(self.session_id) if item["event"] == "reminder_rollout_observed"
+        ]
+        self.assertCountEqual(observed, [(notify_id, False), (notify_id, True)])
+
+        self.append_records(("compacted", {"replacement_history": []}))
+        self.append_usage(455_000)
+        context = self.reminder_context(self.invoke(previous_turn, check=True).stdout, "0")
+        canonical_window = snapshot(self.transcript, include_previous=False).current
+        self.assertIn(f"Notify ID: [0:{reminder_window_id(canonical_window)}]", context)
+
+    def test_large_session_meta_can_trigger_compaction_reminder(self):
+        self.env["THREAD_MEMORY_ASYNC_START_TOKENS"] = "500000"
+        self.header["base_instructions"] = {"text": "x" * (300 * 1024)}
+        request = self.start_reminder_window()
+        self.append_usage(455_000)
+        self.reminder_context(self.invoke(request, check=True).stdout, "0")
 
     def test_subagent_checks_each_reminder_tier_for_delivery(self):
         request = self.start_reminder_window(child=True)

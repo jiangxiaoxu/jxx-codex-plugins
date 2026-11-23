@@ -1,3 +1,4 @@
+from hashlib import blake2s
 import json
 import os
 import sys
@@ -10,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "skills" / "thread-memory" / 
 
 from rollout_handoff_cursor import ANCHOR_BYTES
 from rollout_handoff_snapshot import ReminderObservations, reminder_snapshot, reminder_window_id, snapshot
-from rollout_handoff_store import load_rollout_checkpoint
+from rollout_handoff_store import load_rollout_checkpoint, save_rollout_checkpoint
 from rollout_hook import hook_instructions
 
 
@@ -199,6 +200,98 @@ class IncrementalRolloutScanTest(unittest.TestCase):
         observations = ReminderObservations()
         current, _ = reminder_snapshot(self.path, checkpoint, minimum_used=0, observations=observations)
         self.assertEqual(observations.compactions, [(current.current, compacted, start.current)])
+
+    def test_large_session_header_uses_the_original_bytes_within_its_own_limit(self):
+        capacity = 4 * 1024 * 1024
+        prefix = b'\xef\xbb\xbf{"type":"session_meta","payload":{"id":"fixture-thread","instructions":"'
+        suffix = b'"}}\r\n'
+        header = prefix + b"x" * (capacity + 1 - len(prefix) - len(suffix)) + suffix
+        self.path.write_bytes(header + usage(310_000))
+
+        current, checkpoint = self.compare_scan()
+        segment = blake2s(os.fsencode(self.path.name) + b"\0" + header, digest_size=12).hexdigest()
+        self.assertEqual((current.current, current.used), (f"{segment}:start", 310_000))
+        self.assertEqual(json.loads(checkpoint)["boundary"], len(header))
+
+        self.path.write_bytes(header.replace(b'"}}', b'x"}}') + usage(310_000))
+        self.assertIsNone(snapshot(self.path))
+        self.assertEqual(reminder_snapshot(self.path, checkpoint, minimum_used=1), (None, None))
+
+    @unittest.skipUnless(os.name == "nt", "Windows path casing")
+    def test_verified_legacy_path_keeps_its_active_window_across_path_spellings(self):
+        self.append(
+            record("event_msg", {"type": "task_started", "turn_id": "old", "model_context_window": 400_000}),
+            record("event_msg", {"type": "task_started", "turn_id": "new", "model_context_window": 500_000}),
+            usage(310_000),
+        )
+        canonical, checkpoint = self.compare_scan()
+        alternate = self.path.with_name(self.path.name.upper())
+        if not alternate.is_file():
+            self.skipTest("Test directory uses case-sensitive file names")
+        self.assertEqual(snapshot(alternate), snapshot(self.path))
+
+        legacy = json.loads(checkpoint)
+        legacy_path = str(alternate.absolute())
+        legacy_segment = blake2s(os.fsencode(alternate.name) + b"\0" + self.header, digest_size=12).hexdigest()
+        legacy_window = f"{legacy_segment}:start"
+        legacy["file"][0] = legacy_path
+        legacy["file"][3] = legacy_segment
+        legacy["window"] = legacy_window
+        legacy.pop("canonical_path")
+        invalid_alias = "0" * 24 + ":start"
+        legacy["alias_windows"] = [{"path": legacy_path, "window": invalid_alias}]
+
+        self.append(receipt(legacy_window, 65), receipt(canonical.current, 80), receipt(invalid_alias, 70))
+        state, verified = reminder_snapshot(alternate, json.dumps(legacy), minimum_used=1)
+        self.assertEqual(state.current, legacy_window)
+        self.assertEqual(state.received_reminder_levels, {65, 80})
+        encoded = json.loads(verified)
+        self.assertEqual(encoded["file"][0], legacy_path)
+        self.assertEqual(encoded["alias_windows"], [{"path": encoded["canonical_path"], "window": canonical.current}])
+
+        self.append(record("token_usage_record", {"turn_id": "old", "usage": {"total_tokens": 350_000}}))
+        replayed, verified = reminder_snapshot(self.path, verified, minimum_used=1)
+        self.assertEqual(replayed, state)
+
+        self.append(record("compacted", {}), usage(320_000))
+        advanced, encoded = self.compare_scan(verified)
+        self.assertFalse(advanced.received_reminder_levels)
+        new = json.loads(encoded)
+        self.assertEqual(new["file"][0], new["canonical_path"])
+        self.assertNotIn("alias_windows", new)
+
+    @unittest.skipUnless(os.name == "nt", "Windows canonical SQLite key")
+    def test_python_hook_uses_the_native_canonical_checkpoint_before_a_legacy_row(self):
+        thread = "00000000-0000-4000-8000-000000000001"
+        header = record("session_meta", {"id": thread, "source": "vscode"})
+        self.path.write_bytes(header + usage(310_000))
+        _, checkpoint = self.compare_scan()
+        native = json.loads(checkpoint)
+        canonical_key = native["canonical_path"]
+        legacy_key = str(self.path.absolute())
+        alias = self.path.with_name(self.path.name.upper())
+        alias_segment = blake2s(os.fsencode(alias.name) + b"\0" + header, digest_size=12).hexdigest()
+        alias_window = f"{alias_segment}:start"
+        native["file"][0] = str(alias.absolute())
+        native["file"][3] = alias_segment
+        native["alias_windows"] = [{"path": canonical_key, "window": native["window"]}]
+        native["window"] = alias_window
+        home = self.path.parent
+        self.assertTrue(save_rollout_checkpoint(home, thread, legacy_key, None, checkpoint))
+        self.assertTrue(save_rollout_checkpoint(home, thread, canonical_key, None, json.dumps(native)))
+
+        self.append(receipt(alias_window, 0), usage(320_000))
+        request = {"hook_event_name": "PostToolUse", "session_id": thread, "transcript_path": legacy_key}
+        with patch.dict(os.environ, {
+            "THREAD_MEMORY_ASYNC_START_TOKENS": "355000",
+            "THREAD_MEMORY_HANDOFF_LEAD_TOKENS": "45000",
+        }):
+            self.assertIsNone(hook_instructions(request, home))
+        updated = json.loads(load_rollout_checkpoint(home, thread, canonical_key))
+        self.assertEqual(updated["window"], alias_window)
+        self.assertEqual(updated["receipts"], [0])
+        self.assertEqual(updated["offset"], self.path.stat().st_size)
+        self.assertEqual(load_rollout_checkpoint(home, thread, legacy_key), checkpoint)
 
     def test_unterminated_tail_is_processed_once_completed(self):
         self.append(usage(310_000))

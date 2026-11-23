@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Tomlyn;
@@ -9,80 +8,31 @@ namespace ThreadMemoryHook;
 
 internal static class SessionFiles
 {
-    private const int MaximumHeaderBytes = 4 * 1024 * 1024;
     private const string StateDatabaseName = "state_5.sqlite";
 
     internal static JsonElement ReadHeader(string path)
     {
-        using var source = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var source = OpenRead(path);
+        return ReadHeader(path, source);
+    }
+
+    internal static JsonElement ReadHeader(string path, FileStream source)
+    {
         if (path.EndsWith(".zst", StringComparison.Ordinal))
         {
             try
             {
-                using var decompressed = new DecompressionStream(source);
-                return ReadFirstLine(decompressed);
+                using var decompressed = new DecompressionStream(source, leaveOpen: true);
+                using var header = RolloutHeader.Read(decompressed);
+                return header?.Payload.Clone() ?? default;
             }
             catch (ZstdException)
             {
                 return default;
             }
         }
-        return ReadFirstLine(source);
-    }
-
-    private static JsonElement ReadFirstLine(Stream source)
-    {
-        byte[] buffer = new byte[4096];
-        int read = source.Read(buffer);
-        int lineEnd = buffer.AsSpan(0, read).IndexOf((byte)'\n');
-        if (lineEnd >= 0)
-            return ParseHeader(buffer.AsMemory(0, lineEnd));
-
-        var header = new ArrayBufferWriter<byte>(buffer.Length);
-        while (read > 0)
-        {
-            int length = lineEnd < 0 ? read : lineEnd;
-            if (length > MaximumHeaderBytes - header.WrittenCount)
-                return default;
-            header.Write(buffer.AsSpan(0, length));
-            if (lineEnd >= 0)
-                break;
-            read = source.Read(buffer);
-            lineEnd = buffer.AsSpan(0, read).IndexOf((byte)'\n');
-        }
-        return ParseHeader(header.WrittenMemory);
-    }
-
-    private static JsonElement ParseHeader(ReadOnlyMemory<byte> line)
-    {
-        if (line.Span.StartsWith("\uFEFF"u8))
-            line = line[3..];
-        try
-        {
-            using var document = JsonDocument.Parse(line, new JsonDocumentOptions { MaxDepth = 128 });
-            var envelope = document.RootElement;
-            var type = Property(envelope, "type");
-            var payload = Property(envelope, "payload");
-            if (type.ValueKind != JsonValueKind.String || !type.ValueEquals("session_meta"u8)
-                || payload.ValueKind != JsonValueKind.Object
-                || Property(envelope, "timestamp").ValueKind is not (JsonValueKind.Undefined or JsonValueKind.String)
-                || Property(envelope, "metadata").ValueKind is not (JsonValueKind.Undefined or JsonValueKind.Null or JsonValueKind.Object)
-                || !OptionalString(payload, "id") || !OptionalString(payload, "session_id")
-                || !OptionalString(payload, "forked_from_id"))
-                return default;
-            return payload.Clone();
-        }
-        catch (Exception error) when (error is JsonException or InvalidOperationException)
-        {
-            return default;
-        }
-    }
-
-    private static bool OptionalString(JsonElement header, string name)
-    {
-        var property = Property(header, name);
-        return property.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined
-            || property.ValueKind == JsonValueKind.String && property.GetString() is not null;
+        using var plain = RolloutHeader.Read(source);
+        return plain?.Payload.Clone() ?? default;
     }
 
     internal static JsonElement Property(JsonElement obj, string name) =>
@@ -105,7 +55,7 @@ internal static class SessionFiles
             IgnoreInaccessible = true,
             AttributesToSkip = 0,
         };
-        var matches = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var matches = new Dictionary<(ulong Device, UInt128 Inode, string? Path), string>();
         foreach (string directory in new[] { Path.Combine(home, "sessions"), Path.Combine(home, "archived_sessions") })
         {
             if (!Directory.Exists(directory))
@@ -117,20 +67,40 @@ internal static class SessionFiles
                     continue;
                 int pageSeparator = name.IndexOf('_', 28);
                 var owner = name.AsSpan(28, (pageSeparator < 0 ? name.Length : pageSeparator) - 28);
-                if (current ? !owner.SequenceEqual(threadId) : segmentId != threadId)
+                if (current ? !owner.Equals(threadId, StringComparison.OrdinalIgnoreCase) : segmentId != threadId)
                     continue;
-                if (AvailablePath(candidate) is { } available)
-                    matches.Add(available);
+                if (AvailablePath(candidate) is not { } available)
+                    continue;
+                try
+                {
+                    using var stream = OpenRead(available);
+                    var rollout = RolloutPath.Resolve(available, stream);
+                    var key = (rollout.Stat.Device, rollout.Stat.Inode, rollout.Stat.Inode == 0 ? rollout.Key : null);
+                    if (!matches.TryGetValue(key, out string? existing) || CompareCandidates(available, existing) > 0)
+                        matches[key] = available;
+                }
+                catch (Exception error) when (error is FileNotFoundException or DirectoryNotFoundException)
+                {
+                    // Archiving can move a file between enumeration and opening it.
+                }
             }
         }
 
         if (matches.Count <= 1)
-            return matches.FirstOrDefault();
+            return matches.Values.FirstOrDefault();
         if (!current)
             throw new InvalidDataException($"Multiple local rollouts match {threadId}.");
 
-        return matches.OrderBy(path => Path.GetFileName(path).Substring(8, 19), StringComparer.Ordinal)
-            .ThenBy(path => SegmentId(path), StringComparer.Ordinal).ThenBy(path => path, StringComparer.Ordinal).Last();
+        return matches.Values.MaxBy(path => path, Comparer<string>.Create(CompareCandidates));
+    }
+
+    private static int CompareCandidates(string left, string right)
+    {
+        int dateOrder = Path.GetFileName(left).AsSpan(8, 19).SequenceCompareTo(Path.GetFileName(right).AsSpan(8, 19));
+        if (dateOrder != 0)
+            return dateOrder;
+        int segmentOrder = string.CompareOrdinal(SegmentId(left), SegmentId(right));
+        return segmentOrder != 0 ? segmentOrder : string.CompareOrdinal(left, right);
     }
 
     private static string SegmentId(string path) =>
@@ -153,9 +123,12 @@ internal static class SessionFiles
     {
         string plain = path.EndsWith(".zst", StringComparison.Ordinal) ? path[..^4] : path;
         if (File.Exists(plain))
-            return Path.GetFullPath(plain);
-        return File.Exists(plain + ".zst") ? Path.GetFullPath(plain + ".zst") : null;
+            return plain;
+        return File.Exists(plain + ".zst") ? plain + ".zst" : null;
     }
+
+    private static FileStream OpenRead(string path) =>
+        new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
     private static string? IndexedPath(string home, string threadId)
     {

@@ -24,7 +24,12 @@ internal sealed record ReminderCheckpoint(
     string Window,
     HashSet<int> Receipts,
     List<byte[]> Signals,
-    TurnCoverage TurnCoverage);
+    TurnCoverage TurnCoverage,
+    string FingerprintPath,
+    bool Normalized,
+    IReadOnlyList<RolloutWindowAlias> EquivalentWindows);
+
+internal readonly record struct RolloutWindowAlias(string FingerprintPath, string Window);
 
 internal readonly partial record struct RolloutFileStat(
     long Length, Int128 ModifiedNanoseconds, ulong Device, UInt128 Inode)
@@ -101,9 +106,10 @@ internal static class RolloutCursor
     private const int Version = 2;
 
     internal static ReminderCheckpoint? ReadCheckpoint(
-        string path, FileStream stream, RolloutFileStat stat, string segment,
+        RolloutPath path, FileStream stream, Func<string, string> segmentForName,
         long headerEnd, string? raw, int maxAppend)
     {
+        RolloutFileStat stat = path.Stat;
         if (string.IsNullOrEmpty(raw) || raw.Length > MaxCheckpointChars || stat.Inode == 0)
         {
             return null;
@@ -114,7 +120,7 @@ internal static class RolloutCursor
             JsonElement record = json.RootElement;
             if (record.ValueKind != JsonValueKind.Object ||
                 !TryReadInteger(record, "version", out long version) || version != Version ||
-                !MatchesIdentity(record, path, stat, segment) ||
+                !TryReadIdentity(record, stat, segmentForName, out string fingerprintPath, out string segment) ||
                 !TryReadInteger(record, "offset", out long offset) || offset < headerEnd || offset > stat.Length ||
                 !TryReadInteger(record, "boundary", out long boundary) || boundary < headerEnd || boundary > offset ||
                 (stat.Length - maxAppend > headerEnd && boundary <= stat.Length - maxAppend) ||
@@ -154,7 +160,11 @@ internal static class RolloutCursor
                 }
                 records.Add(Encoding.UTF8.GetBytes(signal.GetRawText()));
             }
-            return new ReminderCheckpoint(offset, boundary, window, receiptLevels, records, turnCoverage);
+            bool normalized = TryReadString(record, "canonical_path", out string? canonicalPath) &&
+                canonicalPath == path.Key;
+            var aliases = ReadWindowAliases(record, segmentForName, window, boundary, offset);
+            return new ReminderCheckpoint(offset, boundary, window, receiptLevels, records, turnCoverage,
+                fingerprintPath, normalized, aliases);
         }
         catch (Exception error) when (error is JsonException or IOException or InvalidOperationException)
         {
@@ -163,9 +173,11 @@ internal static class RolloutCursor
     }
 
     internal static string? WriteCheckpoint(
-        string path, FileStream stream, RolloutFileStat stat, string segment, long boundary, string window,
-        IReadOnlySet<int> receipts, IReadOnlyList<byte[]> signals, TurnCoverage turnCoverage)
+        RolloutPath path, FileStream stream, string fingerprintPath, string segment, long boundary, string window,
+        IReadOnlySet<int> receipts, IReadOnlyList<byte[]> signals, TurnCoverage turnCoverage,
+        IReadOnlyList<RolloutWindowAlias> equivalentWindows)
     {
+        RolloutFileStat stat = path.Stat;
         if (stat.Inode == 0 || stat.Length == 0)
         {
             return null;
@@ -183,17 +195,30 @@ internal static class RolloutCursor
                 writer.WriteStartObject();
                 writer.WriteNumber("version", Version);
                 writer.WriteStartArray("file");
-                writer.WriteStringValue(Path.GetFullPath(path));
+                writer.WriteStringValue(fingerprintPath);
                 writer.WriteStringValue(stat.Device.ToString(CultureInfo.InvariantCulture));
                 writer.WriteStringValue(stat.Inode.ToString(CultureInfo.InvariantCulture));
                 writer.WriteStringValue(segment);
                 writer.WriteEndArray();
+                writer.WriteString("canonical_path", path.Key);
                 writer.WriteNumber("offset", stat.Length);
                 writer.WriteNumber("boundary", boundary);
                 writer.WritePropertyName("mtime_ns");
                 writer.WriteRawValue(stat.ModifiedNanoseconds.ToString(CultureInfo.InvariantCulture));
                 writer.WriteString("anchor", anchor);
                 writer.WriteString("window", window);
+                if (equivalentWindows.Count != 0)
+                {
+                    writer.WriteStartArray("alias_windows");
+                    foreach (RolloutWindowAlias alias in equivalentWindows)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("path", alias.FingerprintPath);
+                        writer.WriteString("window", alias.Window);
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+                }
                 writer.WriteStartArray("receipts");
                 foreach (int level in receipts.Order())
                 {
@@ -223,14 +248,54 @@ internal static class RolloutCursor
         }
     }
 
-    private static bool MatchesIdentity(JsonElement record, string path, RolloutFileStat stat, string segment)
+    private static bool TryReadIdentity(JsonElement record, RolloutFileStat stat, Func<string, string> segmentForName,
+        out string fingerprintPath, out string segment)
     {
-        return record.TryGetProperty("file", out JsonElement file) &&
-            file.ValueKind == JsonValueKind.Array && file.GetArrayLength() == 4 &&
-            MatchesString(file[0], Path.GetFullPath(path)) &&
-            MatchesString(file[1], stat.Device.ToString(CultureInfo.InvariantCulture)) &&
-            MatchesString(file[2], stat.Inode.ToString(CultureInfo.InvariantCulture)) &&
-            MatchesString(file[3], segment);
+        fingerprintPath = "";
+        segment = "";
+        if (!record.TryGetProperty("file", out JsonElement file) ||
+            file.ValueKind != JsonValueKind.Array || file.GetArrayLength() != 4 ||
+            file[0].ValueKind != JsonValueKind.String || file[0].GetString() is not string path ||
+            !TryGetFileName(path, out string name) ||
+            !MatchesString(file[1], stat.Device.ToString(CultureInfo.InvariantCulture)) ||
+            !MatchesString(file[2], stat.Inode.ToString(CultureInfo.InvariantCulture)))
+        {
+            return false;
+        }
+        segment = segmentForName(name);
+        fingerprintPath = path;
+        return MatchesString(file[3], segment);
+    }
+
+    private static IReadOnlyList<RolloutWindowAlias> ReadWindowAliases(
+        JsonElement record, Func<string, string> segmentForName, string window, long boundary, long offset)
+    {
+        if (!record.TryGetProperty("alias_windows", out JsonElement rows) || rows.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var aliases = new List<RolloutWindowAlias>();
+        var seen = new HashSet<string>(StringComparer.Ordinal) { window };
+        foreach (JsonElement row in rows.EnumerateArray())
+        {
+            if (row.ValueKind == JsonValueKind.Object &&
+                TryReadString(row, "path", out string? path) && path is not null &&
+                TryGetFileName(path, out string name) &&
+                TryReadString(row, "window", out string? alias) && alias is not null &&
+                ValidWindow(alias, segmentForName(name), boundary, offset) &&
+                alias.AsSpan(24).SequenceEqual(window.AsSpan(24)) && seen.Add(alias))
+            {
+                aliases.Add(new RolloutWindowAlias(path, alias));
+            }
+        }
+        return aliases;
+    }
+
+    private static bool TryGetFileName(string path, out string name)
+    {
+        name = Path.GetFileName(path);
+        return path.IndexOf('\0') < 0 && name.Length > 0 && Path.IsPathFullyQualified(path);
     }
 
     private static bool MatchesString(JsonElement item, string expected) =>

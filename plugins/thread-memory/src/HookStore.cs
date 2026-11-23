@@ -53,30 +53,80 @@ internal sealed class HookStore(string home)
         return ReadRow(connection, statement) ? sqlite3_column_text(statement, 0).utf8_to_string() : null;
     }
 
-    internal void SaveCheckpoint(string thread, string path, string? previous, string next)
+    internal IReadOnlyList<StoredCheckpoint> LoadCheckpointAliases(string thread, string canonicalKey)
     {
-        if (previous == next)
+        using SqliteConnection? connection = OpenRead();
+        if (connection is null)
+            return [];
+        using sqlite3_stmt statement = Prepare(connection, """
+            SELECT rollout_path, checkpoint FROM rollout_scan_checkpoints
+            WHERE thread_id = ? AND rollout_path <> ? ORDER BY rollout_path
+            """, thread, canonicalKey);
+        List<StoredCheckpoint> aliases = [];
+        while (ReadRow(connection, statement))
+        {
+            aliases.Add(new(sqlite3_column_text(statement, 0).utf8_to_string(),
+                sqlite3_column_text(statement, 1).utf8_to_string()));
+        }
+        return aliases;
+    }
+
+    internal void SaveCheckpoint(string thread, string path, string? previous, string next,
+        IReadOnlyList<StoredCheckpoint>? verifiedAliases = null)
+    {
+        if (previous == next && verifiedAliases is not { Count: > 0 })
             return;
         using SqliteConnection? connection = previous is null ? OpenWrite() : OpenExisting(SqliteOpenMode.ReadWrite);
         if (connection is null)
             return;
-        if (previous is null)
+
+        if (verifiedAliases is not { Count: > 0 })
         {
-            Execute(connection, """
-                INSERT INTO rollout_scan_checkpoints (thread_id, rollout_path, checkpoint) VALUES (?, ?, ?)
-                ON CONFLICT (thread_id, rollout_path) DO NOTHING
-                """, thread, path, next);
+            WriteCheckpoint(connection, thread, path, previous, next);
+            return;
         }
-        else
+
+        InWriteTransaction(connection, () =>
         {
-            Execute(connection, """
-                UPDATE rollout_scan_checkpoints SET checkpoint = ?
-                WHERE thread_id = ? AND rollout_path = ? AND checkpoint = ?
-                """, next, thread, path, previous);
-        }
+            bool canonicalMatches = previous == next
+                ? Exists(connection, """
+                    SELECT 1 FROM rollout_scan_checkpoints
+                    WHERE thread_id = ? AND rollout_path = ? AND checkpoint = ?
+                    """, thread, path, next)
+                : WriteCheckpoint(connection, thread, path, previous, next);
+            if (!canonicalMatches)
+                return;
+
+            foreach (StoredCheckpoint alias in verifiedAliases)
+            {
+                if (alias.Path == path)
+                    continue;
+                Execute(connection, """
+                    DELETE FROM rollout_scan_checkpoints
+                    WHERE thread_id = ? AND rollout_path = ? AND checkpoint = ?
+                    """, thread, alias.Path, alias.Raw);
+            }
+        });
     }
 
-    internal HashSet<int> Claim(string thread, string window, IReadOnlyList<(int Tier, int Stage)> phases)
+    private static bool WriteCheckpoint(SqliteConnection connection, string thread, string path,
+        string? previous, string next)
+    {
+        if (previous is null)
+        {
+            return Execute(connection, """
+                INSERT INTO rollout_scan_checkpoints (thread_id, rollout_path, checkpoint) VALUES (?, ?, ?)
+                ON CONFLICT (thread_id, rollout_path) DO NOTHING
+                """, thread, path, next) == 1;
+        }
+        return Execute(connection, """
+            UPDATE rollout_scan_checkpoints SET checkpoint = ?
+            WHERE thread_id = ? AND rollout_path = ? AND checkpoint = ?
+            """, next, thread, path, previous) == 1;
+    }
+
+    internal HashSet<int> Claim(string thread, string window, IReadOnlyList<(int Tier, int Stage)> phases,
+        IReadOnlyList<string>? equivalentWindows = null)
     {
         HashSet<int> advanced = [];
         if (phases.Count == 0)
@@ -89,6 +139,20 @@ internal sealed class HookStore(string home)
         using SqliteConnection connection = OpenWrite();
         InWriteTransaction(connection, () =>
         {
+            if (equivalentWindows is not null)
+            {
+                foreach (string equivalent in equivalentWindows)
+                {
+                    if (equivalent == window)
+                        continue;
+                    Execute(connection, """
+                        INSERT INTO reminder_claims (thread_id, window, level, stage)
+                        SELECT thread_id, ?, level, stage FROM reminder_claims WHERE thread_id = ? AND window = ?
+                        ON CONFLICT (thread_id, window, level) DO UPDATE SET stage = excluded.stage
+                        WHERE excluded.stage > reminder_claims.stage
+                        """, window, thread, equivalent);
+                }
+            }
             foreach ((int tier, int stage) in stages)
             {
                 if (Execute(connection, """

@@ -27,54 +27,46 @@ internal static class HookInstructions
             Text(request, "transcript_path") is not { Length: > 0 } path)
             return null;
 
-        JsonElement header;
         try
         {
-            header = SessionFiles.ReadHeader(path);
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
-        {
-            return null;
-        }
-
-        var store = new HookStore(home);
-        if (hasAgent)
-        {
-            if (!Guid.TryParse(Text(agentValue), out var agent) || agent == session ||
-                !Matches(header, "id", agent) || !MatchesWhenPresent(header, "session_id", session) ||
-                !Unattached(header) || Field(Field(Field(header, "source"), "subagent"), "thread_spawn")
-                    .ValueKind != JsonValueKind.Object)
-                return null;
-            return Subagent(request, hookEvent!, home, path, agent.ToString(), store);
-        }
-        if (!IsRoot(header, session))
-            return null;
-
-        var thread = session.ToString();
-        if (source == "startup")
-        {
-            store.Diagnostic(thread, "startup_context_prepared");
-            return Maintenance;
-        }
-        if (source is "compact" or "fork")
-        {
-            var note = ThreadMemory.NoteStatus(store, home, thread);
-            var details = new JsonObject { ["note_status"] = note };
-            if (source == "fork")
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            var header = SessionFiles.ReadHeader(path, stream);
+            var store = new HookStore(home);
+            if (hasAgent)
             {
-                store.Diagnostic(thread, "fork_note_checked", details: details);
-                return null;
+                if (!Guid.TryParse(Text(agentValue), out var agent) || agent == session ||
+                    !Matches(header, "id", agent) || !MatchesWhenPresent(header, "session_id", session) ||
+                    !Unattached(header) || Field(Field(Field(header, "source"), "subagent"), "thread_spawn")
+                        .ValueKind != JsonValueKind.Object)
+                    return null;
+                return Subagent(request, hookEvent!, home, path, stream, agent.ToString(), store);
             }
-            Probe(store, path, thread);
-            store.Diagnostic(thread, "compact_context_prepared", details: details);
-            return Recovery(note == "available"
-                ? "Context was compacted. Use `memory read` to recover the thread note. Search the rollout for missing details as needed."
-                : "Context was compacted. Search the rollout for earlier context as needed.");
-        }
+            if (!IsRoot(header, session))
+                return null;
 
-        try
-        {
-            return CompactionReminder(request, store, home, path, thread);
+            var thread = session.ToString();
+            if (source == "startup")
+            {
+                store.Diagnostic(thread, "startup_context_prepared");
+                return Maintenance;
+            }
+            if (source is "compact" or "fork")
+            {
+                var note = ThreadMemory.NoteStatus(store, home, thread);
+                var details = new JsonObject { ["note_status"] = note };
+                if (source == "fork")
+                {
+                    store.Diagnostic(thread, "fork_note_checked", details: details);
+                    return null;
+                }
+                Probe(store, path, stream, thread);
+                store.Diagnostic(thread, "compact_context_prepared", details: details);
+                return Recovery(note == "available"
+                    ? "Context was compacted. Use `memory read` to recover the thread note. Search the rollout for missing details as needed."
+                    : "Context was compacted. Search the rollout for earlier context as needed.");
+            }
+            return CompactionReminder(request, store, home, path, stream, thread);
         }
         catch (Exception error) when (OptionalStateFailure(error))
         {
@@ -83,7 +75,7 @@ internal static class HookInstructions
     }
 
     private static string? Subagent(JsonElement request, string hookEvent, string home, string path,
-        string thread, HookStore store)
+        FileStream stream, string thread, HookStore store)
     {
         if (hookEvent == "SubagentStart")
         {
@@ -91,57 +83,50 @@ internal static class HookInstructions
                 details: new JsonObject { ["note_status"] = "not_checked" });
             return Maintenance;
         }
-        try
+        if (hookEvent == "PostCompact")
         {
-            if (hookEvent == "PostCompact")
-            {
-                store.MarkCompaction(thread);
-                Probe(store, path, thread);
-                store.Diagnostic(thread, "subagent_compaction_pending");
-                return null;
-            }
-            if (store.TakeCompaction(thread))
-            {
-                Probe(store, path, thread);
-                store.Diagnostic(thread, "subagent_recovery_context_prepared");
-                return Recovery("Context was compacted in this subagent. Use `memory read` to recover your thread note. " +
-                    "Search the rollout for missing details as needed.");
-            }
-            return CompactionReminder(request, store, home, path, thread);
-        }
-        catch (Exception error) when (OptionalStateFailure(error))
-        {
+            store.MarkCompaction(thread);
+            Probe(store, path, stream, thread);
+            store.Diagnostic(thread, "subagent_compaction_pending");
             return null;
         }
+        if (store.TakeCompaction(thread))
+        {
+            Probe(store, path, stream, thread);
+            store.Diagnostic(thread, "subagent_recovery_context_prepared");
+            return Recovery("Context was compacted in this subagent. Use `memory read` to recover your thread note. " +
+                "Search the rollout for missing details as needed.");
+        }
+        return CompactionReminder(request, store, home, path, stream, thread);
     }
 
-    private static RolloutSnapshot? Probe(HookStore store, string path, string thread,
+    private static RolloutSnapshot? Probe(HookStore store, string path, FileStream stream, string thread,
         long minimumUsed = 0, string? turn = null, string? model = null, int scanBytes = RecoveryScanBytes)
     {
         try
         {
-            path = Path.GetFullPath(path);
+            var file = RolloutPath.Resolve(path, stream);
             string? checkpoint = null;
             try
             {
-                checkpoint = store.LoadCheckpoint(thread, path);
+                checkpoint = store.LoadCheckpoint(thread, file.Key);
             }
             catch (Exception error) when (OptionalStateFailure(error))
             {
                 // A verified tail scan can still provide evidence.
             }
 
-            var scan = RolloutScanner.Scan(path, checkpoint, minimumUsed, turn, model, scanBytes);
+            var scan = RolloutScanner.Scan(stream, file, checkpoint, ReadAliases, minimumUsed, turn, model, scanBytes);
             if (scan is null)
                 return null;
             if ((scan.Receipts.Count != 0 || scan.Compactions.Count != 0) &&
                 !store.Telemetry(thread, receipts: scan.Receipts, compactions: scan.Compactions))
                 return scan;
-            if (scan.Checkpoint is { } next && next != checkpoint)
+            if (scan.Checkpoint is { } next && (next != checkpoint || scan.Aliases.Count != 0))
             {
                 try
                 {
-                    store.SaveCheckpoint(thread, path, checkpoint, next);
+                    store.SaveCheckpoint(thread, file.Key, checkpoint, next, scan.Aliases);
                 }
                 catch (Exception error) when (OptionalStateFailure(error))
                 {
@@ -149,6 +134,18 @@ internal static class HookInstructions
                 }
             }
             return scan;
+
+            IReadOnlyList<StoredCheckpoint> ReadAliases()
+            {
+                try
+                {
+                    return store.LoadCheckpointAliases(thread, file.Key);
+                }
+                catch (Exception error) when (OptionalStateFailure(error))
+                {
+                    return [];
+                }
+            }
         }
         catch (Exception error) when (OptionalStateFailure(error))
         {
@@ -157,13 +154,13 @@ internal static class HookInstructions
     }
 
     private static string? CompactionReminder(JsonElement request, HookStore store, string home,
-        string path, string thread)
+        string path, FileStream stream, string thread)
     {
         var model = Text(request, "model");
         var plan = ReminderPlan.Resolve(home, model);
         if (plan is null)
             return null;
-        var state = Probe(store, path, thread, plan.Levels[0].FirstAt,
+        var state = Probe(store, path, stream, thread, plan.Levels[0].FirstAt,
             Text(request, "turn_id"), model, RolloutScanner.ScanBytes);
         if (state?.Window is not { } window || state.Used is not long used ||
             (state.Capacity is long capacity && plan.UsableWindow is long usable && capacity != usable))
@@ -171,7 +168,7 @@ internal static class HookInstructions
 
         var phases = plan.Reached(used).Select(item => (
             item.Tier, Stage: state.ReceivedLevels.Contains(item.Tier) ? Recorded : item.Stage)).ToArray();
-        var claimed = store.Claim(thread, window, phases);
+        var claimed = store.Claim(thread, window, phases, state.EquivalentWindows);
         if (claimed.Count == 0)
             return null;
 

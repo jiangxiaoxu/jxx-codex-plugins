@@ -267,6 +267,39 @@ class ThreadMemoryTest(unittest.TestCase):
         self.memory(child, "write", "Independent child note")
         self.assertEqual(self.memory(child, "read")["summary"], "Independent child note")
 
+    def test_fork_deduplicates_one_junction_rollout_but_rejects_a_distinct_copy(self):
+        parent = str(uuid4())
+        self.rollout(parent)
+        summary = "Inherit through one physical file"
+        note = self.memory(parent, "write", summary)
+        junction = subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", "archived_sessions", "sessions"],
+            cwd=self.home, capture_output=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        self.assertEqual(junction.returncode, 0, (junction.stdout, junction.stderr))
+
+        for distinct_copy in (False, True):
+            with self.subTest(distinct_copy=distinct_copy):
+                child = str(uuid4())
+                path = self.rollout(child, forked_from=parent, timestamp=note["updated_at"])
+                if distinct_copy:
+                    other = self.sessions / "duplicate"
+                    other.mkdir()
+                    (other / path.name).write_bytes(path.read_bytes())
+                result = run_native_hook({
+                    "hook_event_name": "SessionStart", "source": "fork", "session_id": child,
+                    "transcript_path": str(self.home / "archived_sessions" / path.name),
+                }, env=self.env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, b"")
+                diagnostics = self.run_command("diagnostics", "--limit", "1", thread=child)
+                self.assertEqual(diagnostics.returncode, 0, diagnostics.stderr)
+                (event,) = json.loads(diagnostics.stdout)["items"]
+                self.assertEqual(event["event"], "fork_note_checked")
+                self.assertEqual(event["details"]["note_status"], "invalid_data" if distinct_copy else "available")
+                if not distinct_copy:
+                    self.assertEqual(self.memory(child, "read")["summary"], summary)
+
     def test_nested_forks_preserve_preinitialization_handoff_edits(self):
         parent, child, first, second, third = (str(uuid4()) for _ in range(5))
         start = 1_767_225_600_000_000

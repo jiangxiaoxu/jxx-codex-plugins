@@ -174,13 +174,24 @@ def _probe_reminder_window(
     scan_bytes: int = _COMPACTION_DIAGNOSTIC_SCAN_BYTES,
 ) -> WindowSnapshot | None:
     rollout_path = str(path.absolute())
-    try:
-        checkpoint = load_rollout_checkpoint(home, thread_id, rollout_path)
-    except (OSError, sqlite3.Error):
-        checkpoint = None
+    checkpoint = None
+
+    def load_checkpoint(canonical_path: Path) -> str | None:
+        nonlocal rollout_path, checkpoint
+        try:
+            canonical_key = str(canonical_path)
+            checkpoint = load_rollout_checkpoint(home, thread_id, canonical_key)
+            if checkpoint is not None:
+                rollout_path = canonical_key
+            elif canonical_key != rollout_path:
+                checkpoint = load_rollout_checkpoint(home, thread_id, rollout_path)
+        except (OSError, sqlite3.Error):
+            pass
+        return checkpoint
+
     observations = ReminderObservations()
     state, next_checkpoint = reminder_snapshot(
-        path, checkpoint, minimum_used=minimum_used,
+        path, load_checkpoint, minimum_used=minimum_used,
         expected_turn=turn, expected_model=model, observations=observations, scan_bytes=scan_bytes,
     )
     if (observations.receipts or observations.compactions) and not record_reminder_telemetry(

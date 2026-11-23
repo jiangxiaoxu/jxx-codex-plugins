@@ -7,7 +7,8 @@ using System.Text.RegularExpressions;
 namespace ThreadMemoryHook;
 
 internal sealed record RolloutSnapshot(string? Window, long? Used, long? Capacity, HashSet<int> ReceivedLevels,
-    string? Checkpoint, List<ReminderReceipt> Receipts, List<CompactionObservation> Compactions);
+    string? Checkpoint, List<ReminderReceipt> Receipts, List<CompactionObservation> Compactions,
+    IReadOnlyList<StoredCheckpoint> Aliases, IReadOnlyList<string> EquivalentWindows);
 
 internal static partial class RolloutScanner
 {
@@ -42,6 +43,7 @@ internal static partial class RolloutScanner
         public TurnCoverage Coverage = new();
         public List<ReminderReceipt> Receipts { get; } = [];
         public List<CompactionObservation> Compactions { get; } = [];
+        public Dictionary<string, HashSet<int>> ActiveReceipts { get; } = [];
 
         public void LinkPrevious(string window)
         {
@@ -53,53 +55,129 @@ internal static partial class RolloutScanner
     public static string ReminderWindowId(string window) => Convert.ToBase64String(
         Blake2s.Hash(Encoding.ASCII.GetBytes(window), 6)).Replace('+', '-').Replace('/', '_');
 
-    public static RolloutSnapshot Scan(string path, string? checkpoint, long minimumUsed,
-        string? expectedTurn, string? expectedModel, int scanBytes)
+    public static RolloutSnapshot Scan(FileStream stream, RolloutPath file, string? canonicalCheckpoint,
+        Func<IReadOnlyList<StoredCheckpoint>> loadAliases, long minimumUsed, string? expectedTurn, string? expectedModel,
+        int scanBytes)
     {
-        if (Path.GetExtension(path) == ".zst")
+        if (Path.GetExtension(file.Name) == ".zst")
             return Empty();
         scanBytes = Math.Min(scanBytes, ScanBytes);
         try
         {
-            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            var stat = RolloutFileStat.Capture(stream);
-            var header = ReadHeader(path, stream);
-            if (header is null || header.End > stat.Length)
+            stream.Position = 0;
+            var stat = file.Stat;
+            using var rawHeader = RolloutHeader.Read(stream, requireTerminator: true);
+            if (rawHeader is null || rawHeader.Length > stat.Length)
                 return Empty();
+            var payload = rawHeader.Payload;
+            var firstOwned = Ordinal(Property(payload, "subagent_history_start_ordinal"u8));
+            if (firstOwned.GetValueOrDefault() == 0 && Truthy(Property(payload, "forked_from_id"u8)) &&
+                !Truthy(Property(payload, "history_base"u8)))
+                return Empty();
+            var segments = new Dictionary<string, string>(StringComparer.Ordinal);
+            string Segment(string name)
+            {
+                if (!segments.TryGetValue(name, out var segment))
+                    segments.Add(name, segment = rawHeader.Segment(name));
+                return segment;
+            }
+            var header = new Header(rawHeader.Length, firstOwned.GetValueOrDefault() > 0 ? firstOwned : null,
+                Segment(file.Name), String(Property(payload, "id"u8)));
 
-            var prior = RolloutCursor.ReadCheckpoint(path, stream, stat, header.Segment, header.End, checkpoint, ScanBytes);
-            if (prior is not null && stat.Length - prior.Offset > scanBytes)
-                prior = null;
+            ReminderCheckpoint? ReadCheckpoint(string? raw) =>
+                RolloutCursor.ReadCheckpoint(file, stream, Segment, header.End, raw, ScanBytes);
+            var canonical = ReadCheckpoint(canonicalCheckpoint);
+            var verifiedAliases = new List<(StoredCheckpoint Stored, ReminderCheckpoint Checkpoint)>();
+            ReminderCheckpoint? prior = null;
+            ReminderCheckpoint? continuity = canonical;
             var capture = new Capture();
             (string? Window, long? Used, long? Capacity, HashSet<int>? Received) state = default;
-            if (prior is not null)
+            bool Replay(ReminderCheckpoint? candidate)
             {
+                if (candidate is null || stat.Length - candidate.Offset > scanBytes)
+                    return false;
                 try
                 {
-                    state = ScanCore(stream, header, stat.Length, minimumUsed, expectedTurn, expectedModel, scanBytes, prior, capture);
+                    state = ScanCore(stream, header, stat.Length, minimumUsed, expectedTurn, expectedModel, scanBytes, candidate, candidate, capture);
+                    prior = candidate;
+                    continuity = candidate;
+                    return true;
                 }
                 catch (Exception error) when (IsScanError(error))
                 {
-                    prior = null;
                     capture = new Capture();
+                    return false;
                 }
             }
-            if (prior is null)
-                state = ScanCore(stream, header, stat.Length, minimumUsed, expectedTurn, expectedModel, scanBytes, null, capture);
+            bool replayed;
+            if (canonical is { Normalized: true } && Replay(canonical))
+                replayed = true;
+            else
+            {
+                foreach (var stored in loadAliases())
+                    if (!string.Equals(stored.Path, file.Key, StringComparison.Ordinal) && ReadCheckpoint(stored.Raw) is { } verified)
+                        verifiedAliases.Add((stored, verified));
+                var newest = verifiedAliases.OrderByDescending(alias => alias.Checkpoint.Offset)
+                    .ThenBy(alias => alias.Stored.Path, StringComparer.Ordinal).FirstOrDefault().Checkpoint;
+                continuity ??= newest;
+                replayed = canonical is { Normalized: false } && Replay(canonical) || Replay(newest);
+            }
+            if (!replayed)
+                state = ScanCore(stream, header, stat.Length, minimumUsed, expectedTurn, expectedModel, scanBytes, null, continuity, capture);
 
             var after = RolloutFileStat.Capture(stream);
             if (after.Length < stat.Length || (after.Length == stat.Length && after.ModifiedNanoseconds != stat.ModifiedNanoseconds))
                 return Empty();
-            var retained = prior is null ? null : checkpoint;
+            var retained = ReferenceEquals(prior, canonical) && prior is not null ? canonicalCheckpoint : null;
             var received = state.Received ?? [];
-            if (state.Window is not null && capture.Boundary is long boundary && prior?.Offset != stat.Length)
+            var aliasesToRemove = new List<StoredCheckpoint>();
+            var equivalentWindows = new List<RolloutWindowAlias>();
+            if (state.Window is { } window && capture.Boundary is long boundary)
             {
-                retained = RolloutCursor.WriteCheckpoint(path, stream, stat, header.Segment, boundary, state.Window,
-                    received, capture.Signals, capture.Coverage) ?? retained;
+                var sameBoundary = new HashSet<string>(StringComparer.Ordinal) { window };
+                var fingerprintPath = continuity?.Window == window ? continuity.FingerprintPath : file.Key;
+                void AddEquivalent(RolloutWindowAlias alias)
+                {
+                    if (!sameBoundary.Add(alias.Window))
+                        return;
+                    equivalentWindows.Add(alias);
+                    if (capture.ActiveReceipts.TryGetValue(ReminderWindowId(alias.Window), out var levels))
+                        received.UnionWith(levels);
+                }
+                void Merge(ReminderCheckpoint candidate)
+                {
+                    // The same suffix binds start or the same offset and boundary bytes.
+                    if (!MatchesWindow(candidate, window, boundary))
+                        return;
+                    received.UnionWith(candidate.Receipts);
+                    AddEquivalent(new(candidate.FingerprintPath, candidate.Window));
+                    foreach (var alias in candidate.EquivalentWindows)
+                        AddEquivalent(alias);
+                }
+                if (prior is not null)
+                    Merge(prior);
+                if (canonical is not null && !ReferenceEquals(prior, canonical))
+                    Merge(canonical);
+                foreach (var (_, verified) in verifiedAliases)
+                    if (!ReferenceEquals(prior, verified))
+                        Merge(verified);
+
+                AddEquivalent(new(file.Key, header.Segment + window[24..]));
+                if (prior?.Offset != stat.Length || retained is null || prior is { Normalized: false } || verifiedAliases.Count != 0)
+                {
+                    var next = RolloutCursor.WriteCheckpoint(file, stream, fingerprintPath,
+                        window[..24], boundary, window, received, capture.Signals, capture.Coverage, equivalentWindows);
+                    if (next is not null)
+                    {
+                        retained = next;
+                        aliasesToRemove.AddRange(verifiedAliases.Select(alias => alias.Stored));
+                    }
+                }
             }
             capture.Receipts.Reverse();
             capture.Compactions.Reverse();
-            return new(state.Window, state.Used, state.Capacity, received, retained, capture.Receipts, capture.Compactions);
+            return new(state.Window, state.Used, state.Capacity, received, retained, capture.Receipts, capture.Compactions,
+                aliasesToRemove, equivalentWindows.Select(alias => alias.Window).ToArray());
         }
         catch (Exception error) when (IsScanError(error))
         {
@@ -107,44 +185,10 @@ internal static partial class RolloutScanner
         }
     }
 
-    private static RolloutSnapshot Empty() => new(null, null, null, [], null, [], []);
+    private static RolloutSnapshot Empty() => new(null, null, null, [], null, [], [], [], []);
 
     private static bool IsScanError(Exception error) => error is IOException or UnauthorizedAccessException
         or JsonException or FormatException or InvalidOperationException or ArgumentException;
-
-    private static Header? ReadHeader(string path, FileStream stream)
-    {
-        var buffer = ArrayPool<byte>.Shared.Rent(RecordBytes + 1);
-        try
-        {
-            var count = 0;
-            while (count <= RecordBytes)
-            {
-                var read = stream.Read(buffer.AsSpan(count, Math.Min(4096, RecordBytes + 1 - count)));
-                var newline = buffer.AsSpan(count, read).IndexOf((byte)'\n');
-                if (newline >= 0)
-                {
-                    var length = count + newline + 1;
-                    using var record = Parse(buffer.AsMemory(0, length));
-                    var payload = Property(record.RootElement, "payload"u8);
-                    if (!StringEquals(Property(record.RootElement, "type"u8), "session_meta"u8) || payload.ValueKind != JsonValueKind.Object)
-                        return null;
-                    var firstOwned = Ordinal(Property(payload, "subagent_history_start_ordinal"u8));
-                    if (firstOwned.GetValueOrDefault() == 0 && Truthy(Property(payload, "forked_from_id"u8)) &&
-                        !Truthy(Property(payload, "history_base"u8)))
-                        return null;
-                    var name = Encoding.UTF8.GetBytes(Path.GetFileName(path) + '\0');
-                    var segment = Convert.ToHexStringLower(Blake2s.Hash(name, buffer.AsSpan(0, length), 12));
-                    return new(length, firstOwned.GetValueOrDefault() > 0 ? firstOwned : null, segment, String(Property(payload, "id"u8)));
-                }
-                if (read == 0)
-                    break;
-                count += read;
-            }
-            return null;
-        }
-        finally { ArrayPool<byte>.Shared.Return(buffer); }
-    }
 
     private static IEnumerable<Line> ReverseLines(FileStream stream, long size, long lower, bool knownLineStart)
     {
@@ -378,17 +422,19 @@ internal static partial class RolloutScanner
 
     private static (string? Window, long? Used, long? Capacity, HashSet<int>? Received) ScanCore(
         FileStream stream, Header header, long size, long minimumUsed, string? expectedTurn, string? expectedModel,
-        int scanBytes, ReminderCheckpoint? prior, Capture capture)
+        int scanBytes, ReminderCheckpoint? prior, ReminderCheckpoint? continuity, Capture capture)
     {
         var lower = prior?.Offset ?? Math.Max(header.End, size - scanBytes);
         var atStart = lower == header.End;
         var start = $"{header.Segment}:start";
+        string VerifiedWindow(string window, long boundary) =>
+            continuity is not null && MatchesWindow(continuity, window, boundary) ? continuity.Window : window;
         string? current = null;
         Usage? native = null, response = null;
         long? latestCapacity = null;
         string? latestTurn = null, latestModel = null, effectiveModel = null;
         var turnCapacities = new Dictionary<string, (long Capacity, int Order)>();
-        var receipts = new Dictionary<string, HashSet<int>>();
+        var receipts = capture.ActiveReceipts;
         int? replayStart = null;
         long? boundary = atStart ? header.End : null;
         var signals = new SortedDictionary<int, byte[]>();
@@ -461,7 +507,7 @@ internal static partial class RolloutScanner
                     if (ordinal < firstOwned)
                     {
                         atStart = true;
-                        capture.LinkPrevious(start);
+                        capture.LinkPrevious(VerifiedWindow(start, ownedOffset));
                         if (current is null)
                             boundary = ownedOffset;
                         exhausted = false;
@@ -488,7 +534,7 @@ internal static partial class RolloutScanner
                 if ((kind == "compacted" || eventName == "thread_rolled_back") && line.Offset is long compactOffset)
                 {
                     var fingerprint = Convert.ToHexStringLower(Blake2s.Hash(line.Raw.Span, line.Trailer.Span, 8));
-                    var key = $"{header.Segment}:{compactOffset.ToString(CultureInfo.InvariantCulture)}:{fingerprint}";
+                    var key = VerifiedWindow($"{header.Segment}:{compactOffset.ToString(CultureInfo.InvariantCulture)}:{fingerprint}", compactOffset);
                     capture.LinkPrevious(key);
                     if (kind == "compacted")
                     {
@@ -514,7 +560,7 @@ internal static partial class RolloutScanner
                 {
                     if (firstOwnedRecord)
                     {
-                        capture.LinkPrevious(start);
+                        capture.LinkPrevious(VerifiedWindow(start, line.Offset!.Value));
                         exhausted = false;
                         break;
                     }
@@ -622,14 +668,14 @@ internal static partial class RolloutScanner
                     signals[order] = signal;
                 if (firstOwnedRecord)
                 {
-                    capture.LinkPrevious(start);
+                    capture.LinkPrevious(VerifiedWindow(start, line.Offset!.Value));
                     exhausted = false;
                     break;
                 }
             }
         }
         if (exhausted && atStart)
-            capture.LinkPrevious(start);
+            capture.LinkPrevious(VerifiedWindow(start, header.End));
         if (belowMinimum)
             return default;
         var markedTurn = latestTurn;
@@ -647,7 +693,7 @@ internal static partial class RolloutScanner
                 GetLevels(receipts, ReminderWindowId(current)).UnionWith(prior.Receipts);
             }
             else if (atStart)
-                current = start;
+                current = VerifiedWindow(start, boundary ?? header.End);
             else
                 return default; // A bounded tail alone cannot prove a boundary in the omitted prefix.
         }
@@ -682,6 +728,9 @@ internal static partial class RolloutScanner
         }
         return (current, null, null, received);
     }
+
+    private static bool MatchesWindow(ReminderCheckpoint checkpoint, string window, long boundary) =>
+        checkpoint.Boundary == boundary && checkpoint.Window.AsSpan(24).SequenceEqual(window.AsSpan(24));
 
     private static Usage? Sample(JsonElement payload, bool perResponse)
     {
