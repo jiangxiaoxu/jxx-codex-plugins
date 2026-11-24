@@ -20,6 +20,8 @@
       --code-surface: color-mix(in srgb, var(--panel) 96%, var(--ink));
       --danger-tone: var(--color-text-danger, light-dark(#911e1b, #e02e2a));
       --danger: light-dark(var(--danger-tone), color-mix(in srgb, var(--danger-tone) 50%, var(--ink)));
+      --reader-gutter: clamp(14px, 2.3vw, 26px);
+      --directory-width: clamp(225px, 24vw, 336px);
       background: var(--page);
       color: var(--ink);
       font: 14px/1.45 var(--font-sans, system-ui, sans-serif);
@@ -47,7 +49,7 @@
     input::placeholder { color: var(--muted); }
     button, select, summary { cursor: var(--cursor-interaction, pointer); }
     button:enabled:not([aria-disabled="true"]):hover, summary:hover { background: var(--hover); }
-    :is(button, input, select, summary, #detail-heading, #subagent-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+    :is(button, input, select, summary, #thread-context-title, #detail-heading, #subagent-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     :is(button, select):disabled { opacity: .5; cursor: default; }
     .danger { color: var(--danger); }
     button.danger:enabled:hover { background: color-mix(in srgb, var(--danger-tone) 11%, transparent); }
@@ -60,13 +62,31 @@
       display: grid;
       flex: 1 1 auto;
       min-height: 0;
-      grid-template-columns: clamp(225px, 28%, 416px) minmax(0, 1fr);
-      grid-template-rows: minmax(0, 1fr);
-      gap: 14px;
+      grid-template-areas: "directory context" "directory reader";
+      grid-template-columns: var(--directory-width) minmax(0, 1fr);
+      grid-template-rows: auto minmax(0, 1fr);
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--page);
     }
-    .panel { border: 1px solid var(--line); border-radius: 11px; min-width: 0; }
-    .directory, .reader { display: flex; flex-direction: column; min-height: 0; }
-    .directory { background: var(--panel); }
+    .directory, .reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+    #directory { grid-area: directory; border-inline-end: 1px solid var(--line); }
+    #subagent-directory { grid-area: browser; }
+    #reader { grid-area: reader; }
+    .thread-context {
+      grid-area: context;
+      display: grid;
+      min-width: 0;
+      gap: 10px;
+      padding: 14px var(--reader-gutter);
+      border-bottom: 1px solid var(--line);
+    }
+    #thread-context-title { font-size: 1.34rem; line-height: 1.34; overflow-wrap: anywhere; }
+    .scope-switch button { border-color: transparent; padding: 6px 10px; font-weight: 600; }
+    .scope-switch button[aria-pressed="true"], .scope-switch button[aria-pressed="true"]:hover {
+      border-color: var(--line);
+      background: var(--hover);
+    }
     .directory-tools { display: grid; gap: 9px; padding: 12px; border-bottom: 1px solid var(--line); }
     .directory-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
     .directory-filters { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -106,6 +126,7 @@
       overflow-wrap: anywhere;
       font-weight: 600;
     }
+    :is(#subagent-threads .label, #detail-heading) { font-family: var(--font-mono, Consolas, monospace); }
     .thread-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; }
     .archive-label { border: 1px solid var(--line); border-radius: 4px; padding-inline: 4px; }
     .thread-list .preview {
@@ -116,16 +137,15 @@
     }
     .thread-list .empty { color: var(--muted); padding: 16px 10px; }
     .reader-empty { display: grid; place-items: center; flex: 1; min-height: 210px; padding: 20px; text-align: center; color: var(--muted); }
-    .reader-header { display: grid; gap: 8px; padding: 15px clamp(14px, 3vw, 26px); border-bottom: 1px solid var(--line); }
-    .reader-tools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
-    #detail-heading { font-size: 1.34rem; line-height: 1.34; overflow-wrap: anywhere; }
-    #subagent-directory { display: flex; flex: 1; flex-direction: column; min-height: 0; background: var(--panel); }
+    .reader-header { display: grid; gap: 8px; padding: 12px var(--reader-gutter); border-bottom: 1px solid var(--line); }
+    .reader-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+    #detail-heading { font-size: 1.13rem; line-height: 1.38; overflow-wrap: anywhere; }
     #subagent-heading { overflow-wrap: anywhere; }
     #include-inherited-control { display: flex; align-items: center; gap: 7px; }
     #include-inherited { margin: 0; accent-color: var(--focus-ring); }
-    :is(#back-to-threads, #subagent-back-directory) { display: none; }
+    #back-to-threads { display: none; justify-self: start; }
     #thread-id summary { width: fit-content; border-radius: 3px; }
-    .detail { flex: 1; min-height: 0; padding: 16px clamp(14px, 3vw, 26px); max-height: clamp(240px, 65vh, 900px); overflow: auto; }
+    .detail { flex: 1; min-height: 0; padding: 16px var(--reader-gutter); max-height: clamp(240px, 65vh, 900px); overflow: auto; }
     #detail-status { flex: 1 1 12em; }
     #note {
       max-width: clamp(76ch, 70vw, 110ch);
@@ -205,26 +225,29 @@
     }
     main[data-reader-view="children"] #reader,
     main[data-reader-view="child"] #subagent-directory { display: none; }
-    @media (min-width: 701px) {
-      #reader-navigation:not(:has(#back-to-subagents:not([hidden]))),
-      #subagent-directory .actions:not(:has(#subagent-back-main:not([hidden]))) { display: none; }
+    main[data-reader-view="children"] .workspace {
+      grid-template-areas: "directory context" "directory browser";
     }
     @media (max-width: 700px) {
-      .workspace { grid-template-columns: 1fr; }
-      main[data-view="directory"] :is(#reader, #subagent-directory),
+      .workspace { grid-template-areas: "context" "reader"; grid-template-columns: minmax(0, 1fr); }
+      main[data-reader-view="children"] .workspace { grid-template-areas: "context" "browser"; }
+      main[data-view="directory"] .workspace { grid-template-areas: "directory"; grid-template-rows: minmax(0, 1fr); }
+      main[data-view="directory"] :is(#thread-context, #reader, #subagent-directory),
       main[data-view="note"] #directory { display: none; }
-      :is(#back-to-threads, #subagent-back-directory) { display: inline-block; }
-      .thread-list button, :is(#back-to-threads, #subagent-back-directory, #back-to-subagents) { min-height: 42px; }
+      #directory { border-inline-end: 0; }
+      #back-to-threads { display: inline-block; }
+      :is(.thread-list button, #back-to-threads, .scope-switch button) { min-height: 42px; }
       main > header { margin-bottom: 10px; }
       main > header button { padding-inline: 8px; }
     }
     @media (min-width: 1280px) {
       main:is([data-reader-view="children"], [data-reader-view="child"]) .workspace {
-        grid-template-columns: clamp(230px, 23%, 360px) clamp(235px, 22%, 380px) minmax(0, 1fr);
+        grid-template-areas: "directory context context" "directory browser reader";
+        grid-template-columns: var(--directory-width) clamp(235px, 21vw, 336px) minmax(0, 1fr);
       }
       main[data-reader-view="children"] #reader,
       main[data-reader-view="child"] #subagent-directory { display: flex; }
-      #reader-navigation { display: none; }
+      #subagent-directory { border-inline-end: 1px solid var(--line); }
     }
   </style>
 </head>
@@ -241,7 +264,7 @@
     <p id="status" class="status panel-status" role="status">Connecting to Codex...</p>
     <p id="cleanup-page-status" class="status panel-status" role="status"></p>
     <div class="workspace">
-      <nav id="directory" class="panel directory" aria-labelledby="threads-heading">
+      <nav id="directory" class="directory" aria-labelledby="threads-heading">
         <div class="directory-tools">
           <div class="directory-heading">
             <h2 id="threads-heading">Main threads</h2>
@@ -267,18 +290,21 @@
           <button id="next" type="button" aria-label="Next main-thread page" disabled>Next</button>
         </footer>
       </nav>
-      <nav id="subagent-directory" class="panel" aria-labelledby="subagent-heading" hidden>
+      <div id="thread-context" class="thread-context" hidden>
+        <button id="back-to-threads" type="button">Back to main threads</button>
+        <h2 id="thread-context-title" tabindex="-1"></h2>
+        <div class="actions scope-switch" role="group" aria-label="Notes view">
+          <button id="subagent-back-main" type="button" aria-pressed="true" aria-controls="reader">Main note</button>
+          <button id="show-subagents" type="button" aria-pressed="false" aria-controls="subagent-directory">Subagent notes</button>
+        </div>
+      </div>
+      <nav id="subagent-directory" class="directory" aria-labelledby="subagent-heading" hidden>
         <div class="directory-tools">
-          <div class="actions">
-            <button id="subagent-back-directory" type="button">Back to main threads</button>
-            <button id="subagent-back-main" type="button" hidden>View main note</button>
-          </div>
-          <p id="subagent-parent" class="meta"></p>
           <div class="directory-heading">
-            <h2 id="subagent-heading" tabindex="-1">Subagent notes</h2>
+            <h2 id="subagent-heading" tabindex="-1">Subagents</h2>
             <p id="subagent-count" class="meta" role="status"></p>
           </div>
-          <input id="subagent-search" type="search" maxlength="200" aria-label="Search subagent notes" placeholder="Search title or thread ID">
+          <input id="subagent-search" type="search" maxlength="200" aria-label="Search subagent notes" placeholder="Search agent path or thread ID">
           <label id="include-inherited-control" class="meta" title="Show notes saved by subagents of the source thread when this thread was forked." hidden>
             <input id="include-inherited" type="checkbox">Include inherited subagent notes
           </label>
@@ -291,31 +317,24 @@
           <button id="subagent-next" type="button" aria-label="Next subagent page" disabled>Next</button>
         </footer>
       </nav>
-      <section id="reader" class="panel reader" aria-label="Thread notes">
+      <section id="reader" class="reader" aria-label="Thread notes">
         <p id="reader-empty" class="reader-empty">Choose a main thread to read its note.</p>
         <div id="reader-header" class="reader-header" hidden>
-          <div id="reader-navigation" class="actions">
-            <button id="back-to-threads" type="button">Back to main threads</button>
-            <button id="back-to-subagents" type="button" hidden>Back to subagent list</button>
-          </div>
-          <h2 id="detail-heading" tabindex="-1"></h2>
+          <h2 id="detail-heading" tabindex="-1" hidden></h2>
           <p id="note-parent" class="meta" hidden></p>
           <div class="reader-tools">
             <div class="thread-meta meta">
               <span id="note-date"></span>
               <span id="note-archived" hidden>Archived</span>
               <span id="note-inherited" hidden>Inherited</span>
+              <details id="thread-id" class="meta">
+                <summary>Thread ID</summary>
+                <p id="detail-key" class="thread"></p>
+              </details>
             </div>
-            <div class="actions">
-              <button id="show-subagents" type="button" hidden>Browse subagent notes</button>
-              <button id="copy-summary" type="button" title="Copy the original note text" hidden>Copy note</button>
-            </div>
+            <button id="copy-summary" type="button" title="Copy the original note text" hidden>Copy note</button>
           </div>
           <p id="copy-status" class="status meta" role="status"></p>
-          <details id="thread-id" class="meta">
-            <summary>Thread ID</summary>
-            <p id="detail-key" class="thread"></p>
-          </details>
           <div id="note-feedback" class="reader-tools" hidden>
             <p id="detail-status" class="status" role="status"></p>
             <button id="retry-note" type="button" hidden>Retry</button>
@@ -506,7 +525,7 @@
     }
 
     function threadTitle(row) {
-      return row.title?.trim() || "Untitled thread";
+      return row.title?.trim() || (row.parent_thread_id ? "Subagent " + row.thread_id.slice(0, 8) : "Untitled thread");
     }
 
     function threadPreview(row) {
@@ -527,7 +546,7 @@
           ? formatDate(row.thread_updated_at) || (noteDate && "Note updated " + noteDate)
           : noteDate;
         meta.textContent = [
-          !row.title?.trim() && row.thread_id.slice(0, 13),
+          !row.parent_thread_id && !row.title?.trim() && row.thread_id.slice(0, 13),
           displayedDate,
         ].filter(Boolean).join(" | ");
         if (row.archived) {
@@ -625,15 +644,14 @@
       const count = activeMain?.child_note_count ?? 0;
       const parentTitle = activeMain ? threadTitle(activeMain) : "";
       const isChildNote = activeThread && activeThread.thread_id !== activeMain?.thread_id;
-      const relationship = activeThread?.inherited ? "Fork snapshot for " : "Subagent of ";
-      byId("show-subagents").textContent = count > 0 ? "Browse subagent notes (" + count + ")" : "Browse subagent notes";
-      byId("show-subagents").hidden = view !== "main";
-      byId("back-to-subagents").hidden = view !== "child";
-      byId("back-to-threads").hidden = view === "child";
-      byId("note-parent").textContent = isChildNote ? relationship + parentTitle : "";
-      byId("note-parent").hidden = !isChildNote;
-      byId("subagent-parent").textContent = parentTitle;
-      byId("subagent-back-main").hidden = !activeMain;
+      byId("thread-context").hidden = !activeMain;
+      byId("thread-context-title").textContent = parentTitle;
+      byId("show-subagents").textContent = count > 0 ? "Subagent notes (" + count + ")" : "Subagent notes";
+      byId("show-subagents").setAttribute("aria-pressed", String(view === "children" || view === "child"));
+      byId("subagent-back-main").setAttribute("aria-pressed", String(view === "main"));
+      byId("detail-heading").hidden = !isChildNote;
+      byId("note-parent").textContent = activeThread?.inherited ? "Fork snapshot for " + parentTitle : "";
+      byId("note-parent").hidden = !activeThread?.inherited;
     }
 
     function showNote(row, isChild, moveFocus = false) {
@@ -651,7 +669,7 @@
       byId("reader-body").hidden = false;
       byId("subagent-directory").hidden = !isChild;
       if (!sameThread) byId("thread-id").open = false;
-      if (moveFocus) byId("detail-heading").focus({preventScroll: true});
+      if (moveFocus) byId(isChild ? "detail-heading" : "thread-context-title").focus({preventScroll: true});
       loadNote(sameThread);
     }
 
@@ -715,7 +733,8 @@
 
     function clearThread() {
       const moveFocus = byId("reader").contains(document.activeElement) ||
-        byId("subagent-directory").contains(document.activeElement);
+        byId("subagent-directory").contains(document.activeElement) ||
+        byId("thread-context").contains(document.activeElement);
       activeMain = null;
       activeThread = null;
       ++noteRequest;
@@ -730,6 +749,7 @@
       byId("reader-header").hidden = true;
       byId("reader-body").hidden = true;
       byId("subagent-directory").hidden = true;
+      updateReaderNavigation();
       if (moveFocus) byId("search").focus({preventScroll: true});
     }
 
@@ -1251,10 +1271,12 @@
     byId("archive-status").addEventListener("change", () => reloadDirectory());
     byId("sort-by").addEventListener("change", () => reloadDirectory());
     byId("back-to-threads").addEventListener("click", showDirectory);
-    byId("subagent-back-directory").addEventListener("click", showDirectory);
-    byId("subagent-back-main").addEventListener("click", () => showNote(activeMain, false, true));
-    byId("show-subagents").addEventListener("click", () => showChildren());
-    byId("back-to-subagents").addEventListener("click", () => showChildren());
+    byId("subagent-back-main").addEventListener("click", () => {
+      if (activeMain && view !== "main") showNote(activeMain, false, true);
+    });
+    byId("show-subagents").addEventListener("click", () => {
+      if (view !== "children") showChildren();
+    });
     byId("subagent-search").addEventListener("input", () => searchChildren());
     byId("include-inherited").addEventListener("change", ({currentTarget}) => {
       searchChildren(0);

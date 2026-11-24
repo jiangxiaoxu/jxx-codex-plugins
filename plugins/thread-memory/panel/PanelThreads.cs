@@ -12,7 +12,6 @@ internal static class PanelThreads
     private static readonly string[] IdentityColumns =
         ["source", "thread_source", "agent_role", "agent_nickname", "attached_thread_parent_id", "archived", "updated_at_ms", "updated_at"];
     private static readonly string[] TitleColumns = ["name", "title"];
-    private static readonly string[] ChildTitleColumns = [.. TitleColumns, "agent_nickname", "agent_role"];
     private static readonly string[] PreviewColumns = ["preview", "first_user_message"];
 
     private const string NoteJoins = """
@@ -164,27 +163,31 @@ internal static class PanelThreads
                 }
             }
         }
-        Dictionary<string, string> titles = query.Length == 0 ? [] : ChildTitles(home, notes);
+        Dictionary<string, string> titles = new(StringComparer.Ordinal);
+        if (query.Length != 0)
+            foreach (var (id, row) in ThreadMetadata(home, notes.Select(note => note.ThreadId), ["agent_path"]))
+                if (ChildPath(row) is { } path)
+                    titles[id] = path;
         var ordered = notes.Where(note => Matches(query, note.ThreadId, titles))
             .OrderByDescending(note => note.SortAt).ThenBy(note => note.ThreadId, StringComparer.Ordinal).ToArray();
         var response = Page(ordered, pageNumber, limit, page =>
         {
             var ids = page.Select(note => note.ThreadId).ToArray();
-            var details = ThreadMetadata(home, ids, [.. PreviewColumns, "archived"]);
-            if (query.Length == 0)
-                titles = ChildTitles(home, page);
+            var details = ThreadMetadata(home, ids, query.Length == 0
+                ? [.. PreviewColumns, "archived", "agent_path"] : [.. PreviewColumns, "archived"]);
             JsonArray items = [];
             foreach (var note in page)
             {
                 string id = note.ThreadId;
+                var metadata = details.GetValueOrDefault(id);
                 items.Add((JsonNode)new JsonObject
                 {
                     ["thread_id"] = id,
                     ["parent_thread_id"] = links[id].ParentId,
                     ["latest_at"] = note.UpdatedAt,
-                    ["title"] = titles.GetValueOrDefault(id) is { } title ? Prefix(title, 160) : null,
-                    ["preview"] = note.Inherited ? null : Preview(details.GetValueOrDefault(id)),
-                    ["archived"] = details.GetValueOrDefault(id)?.GetValueOrDefault("archived") is 1L,
+                    ["title"] = query.Length == 0 ? ChildPath(metadata) : titles.GetValueOrDefault(id),
+                    ["preview"] = note.Inherited ? null : Preview(metadata),
+                    ["archived"] = metadata?.GetValueOrDefault("archived") is 1L,
                     ["inherited"] = note.Inherited,
                 });
             }
@@ -622,22 +625,8 @@ internal static class PanelThreads
         return titles;
     }
 
-    private static Dictionary<string, string> ChildTitles(string home, IReadOnlyList<ListedNote> notes)
-    {
-        var metadata = ThreadMetadata(home, notes.Select(note => note.ThreadId), ChildTitleColumns);
-        var titles = ThreadTitles(home, notes.Where(note => !note.Inherited).Select(note => note.ThreadId), metadata);
-        foreach (var note in notes)
-        {
-            string id = note.ThreadId;
-            if (titles.ContainsKey(id) || !metadata.TryGetValue(id, out var row))
-                continue;
-            string nickname = DisplayText(row.GetValueOrDefault("agent_nickname") as string);
-            string role = DisplayText(row.GetValueOrDefault("agent_role") as string);
-            if (nickname.Length > 0 || role.Length > 0)
-                titles[id] = nickname.Length > 0 ? nickname : role;
-        }
-        return titles;
-    }
+    private static string? ChildPath(Dictionary<string, object?>? metadata) =>
+        DisplayText(metadata?.GetValueOrDefault("agent_path") as string) is { Length: > 0 } path ? path : null;
 
     private static string? Preview(Dictionary<string, object?>? row)
     {

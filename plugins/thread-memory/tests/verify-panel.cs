@@ -207,7 +207,8 @@ static async Task VerifyChildDirectory(string home, string panel, string cli)
     AddThread(database, fork, "Ordinary fork", null, archived: false, updatedMs: 0);
     AddThread(database, attached, "Attached thread", null, archived: false, updatedMs: 0);
     Execute(database, """
-        UPDATE threads SET agent_nickname = 'Nested reviewer' WHERE id = $nested;
+        UPDATE threads SET agent_nickname = 'Nested reviewer', agent_path = '/root/worker/principal_language' WHERE id = $nested;
+        UPDATE threads SET agent_nickname = 'Legacy nickname' WHERE id = $direct;
         UPDATE threads SET attached_thread_parent_id = $main WHERE id = $attached;
         INSERT INTO thread_spawn_edges VALUES ($childOnly, $direct, 'running'), ($childOnly, $intermediate, 'closed'),
             ($intermediate, $nested, 'closed');
@@ -246,16 +247,17 @@ static async Task VerifyChildDirectory(string home, string panel, string cli)
     Check(children.GetProperty("total").GetInt32() == 2 && children.GetProperty("total_pages").GetInt32() == 2
         && ThreadIds(children).SequenceEqual([nested])
         && nestedRow.GetProperty("parent_thread_id").GetString() == intermediate
-        && nestedRow.GetProperty("title").GetString() == "Nested reviewer" && nestedRow.GetProperty("archived").GetBoolean(),
+        && nestedRow.GetProperty("title").GetString() == "/root/worker/principal_language" && nestedRow.GetProperty("archived").GetBoolean(),
         "Child notes must follow nesting through note-less intermediaries and list newest first.");
     var directPage = await mcp.Tool("handoff_children", new { thread_id = childOnly, limit = 1, page = 3 });
     var directRow = directPage.GetProperty("items")[0];
     Check(ThreadIds(directPage).SequenceEqual([direct]) && directPage.GetProperty("page").GetInt32() == 2
         && directRow.GetProperty("parent_thread_id").GetString() == childOnly && directRow.GetProperty("preview").GetString() == "Task preview"
+        && directRow.GetProperty("title").ValueKind == JsonValueKind.Null
         && directRow.GetProperty("latest_at").GetString() == directWrite.GetProperty("updated_at").GetString(),
-        "The child list must page and expose display metadata without the saved note body.");
-    var named = await mcp.Tool("handoff_children", new { thread_id = childOnly, query = "REVIEWER" });
-    Check(ThreadIds(named).SequenceEqual([nested]), "Child search must match agent nicknames.");
+        "A child without a recorded agent path must leave the title empty for the UUID label.");
+    var named = await mcp.Tool("handoff_children", new { thread_id = childOnly, query = "/WORKER/PRINCIPAL_LANGUAGE" });
+    Check(ThreadIds(named).SequenceEqual([nested]), "Child search must match the canonical path case-insensitively.");
     var noChildren = await mcp.Tool("handoff_children", new { thread_id = main });
     Check(!ThreadIds(noChildren).Any(), "Ordinary forks and attached sessions are outside the spawned child directory.");
     var read = await mcp.Tool("handoff_read", new { thread_id = nested });
@@ -275,7 +277,7 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
         AddThread(database, root, "Main thread", null, archived: root == original, updatedMs: 0);
     string originalPath = WriteRollout(home, original, archived: true);
 
-    AddChild(originalEarly, original, archived: true, nickname: "Original reviewer");
+    AddChild(originalEarly, original, archived: true, path: "/root/original_reviewer");
     AddChild(originallyEmpty, original);
     var beforeFirstFork = await SaveNote(cli, home, originalEarly, "Original note before first fork");
     string firstCutoff = beforeFirstFork.GetProperty("updated_at").GetString()!;
@@ -349,7 +351,7 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
             && row.GetProperty("preview").ValueKind == JsonValueKind.Null),
         "Once the original rollouts can be read, the inherited view must restore every eligible snapshot.");
     var archived = inherited.GetProperty("items")[2];
-    Check(archived.GetProperty("archived").GetBoolean() && archived.GetProperty("title").GetString() == "Original reviewer"
+    Check(archived.GetProperty("archived").GetBoolean() && archived.GetProperty("title").GetString() == "/root/original_reviewer"
         && archived.GetProperty("latest_at").GetString() == firstCutoff,
         "An archived ancestor child must retain its historical note time and agent label.");
 
@@ -401,13 +403,13 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
             "An uncertain ancestor cutoff must return an ancestry error rather than an empty snapshot.");
     }
 
-    void AddChild(string child, string parent, bool archived = false, string? nickname = null)
+    void AddChild(string child, string parent, bool archived = false, string? path = null)
     {
         AddThread(database, child, "Live title", "Live task preview", archived, updatedMs: 0);
         Execute(database, """
-            UPDATE threads SET agent_nickname = $nickname WHERE id = $child;
+            UPDATE threads SET agent_nickname = 'Archived nickname', agent_path = $path WHERE id = $child;
             INSERT INTO thread_spawn_edges VALUES ($parent, $child, 'closed');
-            """, ("$nickname", nickname), ("$child", child), ("$parent", parent));
+            """, ("$path", path), ("$child", child), ("$parent", parent));
         WriteRollout(home, child, archived, source: new { subagent = new { thread_spawn = new { parent_thread_id = parent } } });
     }
 }
@@ -526,7 +528,7 @@ static string CreateThreadIndex(string home, string backfill = "complete")
     string database = Path.Combine(home, "state_5.sqlite");
     Execute(database, """
         CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT, name TEXT, title TEXT, preview TEXT,
-            first_user_message TEXT, source TEXT NOT NULL DEFAULT 'vscode', thread_source TEXT, agent_nickname TEXT, agent_role TEXT,
+            first_user_message TEXT, source TEXT NOT NULL DEFAULT 'vscode', thread_source TEXT, agent_nickname TEXT, agent_role TEXT, agent_path TEXT,
             archived INTEGER NOT NULL DEFAULT 0, attached_thread_parent_id TEXT, updated_at_ms INTEGER);
         CREATE TABLE backfill_state (id INTEGER PRIMARY KEY, status TEXT);
         INSERT INTO backfill_state VALUES (1, $backfill);

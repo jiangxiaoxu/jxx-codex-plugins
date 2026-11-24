@@ -103,9 +103,60 @@ static async Task VerifyUi(DevTools browser)
     await browser.Check("fixture.lists.at(-1).selected_thread_id === fixture.firstId",
         "Refresh should verify the selected thread even when it is no longer listed.");
 
+    await VerifyNavigationLayout(browser);
     await VerifyModalVisibility(browser);
     await VerifyInheritance(browser);
     await VerifyCleanup(browser);
+}
+
+static async Task VerifyNavigationLayout(DevTools browser)
+{
+    await browser.Command("Emulation.setDeviceMetricsOverride", new { width = 1440, height = 860, deviceScaleFactor = 1, mobile = false });
+    await browser.Evaluate("el('threads').querySelector('button').click()");
+    await browser.WaitFor("visible('reader') && el('note').textContent.includes('Example saved note')",
+        "Opening a thread should start at its main note.");
+    await browser.Check("""
+        visible('thread-context') && el('thread-context-title').textContent === 'Thread 2' &&
+        visible('subagent-back-main') && visible('show-subagents') &&
+        el('subagent-back-main').getAttribute('aria-pressed') === 'true' &&
+        el('show-subagents').getAttribute('aria-pressed') === 'false'
+        """, "The selected thread should show its title and both mode controls at the main note.");
+    await browser.Evaluate("fixture.wideControls = modeControlPositions(); el('show-subagents').click()");
+    await browser.WaitFor("visible('subagent-directory') && el('subagent-threads').querySelector('button')?.textContent.includes(fixture.ownTitle)",
+        "The shared subagent control should list the subagent by its full path.");
+    await browser.Check("""
+        samePositions(fixture.wideControls, modeControlPositions()) &&
+        el('show-subagents').getAttribute('aria-pressed') === 'true' &&
+        el('subagent-back-main').getAttribute('aria-pressed') === 'false'
+        """, "Switching to the subagent directory should leave the controls in place and mark its mode active.");
+    await browser.Evaluate("el('subagent-threads').querySelector('button').click()");
+    await browser.WaitFor("visible('reader') && visible('subagent-directory') && el('detail-heading').textContent === fixture.ownTitle",
+        "A wide panel should show the selected subagent note and path beside its directory.");
+    await browser.Check("""
+        samePositions(fixture.wideControls, modeControlPositions()) &&
+        el('thread-context-title').textContent === 'Thread 2' &&
+        el('show-subagents').getAttribute('aria-pressed') === 'true' &&
+        ['directory', 'subagent-directory', 'reader'].every(id => effectiveBackground(el(id)) === 'rgb(24, 24, 24)')
+        """, "The subagent reader should retain the shared controls and use the same dark surface as both directories.");
+    await browser.Evaluate("el('subagent-back-main').click()");
+    await browser.WaitFor("el('detail-heading').textContent === 'Thread 2' && el('subagent-back-main').getAttribute('aria-pressed') === 'true'",
+        "The main-note control should return to the selected main thread.");
+
+    await browser.Command("Emulation.setDeviceMetricsOverride", new { width = 480, height = 760, deviceScaleFactor = 1, mobile = false });
+    await browser.WaitFor("visible('back-to-threads') && !visible('directory')", "A narrow note view should show its way back to the main directory.");
+    await browser.Evaluate("fixture.narrowControls = modeControlPositions(); el('show-subagents').click()");
+    await browser.WaitFor("visible('subagent-directory') && !visible('reader')", "A narrow panel should first show the subagent directory on its own.");
+    await browser.Check("samePositions(fixture.narrowControls, modeControlPositions()) && visible('back-to-threads')",
+        "The narrow subagent directory should keep the shared navigation in place.");
+    await browser.Evaluate("el('subagent-threads').querySelector('button').click()");
+    await browser.WaitFor("visible('reader') && !visible('subagent-directory') && el('detail-heading').textContent === fixture.ownTitle",
+        "A narrow panel should show the selected subagent note on its own.");
+    await browser.Check("samePositions(fixture.narrowControls, modeControlPositions()) && visible('back-to-threads')",
+        "The narrow subagent reader should keep the shared navigation in place.");
+    await browser.Evaluate("el('back-to-threads').click()");
+    await browser.WaitFor("visible('directory') && !visible('thread-context') && !visible('reader')",
+        "The shared narrow navigation should return to the main directory.");
+    await browser.Command("Emulation.clearDeviceMetricsOverride", new { });
 }
 
 static async Task VerifyModalVisibility(DevTools browser)
@@ -335,16 +386,33 @@ static class HostFixture
         <script>
         const frame = document.createElement('iframe');
         const el = id => frame.contentDocument?.getElementById(id);
+        const visible = id => {
+          const node = el(id);
+          return node?.getClientRects().length > 0 && frame.contentWindow.getComputedStyle(node).visibility === 'visible';
+        };
+        const modeControlPositions = () => ['subagent-back-main', 'show-subagents'].flatMap(id => {
+          const {left, top} = el(id).getBoundingClientRect();
+          return [left, top];
+        });
+        const samePositions = (before, after) => before.every((value, i) => Math.abs(value - after[i]) < 1);
+        function effectiveBackground(node) {
+          while (node) {
+            const color = frame.contentWindow.getComputedStyle(node).backgroundColor;
+            if (color !== 'rgba(0, 0, 0, 0)') return color;
+            node = node.parentElement;
+          }
+        }
         const firstId = '00000000-0000-4000-8000-000000000001';
         const secondId = '00000000-0000-4000-8000-000000000002';
         const rows = [firstId, secondId].map((thread_id, i) => ({
           thread_id, title: 'Thread ' + (i + 1), archived:false, latest_at:'2026-11-24T08:29:00Z'
         }));
         const inheritedId = '00000000-0000-4000-8000-000000000003';
-        const ownChild = {...rows[1], thread_id:'00000000-0000-4000-8000-000000000004', title:'Local subagent'};
-        const inheritedChild = {...rows[1], thread_id:inheritedId, title:'Inherited subagent', inherited:true};
+        const ownTitle = '/root/principal_language';
+        const ownChild = {...rows[1], thread_id:'00000000-0000-4000-8000-000000000004', title:ownTitle};
+        const inheritedChild = {...rows[1], thread_id:inheritedId, title:'/root/inherited_context', inherited:true};
         const cleanupCandidates = [secondId, '00000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000006'];
-        const fixture = { firstId, secondId, inheritedId, rows, cleanupCandidates,
+        const fixture = { firstId, secondId, inheritedId, ownTitle, rows, cleanupCandidates,
           initializations:0, lists:[], previews:[], inheritance:'available', extraChildren:0 };
         const send = fields => frame.contentWindow.postMessage({jsonrpc:'2.0', ...fields}, '*');
         function postBarrier() { send({id:'test-barrier', method:'ping'}); }
@@ -357,7 +425,9 @@ static class HostFixture
             fixture.barrierReached = true;
           } else if (method === 'ui/initialize') {
             if (++fixture.initializations === 1) send({id, error:{code:-32603, message:'Temporary bridge failure'}});
-            else reply({hostContext:{theme:'dark'}});
+            else reply({hostContext:{theme:'dark', styles:{variables:{
+              '--color-background-primary':'#181818', '--color-background-secondary':'#383838'
+            }}}});
           } else if (method === 'tools/call') {
             const args = params.arguments;
             switch (params.name) {
@@ -372,7 +442,7 @@ static class HostFixture
                 fixture.requestedChildPage = args.page;
                 const candidates = [ownChild, ...Array.from({length:fixture.extraChildren}, (_, i) => ({
                   ...ownChild, thread_id:'00000000-0000-4000-8000-' + String(i + 100).padStart(12, '0'),
-                  title:'Archived subagent ' + (i + 1), archived:true
+                  title:'/root/archived_' + (i + 1), archived:true
                 }))];
                 if (args.include_inherited && fixture.inheritance === 'available') candidates.push(inheritedChild);
                 const total_pages = Math.max(1, Math.ceil(candidates.length / args.limit));
