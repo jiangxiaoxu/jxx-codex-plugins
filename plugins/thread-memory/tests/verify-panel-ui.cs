@@ -104,7 +104,6 @@ static async Task VerifyUi(DevTools browser)
         "Refresh should verify the selected thread even when it is no longer listed.");
 
     await VerifyNavigationLayout(browser);
-    await VerifyModalVisibility(browser);
     await VerifySelectionOnRefresh(browser);
     await VerifyInheritance(browser);
     await VerifyCleanup(browser);
@@ -185,30 +184,6 @@ static async Task VerifyNavigationLayout(DevTools browser)
         """);
     await browser.WaitFor("childNotePaths().length === 2 && el('refresh').getAttribute('aria-disabled') === 'false'",
         "Leaving fullscreen should restore the ordinary note directory.");
-}
-
-static async Task VerifyModalVisibility(DevTools browser)
-{
-    await browser.Evaluate("""
-        fixture.beforeModal = fixture.lists.length;
-        el('manage').click();
-        const PanelObserver = frame.contentWindow.IntersectionObserver;
-        new PanelObserver(entries => { fixture.modalVisible = entries.at(-1).isVisible; },
-          {trackVisibility:true, delay:100}).observe(el('management-dialog'));
-        """);
-    await browser.WaitFor("fixture.modalVisible === true", "The management dialog should be visible.");
-    await Task.Delay(240);
-    await browser.Check("fixture.lists.length === fixture.beforeModal", "Opening Manage should not refresh the directory.");
-
-    await browser.Evaluate("frame.style.opacity = '0'");
-    await browser.WaitFor("fixture.modalVisible === false", "Hiding the host iframe should hide the open dialog.");
-    await browser.Evaluate("frame.style.opacity = '1'");
-    await browser.WaitFor("fixture.modalVisible === true && fixture.lists.length > fixture.beforeModal",
-        "Returning to the panel should refresh even while Manage is open.");
-    await browser.Evaluate("el('close-manager').click()");
-    await Task.Delay(320);
-    await browser.Check("fixture.lists.length === fixture.beforeModal + 1",
-        "Returning should refresh once, and closing Manage should not refresh again.");
 }
 
 static async Task VerifySelectionOnRefresh(DevTools browser)

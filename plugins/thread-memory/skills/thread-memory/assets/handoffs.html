@@ -387,8 +387,7 @@
     let totalPages = 1;
     let renderedRows;
     let directoryScrollTop = 0;
-    let panelVisible = false;
-    let refreshPending = false;
+    let cleanupRefreshPending = false;
     let refreshing = false;
     let activeMain = null;
     let activeThread = null;
@@ -500,7 +499,7 @@
       byId("subagent-previous").setAttribute("aria-disabled", String(childLoading || childStale || childRefreshNeeded || childPage === 1));
       byId("subagent-next").setAttribute("aria-disabled", String(childLoading || childStale || childRefreshNeeded || childPage >= childTotalPages));
       byId("note").setAttribute("aria-busy", String(noteLoading));
-      flushPendingRefresh();
+      flushCleanupRefresh();
     }
 
     function formatDate(value) {
@@ -1054,63 +1053,10 @@
       }
     }
 
-    function flushPendingRefresh() {
-      if (!refreshPending || !panelVisible || !connected || busy || listLoading || childLoading || noteLoading || refreshing) return;
-      refreshPending = false;
+    function flushCleanupRefresh() {
+      if (!cleanupRefreshPending || busy || listLoading || childLoading || noteLoading || refreshing) return;
+      cleanupRefreshPending = false;
       void refresh();
-    }
-
-    function observePanelVisibility() {
-      const tracksVisibility = "isVisible" in IntersectionObserverEntry.prototype;
-      const root = document.documentElement;
-      let visibilityTarget = root;
-      let frameVisible = false;
-      let shown = false;
-      let activationTimer;
-      const queueActivation = () => {
-        if (activationTimer !== undefined) return;
-        activationTimer = setTimeout(() => {
-          activationTimer = undefined;
-          if (!panelVisible) return;
-          if (!connected) {
-            if (connectionFailed) void start();
-            return;
-          }
-          refreshPending = true;
-          flushPendingRefresh();
-        }, 120);
-      };
-      const syncVisibility = () => {
-        const visible = frameVisible && document.visibilityState === "visible";
-        if (visible && !panelVisible && shown) queueActivation();
-        panelVisible = visible;
-        shown ||= visible;
-        flushPendingRefresh();
-      };
-      const observer = new IntersectionObserver((entries) => {
-        const entry = entries.findLast(({target}) => target === visibilityTarget);
-        if (!entry) return;
-        frameVisible = entry.isIntersecting && (!tracksVisibility || entry.isVisible);
-        syncVisibility();
-      }, tracksVisibility ? {trackVisibility: true, delay: 100} : {});
-      observer.observe(root);
-      if (tracksVisibility) {
-        // A modal covers the root in this frame. Its own visibility still reflects the host frame's opacity.
-        const confirmation = byId("cleanup-dialog");
-        const modalChanges = new MutationObserver(() => {
-          const target = confirmation.open ? confirmation : managementDialog.open ? managementDialog : root;
-          if (target === visibilityTarget) return;
-          // Keep the last visibility until a new sample for the active surface arrives.
-          observer.takeRecords();
-          observer.unobserve(visibilityTarget);
-          visibilityTarget = target;
-          observer.observe(visibilityTarget);
-        });
-        for (const dialog of [managementDialog, confirmation]) {
-          modalChanges.observe(dialog, {attributes: true, attributeFilter: ["open"]});
-        }
-      }
-      document.addEventListener("visibilitychange", syncVisibility);
     }
 
     async function previewCleanup() {
@@ -1208,10 +1154,10 @@
         } else if (count && result.thread_ids?.includes(activeThread?.thread_id)) {
           showNote(activeMain);
         }
-        refreshPending = true;
+        cleanupRefreshPending = true;
       } catch (error) {
         setCleanupStatus("The deletion result is unknown. " + error.message, true);
-        refreshPending = true;
+        cleanupRefreshPending = true;
       } finally {
         clearTimeout(progress);
         busy = false;
@@ -1307,7 +1253,6 @@
     if (host === window) {
       setStatus("Open Thread Memory in Codex to view local notes.");
     } else {
-      observePanelVisibility();
       void start();
     }
   </script>
