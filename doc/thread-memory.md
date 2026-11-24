@@ -69,7 +69,7 @@ Forked main threads show their own subagent notes by default. Enable **Include i
 
 The local stdio server's `handoff_manager` tool opens `ui://thread-memory/notes` as a global MCP Apps entrypoint. The plugin list uses `assets/thread-memory-icon.png`. The sidebar uses `skills/thread-memory/assets/thread-memory-entrypoint.png`. [Server implementation](../plugins/thread-memory/panel/Program.cs) · [Shared Codex MCP Apps guide](codex-mcp-apps.md)
 
-The panel follows the Codex Desktop theme, including live theme and accent changes. It uses the browser's color scheme when the host omits its theme.
+The panel follows the Codex Desktop theme, including live theme and accent changes. It uses the browser's color scheme when the host omits its theme. The version beside the title comes from the installed plugin manifest.
 
 Opening the panel loads the directory. Returning to it or choosing **Refresh** reloads the current view while keeping the selection, search, filters, sort order, and reading position. The panel keeps a selection that moves to another page and checks its archive status before applying the current filter. If the selected subagent note is gone, the reader returns to **/root**. If the selected main thread no longer has a note group, the panel clears the selection. If the current page disappears, the directory goes to the last available page. When note storage is temporarily unavailable, the panel keeps the loaded directories, pages, and note and displays a retry message. An unavailable or rebuilding subagent index leaves previously loaded subagent rows visible. Use **Retry connection** or reopen the panel if the initial connection fails.
 

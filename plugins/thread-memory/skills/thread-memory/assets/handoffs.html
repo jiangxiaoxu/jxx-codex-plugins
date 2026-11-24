@@ -36,6 +36,7 @@
     header { justify-content: space-between; margin-bottom: 14px; }
     h1, h2, p { margin: 0; }
     h1 { font-size: 1.42rem; letter-spacing: -.023em; }
+    #plugin-version { margin-inline-start: 5px; font-weight: 500; letter-spacing: normal; white-space: nowrap; }
     h2 { font-size: 1.05rem; }
     button, input, select {
       border: 1px solid var(--outline);
@@ -242,7 +243,7 @@
 <body>
   <main data-view="directory">
     <header>
-      <h1>Thread Memory</h1>
+      <h1>Thread Memory<!-- plugin-version --></h1>
       <div class="actions">
         <button id="retry-connection" type="button" hidden>Retry connection</button>
         <button id="refresh" type="button" title="Refresh the directory and selected note" disabled>Refresh</button>

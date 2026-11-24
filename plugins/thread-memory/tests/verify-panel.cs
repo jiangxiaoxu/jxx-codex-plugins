@@ -1,6 +1,7 @@
 #:property PublishAot=false
 
 using System.Diagnostics;
+using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
@@ -69,9 +70,16 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
             plugin, "skills", "thread-memory", "assets", "thread-memory-entrypoint.png"))), "The sidebar icon has incorrect bytes or MIME type.");
 
     var resource = (await mcp.Request("resources/read", new { uri })).GetProperty("contents")[0];
+    string? resourceHtml = resource.GetProperty("text").GetString();
+    using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(
+        Path.GetDirectoryName(panel)!, "..", ".codex-plugin", "plugin.json")));
+    string? version = manifest.RootElement.GetProperty("version").GetString();
+    string versionBadge = $" <span id=\"plugin-version\" class=\"meta\">v{WebUtility.HtmlEncode(version)}</span>";
+    string template = File.ReadAllText(Path.Combine(plugin, "skills", "thread-memory", "assets", "handoffs.html"));
     Check(resource.GetProperty("mimeType").GetString() == "text/html;profile=mcp-app"
-        && resource.GetProperty("text").GetString() == File.ReadAllText(Path.Combine(plugin, "skills", "thread-memory", "assets", "handoffs.html")),
-        "The MCP resource did not return the packaged panel HTML.");
+        && resourceHtml?.Contains($"<h1>Thread Memory{versionBadge}</h1>", StringComparison.Ordinal) == true
+        && resourceHtml == template.Replace("<!-- plugin-version -->", versionBadge, StringComparison.Ordinal),
+        "The MCP resource did not return the packaged panel HTML with the manifest version in the heading.");
     await mcp.Tool("handoff_manager");
 
     string active = NewId(), archived = NewId(), fallback = NewId(), spawned = NewId();
