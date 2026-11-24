@@ -19,7 +19,7 @@ if (!File.Exists(cli))
 }
 
 const string PatchHeader = "--- a/note\n+++ b/note\n";
-const int Limit = 12_288;
+const int Limit = 25_600;
 string sandbox = Directory.CreateTempSubdirectory("thread-memory-note-").FullName;
 string scenario = "UTF-8 notes, CLI thread selection, and lazy fork isolation";
 
@@ -27,7 +27,7 @@ try
 {
     await VerifyFork(NewHome("fork"));
     Console.WriteLine($"Passed {scenario}.");
-    scenario = "UTF-8 truncation and rejection of incomplete or over-limit patches";
+    scenario = "UTF-8 note limits and rejection of incomplete or over-limit patches";
     await VerifyBounds(NewHome("bounds"));
     Console.WriteLine($"Passed {scenario}.");
     return 0;
@@ -73,9 +73,21 @@ async Task VerifyBounds(string home)
     string thread = MakeRollout(home);
     const string Marker = "\n\n[Summary truncated]";
     const string Heading = "Goal\n";
+    const string Multibyte = "\u754c";
+    string body = new string('x', Limit - Encoding.UTF8.GetByteCount(Heading + Multibyte)) + Multibyte;
+    string atLimit = Heading + body;
+    JsonElement boundary = await Query(home, thread, ["write"], stdin: atLimit + "\r\n");
+    AssertWrite(boundary, thread, atLimit, truncated: false);
+    AssertRead(await Query(home, thread, ["read"]), thread, atLimit, boundary.GetProperty("updated_at").GetString());
+
+    JsonElement patched = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Next\n");
+    string patchedAtLimit = "Next\n" + body;
+    AssertWrite(patched, thread, patchedAtLimit);
+    AssertRead(await Query(home, thread, ["read"]), thread, patchedAtLimit, patched.GetProperty("updated_at").GetString());
+
     string prefix = Heading + new string('x', Limit - Encoding.UTF8.GetByteCount(Heading + Marker) - 1);
     string saved = prefix + Marker;
-    JsonElement written = await Query(home, thread, ["write"], stdin: prefix + "\u754c" + new string('x', 70_000));
+    JsonElement written = await Query(home, thread, ["write"], stdin: prefix + Multibyte + new string('x', 70_000));
     AssertWrite(written, thread, saved, truncated: true);
     Require(Encoding.UTF8.GetByteCount(saved) == Limit - 1, "The fixture did not cross the limit inside a UTF-8 character.");
     string? updated = written.GetProperty("updated_at").GetString();

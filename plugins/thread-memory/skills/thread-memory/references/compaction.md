@@ -16,7 +16,7 @@
 '@ | & $cli memory patch
 ```
 
-Hunk locations and original lines must match. A mismatch, empty result, or result over 12,288 UTF-8 bytes leaves the stored note unchanged.
+Hunk locations and original lines must match. A mismatch, empty result, or result over 25,600 UTF-8 bytes leaves the stored note unchanged.
 
 ## Find the checkpoint
 

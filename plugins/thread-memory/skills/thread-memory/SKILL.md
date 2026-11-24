@@ -9,11 +9,13 @@ In PowerShell, set `$cli = Join-Path '<directory containing this SKILL.md>' '../
 
 ## Maintain the Markdown note
 
-Keep a concise Markdown document for the current work. Update relevant sections in place, consolidate repeated information, and remove obsolete details. Record the active goal, open requests, important decisions and constraints, verified progress, and next steps. Keep a rollout reference, a tool record ID, or a distinctive phrase for details you may need to find later. Use absolute paths in links to local files.
+Keep a concise Markdown document for the current work. Use short paragraphs and list items, and put distinct points on separate lines. Keep file paths and code intact. Use absolute paths in links to local files.
+
+Update relevant sections in place, consolidate repeated information, and remove obsolete details. Record the active goal, open requests, important decisions and constraints, verified progress, and next steps. Keep a rollout reference, a tool record ID, or a distinctive phrase for details you may need to find later.
 
 The note stays with the thread across compaction. A main-thread fork gets its own copy as of its creation time. Subagents start with an empty note, including when they inherit chat history.
 
-Use `memory read` to get the complete Markdown in `.summary` and its UTC timestamp in `.updated_at`. A null `.summary` means there is no saved note. Read the note after compaction and search the rollout as needed for missing details.
+Use `memory read` to get the complete Markdown in `.summary` and its UTC timestamp in `.updated_at`. A null `.summary` means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details. For a routine edit, filter the decoded Markdown by line when you only need the relevant passage.
 
 ```powershell
 $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
@@ -23,7 +25,7 @@ if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
 $json | jq -r '.summary // empty'
 ```
 
-Use `memory write` to create a note or deliberately replace it. Send the full Markdown on stdin, using the UTF-8 settings above. If the receipt has `.truncated: true`, shorten the original Markdown to fit within 12,288 UTF-8 bytes and save it again.
+Use `memory write` to create a note or deliberately replace it. Send the full Markdown on stdin, using the UTF-8 settings above. The 25 KiB limit (25,600 UTF-8 bytes) is a ceiling. If the receipt reports `truncated: true`, shorten the original Markdown and save it again.
 
 ```powershell
 $note = @'
@@ -36,7 +38,7 @@ if ($writeExit -ne 0) { throw "memory write failed ($writeExit)" }
 $json | jq '{saved, truncated}'
 ```
 
-Use `memory patch` for a targeted edit. Read the current note, then send a unified diff on stdin. Match the line numbers and context to the actual note. If the patch is stale or does not match, reread and rebuild the diff. Patches must leave the result within the same byte limit.
+Use `memory patch` for a targeted edit. Read the current note, then send a unified diff on stdin. Match the line numbers and context to the actual note. Generate diffs that repeat long lines inside PowerShell using the Markdown you just read. If the patch is stale or does not match, reread and rebuild the diff. Patches must leave the result within the same byte limit.
 
 ```powershell
 $patch = @'
