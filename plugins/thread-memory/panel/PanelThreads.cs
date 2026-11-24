@@ -138,13 +138,14 @@ internal static class PanelThreads
             var unavailable = Page(Array.Empty<ListedNote>(), pageNumber, limit, _ => []);
             unavailable["can_include_inherited"] = false;
             unavailable["spawn_index_available"] = false;
+            unavailable["inheritance_status"] = "unavailable";
             return unavailable;
         }
         // Only expose a spawn subtree from an independently verified main thread.
         bool main = !links.ContainsKey(root)
             && MainThreadArchives(home, [root], ThreadMetadata(home, [root], IdentityColumns)).ContainsKey(root);
         bool includeInherited = include.ValueKind == JsonValueKind.True;
-        Dictionary<string, long> ancestorCutoffs = main ? ForkCutoffs(home, root, links, directOnly: !includeInherited) : [];
+        var (ancestorCutoffs, inheritanceStatus) = main ? ForkCutoffs(home, root, links, directOnly: !includeInherited) : ([], "unavailable");
         List<ListedNote> notes = [];
         if (main && links.Count > 0)
         {
@@ -156,8 +157,9 @@ internal static class PanelThreads
                 using (connection)
                 {
                     foreach (string id in HistoricalNoteIds(connection, ancestorCutoffs.Values.Max()))
-                        if (links.TryGetValue(id, out var link)
-                            && HistoricalChild(connection, id, link, links, ancestorCutoffs) is { } historical)
+                        if (links.TryGetValue(id, out var link) && link.Indexed && RootOf(id, links) is { } ancestor
+                            && ancestorCutoffs.TryGetValue(ancestor, out long cutoff)
+                            && HistoricalChild(connection, id, cutoff) is { } historical)
                             notes.Add(new ListedNote(id, NoteTimestamp(historical.UpdatedUs), historical.UpdatedUs, Inherited: true));
                 }
             }
@@ -190,6 +192,7 @@ internal static class PanelThreads
         });
         response["can_include_inherited"] = ancestorCutoffs.Count > 0;
         response["spawn_index_available"] = true;
+        response["inheritance_status"] = inheritanceStatus;
         return response;
     }
 
@@ -222,11 +225,20 @@ internal static class PanelThreads
         {
             var links = ReadSpawnLinks(home)
                 ?? throw new InvalidDataException("The Codex subagent index is unavailable. Refresh the panel or try again later.");
-            if (connection is not null && links.TryGetValue(identifier, out var link)
-                && HistoricalChild(connection, identifier, link, links, ForkCutoffs(home, fork, links)) is { } historical)
+            if (links.TryGetValue(identifier, out var link) && link.Indexed
+                && RootOf(identifier, links) is { } ancestor && ancestor != fork)
             {
-                summary = historical.Summary;
-                updated = NoteTimestamp(historical.UpdatedUs);
+                var (cutoffs, status) = ForkCutoffs(home, fork, links);
+                if (cutoffs.TryGetValue(ancestor, out long cutoff))
+                {
+                    if (connection is not null && HistoricalChild(connection, identifier, cutoff) is { } historical)
+                    {
+                        summary = historical.Summary;
+                        updated = NoteTimestamp(historical.UpdatedUs);
+                    }
+                }
+                else if (status is "partial" or "unavailable")
+                    throw new InvalidDataException("The fork ancestry could not be fully verified. Refresh the panel or try again later.");
             }
         }
         else if (connection is not null)
@@ -328,11 +340,8 @@ internal static class PanelThreads
         return id;
     }
 
-    private static ThreadMemory.Note? HistoricalChild(SqliteConnection connection, string id, SpawnLink link,
-        Dictionary<string, SpawnLink> links, Dictionary<string, long> ancestorCutoffs)
+    private static ThreadMemory.Note? HistoricalChild(SqliteConnection connection, string id, long cutoff)
     {
-        if (!link.Indexed || RootOf(id, links) is not { } root || !ancestorCutoffs.TryGetValue(root, out long cutoff))
-            return null;
         // A saved revision at this cutoff also establishes that the child already existed.
         var saved = ThreadMemory.ReadSavedAt(connection, id, cutoff);
         return string.IsNullOrEmpty(saved?.Summary) ? null : saved;
@@ -354,22 +363,27 @@ internal static class PanelThreads
         return ids;
     }
 
-    private static Dictionary<string, long> ForkCutoffs(string home, string root, Dictionary<string, SpawnLink> links,
+    private static (Dictionary<string, long> Cutoffs, string Status) ForkCutoffs(string home, string root,
+        Dictionary<string, SpawnLink> links,
         bool directOnly = false)
     {
         Dictionary<string, long> cutoffs = new(StringComparer.Ordinal);
         var rollouts = new PanelForkRollouts(home);
         var header = MainHeader(root);
         long cutoff = long.MaxValue;
-        while (SessionFiles.String(header, "forked_from_id") is { Length: 36 } parentText
-            && Guid.TryParseExact(parentText, "D", out var parentId))
+        while (header.ValueKind == JsonValueKind.Object)
         {
+            var forkedFrom = SessionFiles.Property(header, "forked_from_id");
+            if (forkedFrom.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+                return (cutoffs, cutoffs.Count == 0 ? "none" : "available");
+            if (forkedFrom.ValueKind != JsonValueKind.String || forkedFrom.GetString() is not { Length: 36 } parentText
+                || !Guid.TryParseExact(parentText, "D", out var parentId))
+                break;
             string parent = parentId.ToString("D");
             if (parent == root || cutoffs.ContainsKey(parent))
-                return [];
-            var parentHeader = MainHeader(parent);
-            if (parentHeader.ValueKind == JsonValueKind.Undefined)
-                break;
+                return ([], "unavailable");
+            if (directOnly && cutoffs.Count != 0)
+                return (cutoffs, "available");
             try
             {
                 cutoff = Math.Min(cutoff, ThreadMemory.TimestampUs(SessionFiles.String(header, "timestamp")));
@@ -378,12 +392,13 @@ internal static class PanelThreads
             {
                 break;
             }
-            cutoffs[parent] = cutoff;
-            if (directOnly)
+            var parentHeader = MainHeader(parent);
+            if (parentHeader.ValueKind == JsonValueKind.Undefined)
                 break;
+            cutoffs[parent] = cutoff;
             header = parentHeader;
         }
-        return cutoffs;
+        return (cutoffs, cutoffs.Count == 0 ? "unavailable" : "partial");
 
         JsonElement MainHeader(string id)
         {

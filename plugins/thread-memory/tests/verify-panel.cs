@@ -316,14 +316,38 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
 
     var ownOnly = await mcp.Tool("handoff_children", new { thread_id = secondFork });
     Check(ownOnly.GetProperty("can_include_inherited").GetBoolean() && ThreadIds(ownOnly).SequenceEqual([own])
+        && ownOnly.GetProperty("inheritance_status").GetString() == "available"
         && !ownOnly.GetProperty("items")[0].GetProperty("inherited").GetBoolean(),
         "A fork using a later active segment must show only its own notes and still offer inheritance from its original rollout.");
 
+    using (new FileStream(secondForkPath, FileMode.Open, FileAccess.Read, FileShare.None))
+    {
+        var lockedRoot = await mcp.Tool("handoff_children", new { thread_id = secondFork, include_inherited = true });
+        Check(ThreadIds(lockedRoot).SequenceEqual([own]) && lockedRoot.GetProperty("spawn_index_available").GetBoolean()
+            && lockedRoot.GetProperty("inheritance_status").GetString() == "unavailable",
+            "A locked original fork rollout must keep the fork's own notes and report the unverified ancestry.");
+        await CheckAncestryError(forkEarly);
+    }
+
+    using (new FileStream(originalPath + ".zst", FileMode.Open, FileAccess.Read, FileShare.None))
+    {
+        var lockedAncestor = await mcp.Tool("handoff_children", new { thread_id = secondFork, include_inherited = true });
+        var directSnapshot = await mcp.Tool("handoff_read", new { thread_id = forkEarly, from_fork = secondFork });
+        var afterCutoff = await mcp.Tool("handoff_read", new { thread_id = forkLate, from_fork = secondFork });
+        Check(ThreadIds(lockedAncestor).SequenceEqual([own, forkEarly])
+            && lockedAncestor.GetProperty("inheritance_status").GetString() == "partial"
+            && directSnapshot.GetProperty("summary").GetString() == "First fork note before the second fork"
+            && afterCutoff.GetProperty("summary").ValueKind == JsonValueKind.Null,
+            "An inaccessible grandparent must keep verified history and known absences for the direct parent.");
+        await CheckAncestryError(originalEarly);
+    }
+
     var inherited = await mcp.Tool("handoff_children", new { thread_id = secondFork, include_inherited = true });
     Check(ThreadIds(inherited).SequenceEqual([own, forkEarly, originalEarly])
+        && inherited.GetProperty("inheritance_status").GetString() == "available"
         && inherited.GetProperty("items").EnumerateArray().Skip(1).All(row => row.GetProperty("inherited").GetBoolean()
             && row.GetProperty("preview").ValueKind == JsonValueKind.Null),
-        "The inherited view must honor each fork cutoff, including child notes that were cleared afterward.");
+        "Once the original rollouts can be read, the inherited view must restore every eligible snapshot.");
     var archived = inherited.GetProperty("items")[2];
     Check(archived.GetProperty("archived").GetBoolean() && archived.GetProperty("title").GetString() == "Original reviewer"
         && archived.GetProperty("latest_at").GetString() == firstCutoff,
@@ -342,8 +366,19 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
         "Inherited note reads must use the same ancestry cutoffs as the directory without altering current notes.");
 
     var unforked = await mcp.Tool("handoff_children", new { thread_id = original, include_inherited = true });
-    Check(!unforked.GetProperty("can_include_inherited").GetBoolean() && unforked.GetProperty("total").GetInt32() == 3,
+    Check(!unforked.GetProperty("can_include_inherited").GetBoolean() && unforked.GetProperty("total").GetInt32() == 3
+        && unforked.GetProperty("inheritance_status").GetString() == "none",
         "A non-forked thread has only notes from its own subagents.");
+
+    File.WriteAllText(secondForkPath, JsonSerializer.Serialize(new
+    {
+        type = "session_meta",
+        payload = new { id = secondFork, timestamp = firstCutoff, source = "vscode", forked_from_id = "invalid" },
+    }) + "\n");
+    var malformed = await mcp.Tool("handoff_children", new { thread_id = secondFork });
+    Check(malformed.GetProperty("inheritance_status").GetString() == "unavailable",
+        "A malformed fork link must not classify the thread as an ordinary main thread.");
+
     Execute(database, "DROP TABLE thread_spawn_edges");
     var unavailableSnapshot = await mcp.Request("tools/call", new
     {
@@ -353,6 +388,18 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
     Check(unavailableSnapshot.GetProperty("isError").GetBoolean(),
         "An unavailable spawn index must return an error for a historical child read.");
     await mcp.Finish();
+
+    async Task CheckAncestryError(string child)
+    {
+        var result = await mcp.Request("tools/call", new
+        {
+            name = "handoff_read",
+            arguments = new { thread_id = child, from_fork = secondFork },
+        });
+        Check(result.GetProperty("isError").GetBoolean()
+            && result.GetProperty("content")[0].GetProperty("text").GetString()!.Contains("fork ancestry", StringComparison.OrdinalIgnoreCase),
+            "An uncertain ancestor cutoff must return an ancestry error rather than an empty snapshot.");
+    }
 
     void AddChild(string child, string parent, bool archived = false, string? nickname = null)
     {
@@ -411,9 +458,10 @@ static async Task VerifyCleanup(string home, string panel, string cli)
     Check(before.GetProperty("summary").ValueKind == JsonValueKind.Null, "Cleanup preview must not initialize the surviving fork.");
 
     WriteRollout(home, restored, archived: true);
-    var result = await mcp.Tool("handoff_cleanup", new { thread_ids = confirmed });
+    var result = await mcp.Tool("handoff_cleanup", new { thread_ids = new[] { parent, deletedChild, restored, searchOnly, restored } });
     Check(CleanupIds(result).Order().SequenceEqual(new[] { parent, deletedChild, searchOnly }.Order())
         && result.GetProperty("deleted").GetInt32() >= 3, "Cleanup must revalidate and delete only vanished thread state.");
+    Check(result.GetProperty("skipped_thread_count").GetInt32() == 1, "Cleanup must count a surviving confirmed thread only once.");
     Check(File.Exists(archivePath) && File.Exists(forkPath), "Cleanup must not remove Codex rollout files.");
     foreach (string id in new[] { parent, deletedChild })
     {
@@ -445,6 +493,7 @@ static async Task VerifyCleanup(string home, string panel, string cli)
     File.WriteAllText(damaged, "incomplete header");
     var kept = await mcp.Tool("handoff_cleanup", new { thread_ids = new[] { attachedSource, unresolvedSource } });
     Check(!CleanupIds(kept).Any() && kept.GetProperty("deleted").GetInt32() == 0
+        && !kept.TryGetProperty("skipped_thread_count", out _)
         && kept.GetProperty("kept_thread_ids").EnumerateArray().Select(value => value.GetString()).Order()
             .SequenceEqual(new[] { attachedSource, unresolvedSource }.Order()),
         "A surviving attachment or unreadable fork relation must protect its source data.");

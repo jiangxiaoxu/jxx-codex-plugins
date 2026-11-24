@@ -369,6 +369,7 @@
     const pageSize = 25;
     const dateFormat = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
     const spawnIndexUnavailable = "The Codex subagent index is unavailable. Refresh to try again.";
+    const inheritanceUnavailable = "Could not verify the fork history. Refresh to try again.";
     let requestId = 0;
     let connected = false;
     let connecting = false;
@@ -964,10 +965,21 @@
           childRefreshNeeded = true;
           throw new Error(spawnIndexUnavailable);
         }
-        byId("include-inherited-control").hidden = result.can_include_inherited !== true;
-        if (result.can_include_inherited !== true && byId("include-inherited").checked) {
-          byId("include-inherited").checked = false;
-          dismissInheritedNote();
+        const inheritanceUnknown = result.inheritance_status === "unavailable";
+        const inheritancePartial = result.inheritance_status === "partial";
+        const warning = inheritanceUnknown ? inheritanceUnavailable
+          : inheritancePartial ? "Some inherited notes could not be verified. Refresh to try again." : "";
+        const losingPage = inheritancePartial && !childStale && targetPage === childPage && result.page < targetPage;
+        if ((inheritanceUnknown || losingPage) && args.include_inherited && renderedChildren !== undefined) {
+          childRefreshNeeded = true;
+          throw new Error(warning);
+        }
+        if (!inheritanceUnknown) {
+          byId("include-inherited-control").hidden = result.can_include_inherited !== true;
+          if (result.can_include_inherited !== true && byId("include-inherited").checked) {
+            byId("include-inherited").checked = false;
+            dismissInheritedNote();
+          }
         }
         const preserve = !childStale && childPage === result.page;
         childPage = result.page;
@@ -1001,7 +1013,8 @@
         byId("subagent-count").textContent = result.total + (result.total === 1 ? " subagent" : " subagents");
         byId("subagent-pagination").hidden = childTotalPages < 2;
         byId("subagent-page").textContent = "Page " + childPage + " of " + childTotalPages;
-        byId("subagent-status").hidden = true;
+        byId("subagent-status").textContent = warning;
+        byId("subagent-status").hidden = !warning;
       } catch (error) {
         if (revision !== childRequest) return;
         if (childStale || renderedChildren === undefined) byId("subagent-count").textContent = "";
@@ -1065,6 +1078,8 @@
 
     function observePanelVisibility() {
       const tracksVisibility = "isVisible" in IntersectionObserverEntry.prototype;
+      const root = document.documentElement;
+      let visibilityTarget = root;
       let frameVisible = false;
       let shown = false;
       let activationTimer;
@@ -1088,13 +1103,29 @@
         shown ||= visible;
         flushPendingRefresh();
       };
-      // A retained Codex frame may be hidden with opacity while it still intersects the viewport.
-      new IntersectionObserver((entries) => {
-        const entry = entries.at(-1);
-        frameVisible = entry.isIntersecting &&
-          (!tracksVisibility || entry.isVisible || document.querySelector("dialog[open]") !== null);
+      const observer = new IntersectionObserver((entries) => {
+        const entry = entries.findLast(({target}) => target === visibilityTarget);
+        if (!entry) return;
+        frameVisible = entry.isIntersecting && (!tracksVisibility || entry.isVisible);
         syncVisibility();
-      }, tracksVisibility ? {trackVisibility: true, delay: 100} : {}).observe(document.documentElement);
+      }, tracksVisibility ? {trackVisibility: true, delay: 100} : {});
+      observer.observe(root);
+      if (tracksVisibility) {
+        // A modal covers the root in this frame. Its own visibility still reflects the host frame's opacity.
+        const confirmation = byId("cleanup-dialog");
+        const modalChanges = new MutationObserver(() => {
+          const target = confirmation.open ? confirmation : managementDialog.open ? managementDialog : root;
+          if (target === visibilityTarget) return;
+          // Keep the last visibility until a new sample for the active surface arrives.
+          observer.takeRecords();
+          observer.unobserve(visibilityTarget);
+          visibilityTarget = target;
+          observer.observe(visibilityTarget);
+        });
+        for (const dialog of [managementDialog, confirmation]) {
+          modalChanges.observe(dialog, {attributes: true, attributeFilter: ["open"]});
+        }
+      }
       document.addEventListener("visibilitychange", syncVisibility);
     }
 
@@ -1104,8 +1135,11 @@
       busy = true;
       updateControls();
       setCleanupStatus("Checking for deleted threads...");
+      attempt.progress = setTimeout(() => {
+        setCleanupStatus("Still checking for deleted threads...");
+      }, responseTimeout);
       try {
-        const result = await callTool("handoff_cleanup", {});
+        const result = await callTool("handoff_cleanup", {}, cleanupTimeout);
         if (cleanupPreview !== attempt || !managementDialog.open) return;
         if (result.status !== "ok") throw new Error(result.reason || "Could not verify which threads were deleted.");
         missingThreads = result.thread_ids;
@@ -1125,6 +1159,7 @@
       } catch (error) {
         if (cleanupPreview === attempt && managementDialog.open) setCleanupStatus(error.message, true);
       } finally {
+        clearTimeout(attempt.progress);
         if (cleanupPreview === attempt) {
           cleanupPreview = null;
           busy = false;
@@ -1143,6 +1178,7 @@
     function closeManagement() {
       managementDialog.close();
       if (cleanupPreview) {
+        clearTimeout(cleanupPreview.progress);
         cleanupPreview = null;
         busy = false;
         setCleanupStatus("");
@@ -1169,12 +1205,16 @@
         }
         const count = result.deleted;
         const kept = result.kept_thread_ids?.length ?? 0;
+        const skipped = result.skipped_thread_count ?? 0;
         let message = count ? "Deleted " + count + (count === 1 ? " stored record." : " stored records.")
           : "No stored data deleted.";
         if (kept) {
           message += " Kept data for " + kept + (kept === 1 ? " thread. " : " threads. ") +
             (result.reason || "Could not verify that surviving forks have independent copies.");
-        } else if (!count) {
+        }
+        if (skipped) {
+          message += " Kept data for " + skipped + (skipped === 1 ? " thread that is still present." : " threads that are still present.");
+        } else if (!kept && !count) {
           message += " The listed threads may have changed.";
         }
         if (result.index_warning) message += " " + result.index_warning;

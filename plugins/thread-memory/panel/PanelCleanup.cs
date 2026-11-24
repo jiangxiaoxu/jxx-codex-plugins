@@ -46,6 +46,7 @@ internal static class PanelCleanup
                 }
             }
 
+            int requestedCount = candidates.Count;
             RemoveIndexedThreads(home, candidates);
             PanelRollout[] rollouts = [];
             if (candidates.Count > 0)
@@ -65,10 +66,12 @@ internal static class PanelCleanup
             var result = new JsonObject { ["status"] = "ok" };
             if (confirm)
             {
+                int keptCount = 0;
                 if (candidates.Count > 0)
                 {
                     var (kept, reason) = PreserveForkSources(store, home, candidates, rollouts);
-                    if (kept.Count > 0)
+                    keptCount = kept.Count;
+                    if (keptCount > 0)
                     {
                         candidates.ExceptWith(kept);
                         result["kept_thread_ids"] = IdArray(kept);
@@ -77,6 +80,10 @@ internal static class PanelCleanup
                     // Unarchive can insert the index row and move the rollout behind the directory scan.
                     RemoveIndexedThreads(home, candidates);
                 }
+
+                int skippedCount = requestedCount - keptCount - candidates.Count;
+                if (skippedCount > 0)
+                    result["skipped_thread_count"] = skippedCount;
 
                 int deleted = DeleteStoredThreads(store, candidates);
                 try
