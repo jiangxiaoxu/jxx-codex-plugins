@@ -40,7 +40,8 @@ internal sealed record HistoryRef(
     {
         string[] parts = token.Split(':');
         if (parts.Length is < 6 or > 9 or 8 || parts[0] != "r1" ||
-            parts[1].Length == 0 || parts[4].Length == 0 || parts[5].Length == 0 ||
+            parts[1].Length != 16 || parts[1].AsSpan().ContainsAnyExcept("0123456789abcdef") ||
+            parts[4].Length != 24 || parts[4].AsSpan().ContainsAnyExcept("0123456789abcdef") || parts[5].Length == 0 ||
             !long.TryParse(parts[2], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out long line) ||
             !long.TryParse(parts[3], NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out long offset) ||
             line < 1 || offset < 0)

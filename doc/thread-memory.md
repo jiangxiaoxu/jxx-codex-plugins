@@ -328,6 +328,8 @@ Use `export-image --original --id ID` when full resolution is needed. The ID can
 
 Pass selected audio `attachment_id` values to `export-audio --id ID` with the same rollout source. A readable local audio entry returns its existing path. Embedded audio is decoded to a temporary file, or to `--output-dir DIR` if supplied. Opaque IDs and remote references report a per-item `export_error`. Check `unknown_ids` for IDs that did not resolve.
 
+Media export writes bytes to files and returns a JSON receipt with paths and metadata. Invalid selectors are counted in `invalid_id_count`, and well-formed IDs that did not resolve are returned in `unknown_ids`.
+
 ```powershell
 & $cli export-audio --thread $thread --id '<audio-attachment-id>' |
     jq -er '.attachments[0].audio_file'

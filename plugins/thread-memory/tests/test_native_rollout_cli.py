@@ -187,6 +187,25 @@ class NativeRolloutCLITest(unittest.TestCase):
         (saved,) = result["attachments"]
         self.assertEqual(Path(saved["audio_file"]).read_bytes(), audio)
 
+        image_id = inline["image_id"]
+        pieces = image_id.split(":")
+        pieces[1] = "0" * len(pieces[1])
+        stale_id = ":".join(pieces)
+        pieces[1] = image_data
+        malformed_id = ":".join(pieces)
+        result = self.query("export-image", "--original", "--id", "-", "--output-dir", str(destination),
+                            stdin=f"{image_id}\n{stale_id}\ndata:image/png;base64,{image_data}\n{malformed_id}\n")
+        (saved,) = result["images"]
+        self.assertEqual(saved["image_id"], image_id)
+        self.assertEqual(result["unknown_ids"], [stale_id])
+        self.assertEqual(result["invalid_id_count"], 2)
+        self.assertNotIn(image_data, json.dumps(result))
+
+        misplaced = self.run_cli("export-image", "--id", image_id, image_data)
+        self.assertEqual(misplaced.returncode, 2)
+        self.assertEqual(json.loads(misplaced.stderr)["error"]["code"], "invalid_arguments")
+        self.assertNotIn(image_data.encode(), misplaced.stdout + misplaced.stderr)
+
     def test_original_image_export_returns_bytes_and_local_path_without_thumbnail(self):
         inline = b'<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"/>'
         local_path = self.home / "original.png"

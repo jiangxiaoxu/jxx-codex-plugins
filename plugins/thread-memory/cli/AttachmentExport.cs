@@ -32,10 +32,11 @@ internal static partial class HistoryMedia
     {
         double scale = args.One("--scale") is string ratio ? double.Parse(ratio, CultureInfo.InvariantCulture) : 1;
         int resolution = args.Integer("--max-resolution", DefaultResolution);
-        var requested = args.Many("--id").Distinct(StringComparer.Ordinal).ToArray();
+        var requested = new List<string>();
+        int invalidIdCount = 0;
         var found = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
         var targets = new Dictionary<HistoryRef, HashSet<string>>();
-        foreach (string token in requested)
+        foreach (string token in args.Many("--id").Distinct(StringComparer.Ordinal))
         {
             HistoryRef reference;
             try
@@ -44,10 +45,16 @@ internal static partial class HistoryMedia
             }
             catch (CliInputException)
             {
+                invalidIdCount++;
                 continue;
             }
-            if (reference.Kind != medium || reference.Index is null || reference.Start is not null)
+            if (reference.Kind != medium || reference.Index is null || reference.Start is not null ||
+                reference.ToString() != token)
+            {
+                invalidIdCount++;
                 continue;
+            }
+            requested.Add(token);
             var row = reference with { Kind = "record", Index = null };
             if (!targets.TryGetValue(row, out var ids))
                 targets.Add(row, ids = new(StringComparer.Ordinal));
@@ -97,6 +104,8 @@ internal static partial class HistoryMedia
             [image ? "images" : "attachments"] = new JsonArray(requested.Where(found.ContainsKey).Select(id => (JsonNode)found[id]).ToArray()),
             ["unknown_ids"] = new JsonArray(requested.Where(id => !found.ContainsKey(id)).Select(id => (JsonNode?)JsonValue.Create(id)).ToArray()),
         };
+        if (invalidIdCount != 0)
+            result["invalid_id_count"] = invalidIdCount;
         if (directory is not null)
             result[image ? "image_output_dir" : "audio_output_dir"] = directory;
         return result;

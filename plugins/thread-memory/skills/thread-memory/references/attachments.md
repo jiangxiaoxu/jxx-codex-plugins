@@ -28,4 +28,4 @@ Use a thumbnail for ordinary inspection. When full resolution is needed, request
 & $cli export-image @source --id $imageId --original | jq -er '.images[0].original_file'
 ```
 
-To export several selected attachments, repeat `--id` or pass newline-delimited IDs with `--id -`. Inspect `.unknown_ids` and each result's `.export_error`, since successful and failed items can appear together.
+Exports write media bytes to files and return JSON with paths and metadata. To export several selected attachments, repeat `--id` or pass newline-delimited IDs with `--id -`. Check `.unknown_ids` for well-formed IDs that did not resolve, `.invalid_id_count` for rejected inputs, and `.export_error` for individual export failures.

@@ -80,6 +80,7 @@ internal sealed class CliOptions
 
         var options = new CliOptions(args[0]);
         var allowed = optionList.Split(' ').ToHashSet(StringComparer.Ordinal);
+        bool export = options.Command is "export-image" or "export-audio";
         bool positionals = false;
         for (int i = 1; i < args.Length; i++)
         {
@@ -92,7 +93,9 @@ internal sealed class CliOptions
             if (positionals || !argument.StartsWith('-') || argument == "-")
             {
                 if (options.Command is not ("memory" or "search") || options.Pattern is not null)
-                    throw Invalid($"Unexpected argument: {argument}.");
+                    throw Invalid(export
+                        ? "Unexpected attachment export argument. Repeat --id or pipe IDs to --id -."
+                        : $"Unexpected argument: {argument}.");
                 options.Pattern = argument;
                 continue;
             }
@@ -106,7 +109,9 @@ internal sealed class CliOptions
             string rawName = equals < 0 ? argument : argument[..equals];
             string name = rawName switch { "-B" => "--before", "-A" => "--after", "-i" => "--ignore-case", _ => rawName };
             if (!allowed.Contains(name))
-                throw Invalid($"Unknown option for {options.Command}: {rawName}.");
+                throw Invalid(export
+                    ? $"Unknown option for {options.Command}."
+                    : $"Unknown option for {options.Command}: {rawName}.");
             string? value = equals < 0 ? null : argument[(equals + 1)..];
             if (Switches.Contains(name))
             {
@@ -119,8 +124,7 @@ internal sealed class CliOptions
             if (value is null && i + 1 < args.Length && (!args[i + 1].StartsWith('-') || args[i + 1] == "-"))
                 value = args[++i];
             value ??= name == "--export-images" ? "" : throw Invalid($"{name} requires a value.");
-            if (name is "--previous" or "--role" or "--type" ||
-                name == "--id" && options.Command.StartsWith("export-", StringComparison.Ordinal))
+            if (name is "--previous" or "--role" or "--type" || name == "--id" && export)
             {
                 if (!options.values.TryGetValue(name, out var occurrences))
                     options.values.Add(name, occurrences = []);
