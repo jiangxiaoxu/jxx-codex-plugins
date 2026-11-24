@@ -7,14 +7,19 @@
   <style>
     :root {
       color-scheme: light dark;
-      --page: var(--color-background-primary, light-dark(#fff, #171717));
-      --panel: var(--color-background-secondary, light-dark(#f8f9fa, #202020));
-      --selected: var(--color-background-info, light-dark(#e8f1ff, #213551));
-      --ink: var(--color-text-primary, light-dark(#171c24, #f2f2f2));
-      --muted: var(--color-text-secondary, light-dark(#525e6c, #b3bac4));
-      --line: var(--color-border-primary, light-dark(#dce1e7, #3e3e3e));
-      --accent: var(--color-ring-info, light-dark(#005fcc, #7ab5ff));
-      --danger: var(--color-text-danger, light-dark(#a52520, #ffa29a));
+      --base: light-dark(#fff, #181818);
+      --page: var(--color-background-primary, var(--base));
+      --panel: var(--color-background-secondary, light-dark(#f7f7f7, #212121));
+      --ink: var(--color-text-primary, light-dark(#1a1c1f, #dfdfdf));
+      --muted: var(--color-text-secondary, light-dark(#525252, #b4b4b4));
+      --line: var(--color-border-secondary, color-mix(in srgb, var(--ink) 12%, transparent));
+      --outline: var(--color-border-primary, color-mix(in srgb, var(--ink) 18%, transparent));
+      --hover: color-mix(in srgb, var(--ink) 8%, transparent);
+      --selected: var(--color-background-info, color-mix(in srgb, var(--ink) 13%, transparent));
+      --focus-ring: color-mix(in srgb, var(--color-ring-primary, var(--ink)) 65%, var(--ink));
+      --code-surface: color-mix(in srgb, var(--panel) 96%, var(--ink));
+      --danger-tone: var(--color-text-danger, light-dark(#911e1b, #e02e2a));
+      --danger: light-dark(var(--danger-tone), color-mix(in srgb, var(--danger-tone) 50%, var(--ink)));
       background: var(--page);
       color: var(--ink);
       font: 14px/1.45 var(--font-sans, system-ui, sans-serif);
@@ -25,24 +30,27 @@
     [hidden] { display: none !important; }
     body { margin: 0; }
     main { display: flex; flex-direction: column; padding: clamp(12px, 2.5vw, 26px); }
-    header, .actions, footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    header, .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     header { justify-content: space-between; margin-bottom: 14px; }
     h1, h2, p { margin: 0; }
     h1 { font-size: 1.42rem; letter-spacing: -.023em; }
     h2 { font-size: 1.05rem; }
     button, input, select {
-      border: 1px solid var(--line);
+      border: 1px solid var(--outline);
       border-radius: 7px;
       padding: 7px 11px;
-      background: var(--page);
+      background: color-mix(in srgb, var(--ink) 4%, transparent);
       color: var(--ink);
       font: inherit;
     }
+    button { background: var(--color-background-ghost, transparent); }
+    input::placeholder { color: var(--muted); }
     button, select, summary { cursor: var(--cursor-interaction, pointer); }
-    button:enabled:not([aria-disabled="true"]):hover, summary:hover { background: var(--panel); }
-    :is(button, input, select, summary, #detail-heading, #subagent-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button:enabled:not([aria-disabled="true"]):hover, summary:hover { background: var(--hover); }
+    :is(button, input, select, summary, #detail-heading, #subagent-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     :is(button, select):disabled { opacity: .5; cursor: default; }
     .danger { color: var(--danger); }
+    button.danger:enabled:hover { background: color-mix(in srgb, var(--danger-tone) 11%, transparent); }
     .status { color: var(--muted); overflow-wrap: anywhere; }
     .status:empty { display: none; }
     #status:not(:empty) { margin-bottom: 10px; }
@@ -85,10 +93,10 @@
       padding: 9px 10px;
       background: transparent;
     }
-    .thread-list button:enabled:hover { background: var(--page); }
+    .thread-list button:enabled:hover { background: var(--hover); }
     .thread-list button[aria-current="true"], .thread-list button[aria-current="true"]:hover {
       background: var(--selected);
-      box-shadow: inset 2px 0 var(--accent);
+      box-shadow: inset 2px 0 var(--focus-ring);
     }
     .thread-list .label {
       display: -webkit-box;
@@ -114,7 +122,7 @@
     #subagent-directory { display: flex; flex: 1; flex-direction: column; min-height: 0; background: var(--panel); }
     #subagent-heading { overflow-wrap: anywhere; }
     #include-inherited-control { display: flex; align-items: center; gap: 7px; }
-    #include-inherited { margin: 0; accent-color: var(--accent); }
+    #include-inherited { margin: 0; accent-color: var(--focus-ring); }
     :is(#back-to-threads, #subagent-back-directory) { display: none; }
     #thread-id summary { width: fit-content; border-radius: 3px; }
     .detail { flex: 1; min-height: 0; padding: 16px clamp(14px, 3vw, 26px); max-height: clamp(240px, 65vh, 900px); overflow: auto; }
@@ -140,12 +148,12 @@
     #note li + li { margin-top: .28em; }
     #note code, #note-source { font: .9em/1.6 var(--font-mono, ui-monospace, monospace); }
     #note :not(pre) > code {
-      background: var(--panel);
+      background: var(--code-surface);
       border-radius: 4px;
       padding: .1em .24em;
     }
     #note pre, #note-source {
-      background: var(--panel);
+      background: var(--code-surface);
       border: 1px solid var(--line);
       border-radius: 7px;
       color: var(--ink);
@@ -154,13 +162,34 @@
     #note pre { tab-size: 4; }
     #raw-note { max-width: 76ch; }
     #note-source { display: block; margin-top: .6em; min-height: 9em; resize: vertical; width: 100%; }
-    #note-source:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    #note-source:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     .thread { display: block; font: 12px/1.5 var(--font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
     .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-    footer { padding: 9px 14px; border-top: 1px solid var(--line); }
-    :is(#page, #subagent-page) { margin-inline: auto; }
-    dialog { width: min(520px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 18px; color: var(--ink); background: var(--page); }
+    footer {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 6px;
+      padding: 9px 10px;
+      border-top: 1px solid var(--line);
+    }
+    footer button { padding-inline: 8px; font-size: 12px; }
+    :is(#page, #subagent-page) { text-align: center; }
+    dialog {
+      width: min(520px, calc(100vw - 24px));
+      max-height: calc(100dvh - 24px);
+      overflow: auto;
+      border: 1px solid var(--outline);
+      border-radius: 10px;
+      padding: 18px;
+      color: var(--ink);
+      /* Host surfaces can be translucent. Keep the dialog opaque over its backdrop. */
+      background: linear-gradient(var(--panel), var(--panel)), var(--base);
+      box-shadow: var(--shadow-lg, 0 12px 32px rgb(0 0 0 / 24%));
+    }
     dialog::backdrop { background: rgb(0 0 0 / 45%); }
+    :root:has(#cleanup-dialog[open]) #management-dialog { visibility: hidden; }
+    :root:has(#cleanup-dialog[open]) #management-dialog::backdrop { background: transparent; }
     dialog p { margin-top: 8px; }
     dialog ul, #missing-threads { max-height: 32vh; overflow: auto; }
     dialog ul { padding-inline-start: 22px; }
@@ -379,16 +408,27 @@
       });
     }
 
+    const hostStyleKeys = new Set();
+
     function applyHostContext(context) {
-      if (context?.theme === "light" || context?.theme === "dark") {
-        document.documentElement.dataset.theme = context.theme;
-      }
-      if (context?.displayMode) document.documentElement.dataset.display = context.displayMode;
-      for (const [key, value] of Object.entries(context?.styles?.variables ?? {})) {
-        if (key.startsWith("--") && typeof value === "string") {
-          document.documentElement.style.setProperty(key, value);
+      const root = document.documentElement;
+      const theme = context?.theme;
+      const nextTheme = theme === "light" || theme === "dark" ? theme : root.dataset.theme;
+      const variables = context?.styles?.variables;
+      if (variables || nextTheme !== root.dataset.theme) {
+        for (const key of hostStyleKeys) root.style.removeProperty(key);
+        hostStyleKeys.clear();
+        for (const [key, value] of Object.entries(variables ?? {})) {
+          if (key.startsWith("--") && typeof value === "string") {
+            root.style.setProperty(key, value);
+            hostStyleKeys.add(key);
+          }
         }
       }
+      if (nextTheme) root.dataset.theme = nextTheme;
+      if (context?.displayMode) root.dataset.display = context.displayMode;
+      const cursor = context?.["openai/interactionCursor"];
+      if (typeof cursor === "string" && CSS.supports("cursor", cursor)) root.style.setProperty("--cursor-interaction", cursor);
     }
 
     window.addEventListener("message", ({source, data}) => {
