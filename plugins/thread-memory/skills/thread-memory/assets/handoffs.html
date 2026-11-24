@@ -21,6 +21,7 @@
       --danger-tone: var(--color-text-danger, light-dark(#911e1b, #e02e2a));
       --danger: light-dark(var(--danger-tone), color-mix(in srgb, var(--danger-tone) 50%, var(--ink)));
       --reader-gutter: clamp(14px, 2.3vw, 26px);
+      --note-width: clamp(76ch, 70vw, 110ch);
       --directory-width: clamp(225px, 24vw, 336px);
       background: var(--page);
       color: var(--ink);
@@ -126,18 +127,45 @@
     }
     .thread-list .empty { color: var(--muted); padding: 16px 10px; }
     .reader-empty { display: grid; place-items: center; flex: 1; min-height: 210px; padding: 20px; text-align: center; color: var(--muted); }
-    .reader-header { display: grid; gap: 8px; padding: 12px var(--reader-gutter); border-bottom: 1px solid var(--line); }
+    .reader-header { display: grid; gap: 8px; padding: 14px var(--reader-gutter); border-bottom: 1px solid var(--line); }
+    .reader-top {
+      display: flex;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      max-width: var(--note-width);
+      font-size: 15px;
+    }
+    .reader-identity { display: grid; flex: 1 1 14rem; min-width: 0; gap: 5px; }
+    .reader-title, .note-timestamps { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 12px; }
+    .note-timestamps:not(:has(time:not([hidden]))) { display: none; }
+    .reader-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-inline-start: auto; }
+    .reader-actions button { padding: 6px 9px; font-size: 13px; white-space: nowrap; }
     .reader-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
     #detail-heading { font-size: 1.13rem; line-height: 1.38; overflow-wrap: anywhere; }
     #notes-heading { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #include-inherited-control { display: flex; align-items: center; gap: 7px; }
     #include-inherited { margin: 0; accent-color: var(--focus-ring); }
     #back-to-threads { display: none; justify-self: start; }
-    #thread-id summary { width: fit-content; border-radius: 3px; }
+    #show-thread-id { anchor-name: --thread-id-anchor; }
+    #thread-id {
+      position-anchor: --thread-id-anchor;
+      position-area: block-end span-inline-start;
+      position-try-fallbacks: flip-block;
+      inset: auto;
+      margin: 6px 0 0;
+      max-width: calc(100vw - 24px);
+      padding: 8px 10px;
+      border: 1px solid var(--outline);
+      border-radius: 7px;
+      background: linear-gradient(var(--panel), var(--panel)), var(--base);
+      color: var(--ink);
+      box-shadow: var(--shadow-lg, 0 8px 22px rgb(0 0 0 / 24%));
+    }
     .detail { flex: 1; min-height: 0; padding: 16px var(--reader-gutter); max-height: clamp(240px, 65vh, 900px); overflow: auto; }
     #detail-status { flex: 1 1 12em; }
     #note {
-      max-width: clamp(76ch, 70vw, 110ch);
+      max-width: var(--note-width);
       overflow-wrap: anywhere;
       font-size: 15px;
       line-height: 1.7;
@@ -303,20 +331,26 @@
       <section id="reader" class="reader" aria-label="Thread notes">
         <p id="reader-empty" class="reader-empty">Choose a main thread to read its note.</p>
         <div id="reader-header" class="reader-header" hidden>
-          <h2 id="detail-heading" tabindex="-1"></h2>
-          <p id="note-parent" class="meta" hidden></p>
-          <div class="reader-tools">
-            <div class="thread-meta meta">
-              <span id="note-date"></span>
-              <time id="note-last-read" hidden></time>
-              <span id="note-archived" hidden>Archived</span>
-              <span id="note-inherited" hidden>Inherited</span>
-              <details id="thread-id" class="meta">
-                <summary>Thread ID</summary>
-                <p id="detail-key" class="thread"></p>
-              </details>
+          <div class="reader-top">
+            <div class="reader-identity">
+              <div class="reader-title">
+                <h2 id="detail-heading" tabindex="-1"></h2>
+                <span id="note-archived" class="meta archive-label" hidden>Archived</span>
+                <span id="note-inherited" class="meta archive-label" hidden>Inherited</span>
+              </div>
+              <div class="note-timestamps meta">
+                <time id="note-date" hidden></time>
+                <time id="note-last-read" hidden></time>
+              </div>
+              <p id="note-parent" class="meta" hidden></p>
             </div>
-            <button id="copy-summary" type="button" title="Copy the original note text" hidden>Copy note</button>
+            <div class="reader-actions">
+              <button id="copy-summary" type="button" title="Copy the original note text" hidden>Copy note</button>
+              <button id="show-thread-id" type="button" popovertarget="thread-id">Thread ID</button>
+              <div id="thread-id" popover="auto">
+                <p id="detail-key" class="thread"></p>
+              </div>
+            </div>
           </div>
           <p id="copy-status" class="status meta" role="status"></p>
           <div id="note-feedback" class="reader-tools" hidden>
@@ -395,7 +429,7 @@
     let activeThread = null;
     let noteRequest = 0;
     let noteLoading = false;
-    let lastReadTimer;
+    let noteTimeTimer;
     let childPage = 1;
     let childTotalPages = 1;
     let childLoading = false;
@@ -510,24 +544,35 @@
       return value && Number.isFinite(date.getTime()) ? dateFormat.format(date) : "";
     }
 
-    function showLastRead(value) {
-      clearInterval(lastReadTimer);
-      const indicator = byId("note-last-read");
-      const timestamp = Date.parse(value);
-      indicator.hidden = !Number.isFinite(timestamp);
-      if (indicator.hidden) return;
+    function showNoteTimes(updatedAt, lastReadAt) {
+      clearInterval(noteTimeTimer);
+      const times = [];
+      for (const [id, label, tooltip, value] of [
+        ["note-date", "Last updated", "Last updated", updatedAt],
+        ["note-last-read", "Last read", "Last successful CLI read by this thread", lastReadAt],
+      ]) {
+        const indicator = byId(id);
+        const timestamp = Date.parse(value);
+        indicator.hidden = !Number.isFinite(timestamp);
+        if (indicator.hidden) continue;
+        indicator.dateTime = value;
+        indicator.title = tooltip + ": " + value;
+        times.push({indicator, label, timestamp});
+      }
+      if (!times.length) return;
 
-      indicator.dateTime = value;
-      indicator.title = "Last successful CLI read by this thread: " + value;
       const update = () => {
-        const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
-        const [unit, duration] = minutes >= 1440 ? ["day", 1440]
-          : minutes >= 60 ? ["hour", 60] : ["minute", 1];
-        const age = minutes === 0 ? "just now" : relativeTime.format(-Math.floor(minutes / duration), unit);
-        indicator.textContent = "Last read " + age;
+        const now = Date.now();
+        for (const {indicator, label, timestamp} of times) {
+          const minutes = Math.max(0, Math.floor((now - timestamp) / 60000));
+          const [unit, duration] = minutes >= 1440 ? ["day", 1440]
+            : minutes >= 60 ? ["hour", 60] : ["minute", 1];
+          const age = minutes === 0 ? "just now" : relativeTime.format(-Math.floor(minutes / duration), unit);
+          indicator.textContent = label + " " + age;
+        }
       };
       update();
-      lastReadTimer = setInterval(update, 60000);
+      noteTimeTimer = setInterval(update, 60000);
     }
 
     function threadTitle(row) {
@@ -673,7 +718,7 @@
       byId("reader-empty").hidden = true;
       byId("reader-header").hidden = false;
       byId("reader-body").hidden = false;
-      if (!sameThread) byId("thread-id").open = false;
+      if (!sameThread) byId("thread-id").hidePopover();
       if (moveFocus) byId("detail-heading").focus();
       loadNote(sameThread);
     }
@@ -726,7 +771,8 @@
       byId("reader-header").hidden = true;
       byId("reader-body").hidden = true;
       byId("note-directory").hidden = true;
-      showLastRead(null);
+      byId("thread-id").hidePopover();
+      showNoteTimes();
       if (moveFocus) byId("search").focus({preventScroll: true});
     }
 
@@ -823,8 +869,7 @@
         byId("reader-body").scrollTop = 0;
         byId("note").textContent = "";
         byId("copy-summary").hidden = true;
-        byId("note-date").textContent = "";
-        showLastRead(null);
+        showNoteTimes();
         loadedNote = "";
         hideNoteSource();
       }
@@ -849,9 +894,7 @@
           loadedNote = summary;
         }
         byId("copy-summary").hidden = !summary;
-        const savedAt = formatDate(result.updated_at);
-        byId("note-date").textContent = summary && savedAt ? "Last updated " + savedAt : "";
-        showLastRead(result.last_read_at);
+        showNoteTimes(result.updated_at, result.last_read_at);
         setNoteStatus(summary ? "" : "This thread has no saved note.");
       } catch (error) {
         if (reading === noteRequest) {

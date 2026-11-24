@@ -136,14 +136,28 @@ static async Task VerifyNavigationLayout(DevTools browser)
         visible('note-directory') && visible('reader') && rootPinned() &&
         el('detail-heading').textContent === fixture.ownTitle && el('note').textContent.includes('Example saved note')
         """, "Opening a subagent note should retain the same directory.");
+    await browser.Check("""
+        (() => {
+          const [heading, updated, read, copy, id] = readerGeometry();
+          return visible('note-date') && visible('note-last-read') && visible('copy-summary') && visible('show-thread-id') &&
+            Math.abs(heading.left - updated.left) < 1 && heading.bottom <= updated.top &&
+            Math.abs(updated.top - read.top) < 1 && Math.abs(copy.top - id.top) < 1;
+        })()
+        """, "Both timestamps should be grouped below the note title and the actions should have their own group.");
+    await browser.Evaluate("fixture.readerGeometry = readerGeometry(); el('show-thread-id').click()");
+    await browser.WaitFor("""
+        el('thread-id').matches(':popover-open') && visible('detail-key') && el('detail-key').textContent === ownChild.thread_id
+        """, "The Thread ID action should open the selected note's UUID.");
+    await browser.Check("JSON.stringify(readerGeometry()) === JSON.stringify(fixture.readerGeometry)",
+        "Opening Thread ID should leave the title, timestamps, actions and note body in place.");
     await browser.Evaluate("el('subagent-search').value = 'no match'; el('subagent-search').dispatchEvent(new Event('input'))");
     await browser.WaitFor("fixture.childQuery === 'no match' && childNotePaths().length === 0 && rootPinned()",
         "A search that excludes every subagent should keep /root available.");
     await browser.Evaluate("el('root-note').click()");
     await browser.WaitFor("""
         el('detail-heading').textContent === '/root' && el('detail-status').textContent.includes('no saved note') &&
-        !visible('note-last-read')
-        """, "Clicking an empty /root should open the main note without the previous note's read time.");
+        !visible('note-last-read') && !el('thread-id').matches(':popover-open')
+        """, "Clicking an empty /root should close the previous note's ID and clear its read time.");
     await browser.Evaluate("el('subagent-search').value = ''; el('subagent-search').dispatchEvent(new Event('input'))");
     await browser.WaitFor("childNotePaths().length === 2", "Clearing the search should restore the subagent notes.");
 
@@ -196,11 +210,14 @@ static async Task VerifySelectionOnRefresh(DevTools browser)
     await browser.WaitFor("el('detail-heading').textContent === fixture.ownTitle && el('note').textContent.includes('Example saved note')",
         "The selected child note should be ready for the refresh test.");
     await browser.Check("""
-        visible('note-last-read') &&
-        el('note-last-read').textContent === 'Last read ' + new frame.contentWindow.Intl.RelativeTimeFormat(undefined, {numeric:'always'}).format(-2, 'minute') &&
-        el('note-last-read').dateTime === fixture.lastReadAt && el('note-last-read').title.includes(fixture.lastReadAt) &&
-        el('note-date').textContent.startsWith('Last updated ')
-        """, "The reader should show the note's read age, exact timestamp and separate update time.");
+        (() => {
+          const relative = new frame.contentWindow.Intl.RelativeTimeFormat(undefined, {numeric:'always'});
+          const matches = (id, text, timestamp) => visible(id) && el(id).textContent === text &&
+            el(id).dateTime === timestamp && el(id).title.includes(timestamp);
+          return matches('note-date', 'Last updated ' + relative.format(-1, 'day'), fixture.noteUpdatedAt) &&
+            matches('note-last-read', 'Last read ' + relative.format(-1, 'hour'), fixture.lastReadAt);
+        })()
+        """, "Both note timestamps should show a localized age and retain the exact UTC timestamp.");
     await browser.Evaluate("fixture.ownChildAvailability = null; el('refresh').click()");
     await browser.WaitFor("fixture.lastRead === ownChild.thread_id && el('refresh').getAttribute('aria-disabled') === 'false'",
         "The selected child should be rechecked during refresh.");
@@ -458,6 +475,8 @@ static class HostFixture
           const node = el(id);
           return node?.getClientRects().length > 0 && frame.contentWindow.getComputedStyle(node).visibility === 'visible';
         };
+        const readerGeometry = () => ['detail-heading', 'note-date', 'note-last-read', 'copy-summary', 'show-thread-id', 'reader-body']
+          .map(id => el(id).getBoundingClientRect().toJSON());
         const childNotePaths = () => Array.from(el('subagent-threads').querySelectorAll('button .label'), label => label.textContent);
         const rootPinned = () => {
           const firstChild = el('subagent-threads').querySelector('button');
@@ -487,7 +506,8 @@ static class HostFixture
           title:'/root/inherited_context', inherited:true};
         const cleanupCandidates = [secondId, '00000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000006'];
         const fixture = { firstId, secondId, inheritedId, ownTitle, olderTitle, rows, cleanupCandidates,
-          lastReadAt:new Date(Date.now() - 120000).toISOString(),
+          noteUpdatedAt:new Date(Date.now() - 25 * 3600000).toISOString(),
+          lastReadAt:new Date(Date.now() - 65 * 60000).toISOString(),
           initializations:0, lists:[], previews:[], inheritance:'available', extraChildren:0,
           ownChildAvailability:true, noteStoreAvailable:true };
         const send = fields => frame.contentWindow.postMessage({jsonrpc:'2.0', ...fields}, '*');
@@ -555,7 +575,7 @@ static class HostFixture
                   tool({summary:null, updated_at:null, last_read_at:null, note_available:fixture.ownChildAvailability});
                 } else if (args.thread_id === secondId) {
                   tool({summary:null, updated_at:null, last_read_at:null, note_available:false});
-                } else tool({summary:'Example saved note', updated_at:'2026-11-24T08:29:00Z',
+                } else tool({summary:'Example saved note', updated_at:fixture.noteUpdatedAt,
                   last_read_at:args.thread_id === ownChild.thread_id ? fixture.lastReadAt : null, note_available:true});
                 break;
               case 'handoff_cleanup':
