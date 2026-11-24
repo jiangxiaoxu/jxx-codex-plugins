@@ -455,6 +455,16 @@ static async Task VerifyCleanup(string home, string panel, string cli)
     await SaveNote(cli, home, deletedChild, "Deleted subagent's note");
     await SaveNote(cli, home, restored, "Restored after preview");
     await SaveNote(cli, home, archived, "Keep archived notes");
+    await RunCli(cli, home, parent, null, "memory", "read", "--thread", archived);
+    JsonElement archivePreview = await mcp.Tool("handoff_read", new { thread_id = archived });
+    Check(archivePreview.GetProperty("summary").GetString() == "Keep archived notes"
+        && archivePreview.GetProperty("last_read_at").ValueKind == JsonValueKind.Null,
+        "Cross-thread reads and panel previews must leave the current note's self-read timestamp unset.");
+    foreach (string id in new[] { parent, deletedChild, archived })
+        await RunCli(cli, home, id, null, "memory", "read");
+    var archivedRead = (await mcp.Tool("handoff_read", new { thread_id = archived })).GetProperty("last_read_at");
+    Check(archivedRead.ValueKind == JsonValueKind.String && archivedRead.GetDateTimeOffset().Offset == TimeSpan.Zero,
+        "A self-read must expose a UTC timestamp to the panel.");
     var indexed = await RunCli(cli, home, null, null,
         "search", "Cache this message", "--rollout", indexedPath, "--since", "2026-01-01T00:00:00Z");
     Check(indexed.GetProperty("items").GetArrayLength() == 1, "Could not build the rollout index fixture.");
@@ -499,14 +509,45 @@ static async Task VerifyCleanup(string home, string panel, string cli)
         "Refreshing must confirm that the cleaned-up main thread has no remaining note group.");
     var forkNote = await mcp.Tool("handoff_read", new { thread_id = fork });
     Check(forkNote.GetProperty("summary").GetString() == snapshot
-        && forkNote.GetProperty("updated_at").GetString() == snapshotWrite.GetProperty("updated_at").GetString(),
-        "Cleanup must copy a surviving fork's note as of fork time before deleting the parent.");
+        && forkNote.GetProperty("updated_at").GetString() == snapshotWrite.GetProperty("updated_at").GetString()
+        && forkNote.GetProperty("last_read_at").ValueKind == JsonValueKind.Null,
+        "Cleanup must copy a surviving fork's note as of fork time while leaving its read timestamp unset.");
     foreach (string id in new[] { archived, restored })
     {
         var note = await mcp.Tool("handoff_read", new { thread_id = id });
         Check(note.GetProperty("summary").ValueKind == JsonValueKind.String, "Cleanup removed a surviving archived thread note.");
     }
+    var retainedRead = (await mcp.Tool("handoff_read", new { thread_id = archived })).GetProperty("last_read_at");
+    Check(retainedRead.GetString() == archivedRead.GetString(),
+        "Cleanup must preserve the read timestamp for an archived thread.");
     Check(!CleanupIds(await mcp.Tool("handoff_cleanup")).Any(), "Cleanup left deleted rollout search entries behind.");
+
+    string lateRead = NewId();
+    string lateReadRollout = WriteRollout(home, lateRead);
+    const string lateReadNote = "Note retrieved before cleanup";
+    await SaveNote(cli, home, lateRead, lateReadNote);
+    File.Delete(lateReadRollout);
+    var memoryPath = Path.Combine(home, "state", "plugins", "thread-memory", "handoff.sqlite3");
+    using (var state = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = memoryPath, Pooling = false }.ToString()))
+    {
+        state.Open();
+        using var transaction = state.BeginTransaction(deferred: false);
+        using var reader = ChildProcess.Start(cli, home, ["memory", "read"], lateRead);
+        reader.StandardInput.Close();
+        string? stdout = await reader.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Check(stdout?.Contains(lateReadNote, StringComparison.Ordinal) == true,
+            "The note should be returned while the cleanup write transaction is open.");
+        using var delete = state.CreateCommand();
+        delete.Transaction = transaction;
+        delete.CommandText = "DELETE FROM memory_revisions WHERE thread_id = $id";
+        delete.Parameters.AddWithValue("$id", lateRead);
+        delete.ExecuteNonQuery();
+        transaction.Commit();
+        await reader.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        Check(reader.ExitCode == 0, "The completed read should still succeed after cleanup.");
+    }
+    Check(!CleanupIds(await mcp.Tool("handoff_cleanup")).Contains(lateRead),
+        "A completed read must not recreate metadata for a note removed by cleanup.");
 
     string attachedSource = NewId();
     string attachedSourcePath = WriteRollout(home, attachedSource, withMessage: true);
@@ -527,6 +568,7 @@ static async Task VerifyCleanup(string home, string panel, string cli)
             .SequenceEqual(new[] { attachedSource, unresolvedSource }.Order()),
         "A surviving attachment or unreadable fork relation must protect its source data.");
     await mcp.Finish();
+
 }
 
 static string NewId() => Guid.NewGuid().ToString("D");

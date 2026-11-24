@@ -14,7 +14,7 @@ internal static class PanelCleanup
         "rollout_scan_checkpoints", "hook_diagnostics",
     ];
     private static readonly string[] OptionalStateTables =
-        ["reminder_delivery_policies", "reminder_deliveries", "reminder_compactions"];
+        ["reminder_delivery_policies", "reminder_deliveries", "reminder_compactions", "memory_reads"];
 
     internal static JsonObject Run(string home, JsonElement args)
     {
@@ -271,9 +271,10 @@ internal static class PanelCleanup
         return identifiers;
     }
 
-    private static string[] ExistingStateTables(SqliteConnection database)
+    private static string[] ExistingStateTables(SqliteConnection database, SqliteTransaction? transaction = null)
     {
         using var command = database.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table'";
         using var rows = command.ExecuteReader();
         var tables = new HashSet<string>(StringComparer.Ordinal);
@@ -287,10 +288,10 @@ internal static class PanelCleanup
         if (candidates.Count == 0)
             return 0;
         using var database = store.OpenExisting(SqliteOpenMode.ReadWrite);
-        return database is null ? 0 : DeleteThreads(database, ExistingStateTables(database), "thread_id", candidates);
+        return database is null ? 0 : DeleteThreads(database, null, "thread_id", candidates);
     }
 
-    private static int DeleteThreads(SqliteConnection database, IEnumerable<string> tables,
+    private static int DeleteThreads(SqliteConnection database, IEnumerable<string>? tables,
         string column, HashSet<string> candidates)
     {
         using var transaction = database.BeginTransaction(deferred: false);
@@ -298,7 +299,7 @@ internal static class PanelCleanup
         command.Transaction = transaction;
         var identifier = command.Parameters.Add("$thread", SqliteType.Text);
         int removed = 0;
-        foreach (string table in tables)
+        foreach (string table in tables ?? ExistingStateTables(database, transaction))
         {
             command.CommandText = $"DELETE FROM {table} WHERE {column} = $thread";
             foreach (string thread in candidates)

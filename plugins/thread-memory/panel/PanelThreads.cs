@@ -280,7 +280,21 @@ internal static class PanelThreads
             ["summary"] = summary,
             ["updated_at"] = updated,
             ["note_available"] = connection is null ? null : JsonValue.Create(!string.IsNullOrEmpty(summary)),
+            ["last_read_at"] = fork is null && connection is not null && !string.IsNullOrEmpty(summary)
+                ? LastReadAt(connection, identifier) : null,
         };
+    }
+
+    private static string? LastReadAt(SqliteConnection connection, string threadId)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'memory_reads'";
+        if (command.ExecuteScalar() is null)
+            return null;
+
+        command.CommandText = "SELECT last_read_us FROM memory_reads WHERE thread_id = $thread";
+        command.Parameters.AddWithValue("$thread", threadId);
+        return command.ExecuteScalar() is long timestamp ? HookStore.FormatTimestamp(timestamp) : null;
     }
 
     private static List<ListedNote>? ReadNoteTimes(HookStore store)

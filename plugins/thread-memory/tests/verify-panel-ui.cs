@@ -140,8 +140,10 @@ static async Task VerifyNavigationLayout(DevTools browser)
     await browser.WaitFor("fixture.childQuery === 'no match' && childNotePaths().length === 0 && rootPinned()",
         "A search that excludes every subagent should keep /root available.");
     await browser.Evaluate("el('root-note').click()");
-    await browser.WaitFor("el('detail-heading').textContent === '/root' && el('detail-status').textContent.includes('no saved note')",
-        "Clicking /root in the filtered directory should open the main note.");
+    await browser.WaitFor("""
+        el('detail-heading').textContent === '/root' && el('detail-status').textContent.includes('no saved note') &&
+        !visible('note-last-read')
+        """, "Clicking an empty /root should open the main note without the previous note's read time.");
     await browser.Evaluate("el('subagent-search').value = ''; el('subagent-search').dispatchEvent(new Event('input'))");
     await browser.WaitFor("childNotePaths().length === 2", "Clearing the search should restore the subagent notes.");
 
@@ -176,7 +178,9 @@ static async Task VerifyNavigationLayout(DevTools browser)
     await browser.Evaluate("el('back-to-threads').click()");
     await browser.WaitFor("visible('directory') && !visible('note-directory') && !visible('reader')",
         "Narrow navigation should return to the main thread directory.");
-    await browser.Command("Emulation.clearDeviceMetricsOverride", new { });
+    await browser.Command("Emulation.setDeviceMetricsOverride", new { width = 1440, height = 860, deviceScaleFactor = 1, mobile = false });
+    await browser.WaitFor("visible('directory') && visible('note-directory') && visible('reader')",
+        "The wide layout should restore the directories and reader.");
     await browser.Evaluate("""
         fixture.extraChildren = 0;
         send({method:'ui/notifications/host-context-changed', params:{displayMode:'inline'}});
@@ -191,6 +195,12 @@ static async Task VerifySelectionOnRefresh(DevTools browser)
     await browser.Evaluate("el('subagent-threads').querySelector('button').click()");
     await browser.WaitFor("el('detail-heading').textContent === fixture.ownTitle && el('note').textContent.includes('Example saved note')",
         "The selected child note should be ready for the refresh test.");
+    await browser.Check("""
+        visible('note-last-read') &&
+        el('note-last-read').textContent === 'Last read ' + new frame.contentWindow.Intl.RelativeTimeFormat(undefined, {numeric:'always'}).format(-2, 'minute') &&
+        el('note-last-read').dateTime === fixture.lastReadAt && el('note-last-read').title.includes(fixture.lastReadAt) &&
+        el('note-date').textContent.startsWith('Last updated ')
+        """, "The reader should show the note's read age, exact timestamp and separate update time.");
     await browser.Evaluate("fixture.ownChildAvailability = null; el('refresh').click()");
     await browser.WaitFor("fixture.lastRead === ownChild.thread_id && el('refresh').getAttribute('aria-disabled') === 'false'",
         "The selected child should be rechecked during refresh.");
@@ -228,9 +238,11 @@ static async Task VerifyInheritance(DevTools browser)
     await browser.Evaluate("el('include-inherited').click()");
     await browser.WaitFor("childNotePaths().length === 3",
         "Checking the inheritance filter should list the saved snapshot.");
+    await browser.Evaluate("el('subagent-threads').querySelector('button').click()");
+    await browser.WaitFor("visible('note-last-read')", "The current child note should show its read time before changing notes.");
     await browser.Evaluate("""el('subagent-threads').querySelector('[data-thread="' + fixture.inheritedId + '"]').click()""");
-    await browser.WaitFor("!el('note-inherited').hidden && el('note').textContent.includes('Example fork snapshot')",
-        "Selecting an inherited note should display its saved snapshot.");
+    await browser.WaitFor("!el('note-inherited').hidden && el('note').textContent.includes('Example fork snapshot') && !visible('note-last-read')",
+        "An inherited snapshot should display its saved note without a read time.");
 
     await browser.Evaluate("fixture.inheritance = 'unavailable'; el('refresh').click()");
     await browser.WaitFor("""
@@ -475,6 +487,7 @@ static class HostFixture
           title:'/root/inherited_context', inherited:true};
         const cleanupCandidates = [secondId, '00000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000006'];
         const fixture = { firstId, secondId, inheritedId, ownTitle, olderTitle, rows, cleanupCandidates,
+          lastReadAt:new Date(Date.now() - 120000).toISOString(),
           initializations:0, lists:[], previews:[], inheritance:'available', extraChildren:0,
           ownChildAvailability:true, noteStoreAvailable:true };
         const send = fields => frame.contentWindow.postMessage({jsonrpc:'2.0', ...fields}, '*');
@@ -534,15 +547,16 @@ static class HostFixture
               case 'handoff_read':
                 fixture.lastRead = args.thread_id;
                 if (!fixture.noteStoreAvailable) {
-                  tool({summary:null, updated_at:null, note_available:null});
+                  tool({summary:null, updated_at:null, last_read_at:null, note_available:null});
                 } else if (args.from_fork === secondId && args.thread_id === inheritedId) {
-                  if (fixture.inheritance === 'available') tool({summary:'Example fork snapshot', updated_at:'2026-11-24T08:29:00Z', note_available:true});
+                  if (fixture.inheritance === 'available') tool({summary:'Example fork snapshot', updated_at:'2026-11-24T08:29:00Z', last_read_at:null, note_available:true});
                   else reply({isError:true, content:[{type:'text', text:'Could not verify the fork history.'}]});
                 } else if (args.thread_id === ownChild.thread_id && fixture.ownChildAvailability !== true) {
-                  tool({summary:null, updated_at:null, note_available:fixture.ownChildAvailability});
+                  tool({summary:null, updated_at:null, last_read_at:null, note_available:fixture.ownChildAvailability});
                 } else if (args.thread_id === secondId) {
-                  tool({summary:null, updated_at:null, note_available:false});
-                } else tool({summary:'Example saved note', updated_at:'2026-11-24T08:29:00Z', note_available:true});
+                  tool({summary:null, updated_at:null, last_read_at:null, note_available:false});
+                } else tool({summary:'Example saved note', updated_at:'2026-11-24T08:29:00Z',
+                  last_read_at:args.thread_id === ownChild.thread_id ? fixture.lastReadAt : null, note_available:true});
                 break;
               case 'handoff_cleanup':
                 if (args.thread_ids) fixture.deletion = {ids:args.thread_ids, finish:tool};

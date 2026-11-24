@@ -196,12 +196,19 @@ internal static partial class Program
         }
 
         if (action == "read")
-            return WriteResult(writer =>
+        {
+            int status = WriteResult(writer =>
             {
                 writer.WriteString("thread_id", threadId);
                 writer.WriteString("summary", current?.Summary);
                 writer.WriteString("updated_at", current?.Summary is not null ? Timestamp(current.UpdatedUs) : null);
             });
+            if (status == 0 && current?.Summary is { Length: > 0 } &&
+                Guid.TryParse(Environment.GetEnvironmentVariable("CODEX_THREAD_ID"), out Guid caller) &&
+                threadId == caller.ToString("D"))
+                MemoryReads.Record(store, threadId);
+            return status;
+        }
 
         if (patch is not null)
         {

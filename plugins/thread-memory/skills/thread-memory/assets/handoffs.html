@@ -308,6 +308,7 @@
           <div class="reader-tools">
             <div class="thread-meta meta">
               <span id="note-date"></span>
+              <time id="note-last-read" hidden></time>
               <span id="note-archived" hidden>Archived</span>
               <span id="note-inherited" hidden>Inherited</span>
               <details id="thread-id" class="meta">
@@ -371,6 +372,7 @@
     const cleanupTimeout = 125000;
     const pageSize = 25;
     const dateFormat = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
+    const relativeTime = new Intl.RelativeTimeFormat(undefined, {numeric: "always"});
     const noteStoreUnavailable = "The note store is unavailable. Refresh to try again.";
     const spawnIndexUnavailable = "The Codex subagent index is unavailable. Refresh to try again.";
     const inheritanceUnavailable = "Could not verify the fork history. Refresh to try again.";
@@ -393,6 +395,7 @@
     let activeThread = null;
     let noteRequest = 0;
     let noteLoading = false;
+    let lastReadTimer;
     let childPage = 1;
     let childTotalPages = 1;
     let childLoading = false;
@@ -505,6 +508,26 @@
     function formatDate(value) {
       const date = new Date(value);
       return value && Number.isFinite(date.getTime()) ? dateFormat.format(date) : "";
+    }
+
+    function showLastRead(value) {
+      clearInterval(lastReadTimer);
+      const indicator = byId("note-last-read");
+      const timestamp = Date.parse(value);
+      indicator.hidden = !Number.isFinite(timestamp);
+      if (indicator.hidden) return;
+
+      indicator.dateTime = value;
+      indicator.title = "Last successful CLI read by this thread: " + value;
+      const update = () => {
+        const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
+        const [unit, duration] = minutes >= 1440 ? ["day", 1440]
+          : minutes >= 60 ? ["hour", 60] : ["minute", 1];
+        const age = minutes === 0 ? "just now" : relativeTime.format(-Math.floor(minutes / duration), unit);
+        indicator.textContent = "Last read " + age;
+      };
+      update();
+      lastReadTimer = setInterval(update, 60000);
     }
 
     function threadTitle(row) {
@@ -703,6 +726,7 @@
       byId("reader-header").hidden = true;
       byId("reader-body").hidden = true;
       byId("note-directory").hidden = true;
+      showLastRead(null);
       if (moveFocus) byId("search").focus({preventScroll: true});
     }
 
@@ -800,6 +824,7 @@
         byId("note").textContent = "";
         byId("copy-summary").hidden = true;
         byId("note-date").textContent = "";
+        showLastRead(null);
         loadedNote = "";
         hideNoteSource();
       }
@@ -826,6 +851,7 @@
         byId("copy-summary").hidden = !summary;
         const savedAt = formatDate(result.updated_at);
         byId("note-date").textContent = summary && savedAt ? "Last updated " + savedAt : "";
+        showLastRead(result.last_read_at);
         setNoteStatus(summary ? "" : "This thread has no saved note.");
       } catch (error) {
         if (reading === noteRequest) {
