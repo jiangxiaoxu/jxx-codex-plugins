@@ -62,15 +62,17 @@ internal static class PanelThreads
         string? sort = args.TryGetProperty("sort_by", out _) ? SessionFiles.String(args, "sort_by") : "note_updated";
         if (sort is not ("note_updated" or "thread_updated"))
             throw new ArgumentException("Sort by must be note_updated or thread_updated.");
+        string? selected = args.TryGetProperty("selected_thread_id", out var selectedArg) ? PanelFiles.ThreadId(selectedArg) : null;
 
         var notes = ReadNoteTimes(new HookStore(home));
-        Dictionary<string, SpawnLink> links = notes.Count == 0 ? [] : ReadSpawnLinks(home);
+        var links = ReadSpawnLinks(home);
         Dictionary<string, (ListedNote Latest, int ChildCount)> groups = new(StringComparer.Ordinal);
         foreach (var note in notes)
         {
             string id = note.ThreadId;
-            links.TryGetValue(id, out var child);
-            if (child is { Indexed: false } || RootOf(id, links) is not { } root)
+            var child = links?.GetValueOrDefault(id);
+            string? root = links is null ? id : RootOf(id, links);
+            if (child is { Indexed: false } || root is null)
                 continue;
             int childCount = child is null ? 0 : 1;
             if (groups.TryGetValue(root, out var group))
@@ -80,22 +82,22 @@ internal static class PanelThreads
                 groups[root] = (note, childCount);
         }
         var ids = groups.Keys.ToHashSet(StringComparer.Ordinal);
+        if (selected is not null)
+            ids.Add(selected);
         var indexed = ThreadMetadata(home, ids, IdentityColumns, withSpawnEdge: true);
         var archives = MainThreadArchives(home, ids, indexed);
-        if (archiveStatus != "all")
-        {
-            bool archived = archiveStatus == "archived";
-            foreach (var entry in archives.Where(entry => entry.Value != archived).ToArray())
-                archives.Remove(entry.Key);
-        }
+        bool? selectedArchived = selected is not null && archives.TryGetValue(selected, out bool selectedValue) ? selectedValue : null;
+        bool? archiveFilter = archiveStatus == "all" ? null : archiveStatus == "archived";
+        var matchingIds = groups.Keys.Where(id => archives.TryGetValue(id, out bool archived)
+            && (archiveFilter is null || archived == archiveFilter)).ToArray();
         var titles = query.Length == 0
             ? new Dictionary<string, string>(StringComparer.Ordinal)
-            : ThreadTitles(home, archives.Keys, ThreadMetadata(home, archives.Keys, TitleColumns));
-        var ordered = groups.Keys.Where(id => archives.ContainsKey(id) && Matches(query, id, titles))
+            : ThreadTitles(home, matchingIds, ThreadMetadata(home, matchingIds, TitleColumns));
+        var ordered = matchingIds.Where(id => Matches(query, id, titles))
             .OrderByDescending(id => sort == "thread_updated" && ThreadUpdatedAt(indexed.GetValueOrDefault(id)) is { } updated
                 ? Microseconds(updated) : groups[id].Latest.SortAt)
             .ThenBy(id => id, StringComparer.Ordinal).ToArray();
-        return Page(ordered, pageNumber, limit, page =>
+        var response = Page(ordered, pageNumber, limit, page =>
         {
             var details = ThreadMetadata(home, page, query.Length == 0 ? [.. PreviewColumns, .. TitleColumns] : PreviewColumns);
             if (query.Length == 0)
@@ -113,11 +115,14 @@ internal static class PanelThreads
                     ["archived"] = archives[id],
                     ["thread_updated_at"] = ThreadUpdatedAt(indexed.GetValueOrDefault(id))?
                         .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
-                    ["child_note_count"] = group.ChildCount,
+                    ["child_note_count"] = links is null ? null : JsonValue.Create(group.ChildCount),
                 });
             }
             return items;
         });
+        response["selected_archived"] = selectedArchived;
+        response["spawn_index_available"] = links is not null;
+        return response;
     }
 
     internal static JsonObject ListChildren(string home, JsonElement args)
@@ -128,22 +133,31 @@ internal static class PanelThreads
         if (include.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.True or JsonValueKind.False))
             throw new ArgumentException("Include inherited must be a boolean.");
         var links = ReadSpawnLinks(home);
+        if (links is null)
+        {
+            var unavailable = Page(Array.Empty<ListedNote>(), pageNumber, limit, _ => []);
+            unavailable["can_include_inherited"] = false;
+            unavailable["spawn_index_available"] = false;
+            return unavailable;
+        }
         // Only expose a spawn subtree from an independently verified main thread.
         bool main = !links.ContainsKey(root)
             && MainThreadArchives(home, [root], ThreadMetadata(home, [root], IdentityColumns)).ContainsKey(root);
-        Dictionary<string, long> ancestorCutoffs = main ? ForkCutoffs(home, root, links) : [];
+        bool includeInherited = include.ValueKind == JsonValueKind.True;
+        Dictionary<string, long> ancestorCutoffs = main ? ForkCutoffs(home, root, links, directOnly: !includeInherited) : [];
         List<ListedNote> notes = [];
         if (main && links.Count > 0)
         {
             var store = new HookStore(home);
             notes.AddRange(ReadNoteTimes(store).Where(note =>
                 links.TryGetValue(note.ThreadId, out var link) && link.Indexed && RootOf(note.ThreadId, links) == root));
-            if (include.ValueKind == JsonValueKind.True && ancestorCutoffs.Count > 0 && store.OpenRead() is { } connection)
+            if (includeInherited && ancestorCutoffs.Count > 0 && store.OpenRead() is { } connection)
             {
                 using (connection)
                 {
-                    foreach (var (id, link) in links)
-                        if (HistoricalChild(connection, id, link, links, ancestorCutoffs) is { } historical)
+                    foreach (string id in HistoricalNoteIds(connection, ancestorCutoffs.Values.Max()))
+                        if (links.TryGetValue(id, out var link)
+                            && HistoricalChild(connection, id, link, links, ancestorCutoffs) is { } historical)
                             notes.Add(new ListedNote(id, NoteTimestamp(historical.UpdatedUs), historical.UpdatedUs, Inherited: true));
                 }
             }
@@ -175,6 +189,7 @@ internal static class PanelThreads
             return items;
         });
         response["can_include_inherited"] = ancestorCutoffs.Count > 0;
+        response["spawn_index_available"] = true;
         return response;
     }
 
@@ -203,10 +218,11 @@ internal static class PanelThreads
         string? summary = null;
         string? updated = null;
         using var connection = new HookStore(home).OpenRead();
-        if (connection is not null && fork is not null)
+        if (fork is not null)
         {
-            var links = ReadSpawnLinks(home);
-            if (links.TryGetValue(identifier, out var link)
+            var links = ReadSpawnLinks(home)
+                ?? throw new InvalidDataException("The Codex subagent index is unavailable. Refresh the panel or try again later.");
+            if (connection is not null && links.TryGetValue(identifier, out var link)
                 && HistoricalChild(connection, identifier, link, links, ForkCutoffs(home, fork, links)) is { } historical)
             {
                 summary = historical.Summary;
@@ -263,18 +279,21 @@ internal static class PanelThreads
         return notes;
     }
 
-    private static Dictionary<string, SpawnLink> ReadSpawnLinks(string home)
+    private static Dictionary<string, SpawnLink>? ReadSpawnLinks(string home)
     {
         Dictionary<string, SpawnLink> links = new(StringComparer.Ordinal);
         try
         {
             if (SessionFiles.ActiveStateDatabase(home) is not { } database || !File.Exists(database))
-                return links;
+                return null;
             using var connection = PanelFiles.OpenDatabase(database, SqliteOpenMode.ReadOnly);
             using var command = connection.CreateCommand();
+            command.CommandText = "SELECT status FROM backfill_state WHERE id = 1";
+            if (!Equals(command.ExecuteScalar(), "complete"))
+                return null;
             command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('thread_spawn_edges') WHERE name IN ('parent_thread_id', 'child_thread_id')";
             if (command.ExecuteScalar() is not 2L)
-                return links;
+                return null;
             command.CommandText = "SELECT 1 FROM pragma_table_info('threads') WHERE name = 'attached_thread_parent_id'";
             var attached = command.ExecuteScalar() is 1L
                 ? "NULLIF(threads.attached_thread_parent_id, '') IS NOT NULL" : "0";
@@ -287,9 +306,9 @@ internal static class PanelThreads
                 links[reader.GetString(0)] = new SpawnLink(reader.GetString(1), reader.GetBoolean(2), reader.GetBoolean(3));
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException
-            or NotSupportedException or TomlException or SqliteException or InvalidDataException)
+            or NotSupportedException or TomlException or SqliteException or InvalidDataException or InvalidOperationException)
         {
-            links.Clear();
+            return null;
         }
         return links;
     }
@@ -319,10 +338,28 @@ internal static class PanelThreads
         return string.IsNullOrEmpty(saved?.Summary) ? null : saved;
     }
 
-    private static Dictionary<string, long> ForkCutoffs(string home, string root, Dictionary<string, SpawnLink> links)
+    private static List<string> HistoricalNoteIds(SqliteConnection connection, long latestCutoff)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT thread_id FROM memory_revisions WHERE effective_us <= $cutoff AND summary <> ''
+            UNION SELECT thread_id FROM handoffs WHERE saved_at IS NOT NULL AND summary <> ''
+            UNION SELECT thread_id FROM handoff_history WHERE summary <> ''
+            """;
+        command.Parameters.AddWithValue("$cutoff", latestCutoff);
+        using var reader = command.ExecuteReader();
+        List<string> ids = [];
+        while (reader.Read())
+            ids.Add(reader.GetString(0));
+        return ids;
+    }
+
+    private static Dictionary<string, long> ForkCutoffs(string home, string root, Dictionary<string, SpawnLink> links,
+        bool directOnly = false)
     {
         Dictionary<string, long> cutoffs = new(StringComparer.Ordinal);
-        var header = ReadMainHeader(home, root, links);
+        var rollouts = new PanelForkRollouts(home);
+        var header = MainHeader(root);
         long cutoff = long.MaxValue;
         while (SessionFiles.String(header, "forked_from_id") is { Length: 36 } parentText
             && Guid.TryParseExact(parentText, "D", out var parentId))
@@ -330,7 +367,7 @@ internal static class PanelThreads
             string parent = parentId.ToString("D");
             if (parent == root || cutoffs.ContainsKey(parent))
                 return [];
-            var parentHeader = ReadMainHeader(home, parent, links);
+            var parentHeader = MainHeader(parent);
             if (parentHeader.ValueKind == JsonValueKind.Undefined)
                 break;
             try
@@ -342,26 +379,19 @@ internal static class PanelThreads
                 break;
             }
             cutoffs[parent] = cutoff;
+            if (directOnly)
+                break;
             header = parentHeader;
         }
         return cutoffs;
-    }
 
-    private static JsonElement ReadMainHeader(string home, string id, Dictionary<string, SpawnLink> links)
-    {
-        if (links.ContainsKey(id))
-            return default;
-        try
+        JsonElement MainHeader(string id)
         {
-            if (SessionFiles.FindRollout(home, id) is not { } path)
+            if (links.ContainsKey(id))
                 return default;
-            var header = SessionFiles.ReadHeader(path);
-            return SessionFiles.String(header, "id") == id && IsMainHeader(header) ? header : default;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException
-            or ArgumentException or InvalidOperationException or JsonException)
-        {
-            return default;
+            var metadata = ThreadMetadata(home, [id], ["rollout_path"]);
+            var header = rollouts.ReadHeader(id, metadata.GetValueOrDefault(id)?.GetValueOrDefault("rollout_path") as string);
+            return IsMainHeader(header) ? header : default;
         }
     }
 
@@ -435,9 +465,10 @@ internal static class PanelThreads
                 continue;
             switch (IsMainSource(row.GetValueOrDefault("source") as string, row.GetValueOrDefault("thread_source") as string))
             {
-                case true:
-                    main[id] = row.GetValueOrDefault("archived") is 1L;
+                case true when row.GetValueOrDefault("archived") is long archiveFlag:
+                    main[id] = archiveFlag == 1;
                     break;
+                case true:
                 case null:
                     unknown.Add(id);
                     break;

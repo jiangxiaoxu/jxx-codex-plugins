@@ -22,6 +22,7 @@ internal static class Program
         new("handoff_list", "List main threads with notes",
             "List main threads with their own notes or saved subagent notes.", Paging(new()
             {
+                ["selected_thread_id"] = ThreadId.DeepClone(),
                 ["archive_status"] = new JsonObject
                 {
                     ["type"] = "string", ["enum"] = new JsonArray("all", "active", "archived"), ["default"] = "all",

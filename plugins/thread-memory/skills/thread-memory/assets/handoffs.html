@@ -53,9 +53,9 @@
     button.danger:enabled:hover { background: color-mix(in srgb, var(--danger-tone) 11%, transparent); }
     .status { color: var(--muted); overflow-wrap: anywhere; }
     .status:empty { display: none; }
-    #status:not(:empty) { margin-bottom: 10px; }
+    .panel-status:not(:empty) { margin-bottom: 10px; }
     .status.error { color: var(--danger); }
-    main > header, #status, .directory-tools, .reader-header, footer { flex-shrink: 0; }
+    main > header, .panel-status, .directory-tools, .reader-header, footer { flex-shrink: 0; }
     .workspace {
       display: grid;
       flex: 1 1 auto;
@@ -233,11 +233,13 @@
     <header>
       <h1>Thread Memory</h1>
       <div class="actions">
+        <button id="retry-connection" type="button" hidden>Retry connection</button>
         <button id="refresh" type="button" title="Refresh the directory and selected note" disabled>Refresh</button>
         <button id="manage" type="button" disabled>Manage data</button>
       </div>
     </header>
-    <p id="status" class="status" role="status">Connecting to Codex...</p>
+    <p id="status" class="status panel-status" role="status">Connecting to Codex...</p>
+    <p id="cleanup-page-status" class="status panel-status" role="status"></p>
     <div class="workspace">
       <nav id="directory" class="panel directory" aria-labelledby="threads-heading">
         <div class="directory-tools">
@@ -358,12 +360,19 @@
     const byId = (id) => document.getElementById(id);
     const host = window.parent;
     const main = document.querySelector("main");
+    const managementDialog = byId("management-dialog");
     const compactLayout = window.matchMedia("(max-width: 700px)");
     const pending = new Map();
+    const responseTimeout = 25000;
+    // Let Codex's configured 120-second tool timeout report before giving up locally.
+    const cleanupTimeout = 125000;
     const pageSize = 25;
     const dateFormat = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
+    const spawnIndexUnavailable = "The Codex subagent index is unavailable. Refresh to try again.";
     let requestId = 0;
     let connected = false;
+    let connecting = false;
+    let connectionFailed = false;
     let busy = false;
     let listLoading = false;
     let listStale = false;
@@ -390,19 +399,20 @@
     let childSearchTimer;
     let renderedChildren;
     let childScrollTop = 0;
+    let cleanupPreview = null;
     let missingThreads = [];
 
     function send(fields) {
       host.postMessage({jsonrpc: "2.0", ...fields}, "*");
     }
 
-    function request(method, params) {
+    function request(method, params, deadline = responseTimeout) {
       const id = ++requestId;
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           pending.delete(id);
           reject(new Error("Codex did not respond. Check the current state before trying again."));
-        }, 25000);
+        }, deadline);
         pending.set(id, {resolve, reject, timeout});
         send({id, method, params});
       });
@@ -446,8 +456,8 @@
       }
     });
 
-    async function callTool(name, args) {
-      const result = await request("tools/call", {name, arguments: args});
+    async function callTool(name, args, deadline) {
+      const result = await request("tools/call", {name, arguments: args}, deadline);
       if (result?.isError) {
         throw new Error(result.content?.find((item) => item.type === "text")?.text || "The request failed.");
       }
@@ -461,10 +471,13 @@
     }
 
     function updateControls() {
+      byId("retry-connection").hidden = !connectionFailed || connected;
+      byId("retry-connection").disabled = connecting;
       byId("refresh").disabled = !connected;
       byId("refresh").setAttribute("aria-disabled", String(busy || listLoading || childLoading || noteLoading || refreshing));
       byId("manage").disabled = !connected;
       byId("check-cleanup").disabled = !connected || busy;
+      byId("cleanup-page-status").hidden = managementDialog.open;
       byId("search").disabled = !connected;
       byId("archive-status").disabled = !connected;
       byId("sort-by").disabled = !connected;
@@ -559,18 +572,19 @@
       return items;
     }
 
-    function renderRows(rows, filtered, sortBy, preservePosition) {
+    function renderRows(rows, filtered, sortBy, preservePosition, indexAvailable) {
       byId("pagination").hidden = totalPages < 2;
       byId("page").textContent = "Page " + page + " of " + totalPages;
       const threads = byId("threads");
-      const nextRows = JSON.stringify([rows, filtered, sortBy]);
+      const nextRows = JSON.stringify([rows, filtered, sortBy, indexAvailable]);
       if (nextRows === renderedRows && preservePosition) return;
       const focusedId = threads.contains(document.activeElement) ? document.activeElement.dataset.thread : null;
       const directoryHidden = compactLayout.matches && main.dataset.view === "note";
       const scroll = preservePosition ? (directoryHidden ? directoryScrollTop : threads.scrollTop) : 0;
       threads.replaceChildren(...threadItems(rows, {
         sortBy, selected: activeMain?.thread_id, open: openThread,
-        empty: filtered ? "No matching main threads." : "No thread notes saved yet.",
+        empty: !indexAvailable ? "No main threads could be confirmed."
+          : filtered ? "No matching main threads." : "No thread notes saved yet.",
       }));
       renderedRows = nextRows;
       directoryScrollTop = scroll;
@@ -881,6 +895,8 @@
       try {
         const args = {page: targetPage, limit: pageSize, archive_status: archiveStatus, sort_by: sortBy};
         if (query) args.query = query;
+        const selectedId = activeMain?.thread_id;
+        if (selectedId) args.selected_thread_id = selectedId;
         const result = await callTool("handoff_list", args);
         if (listRequest !== revision) return;
         const preservePosition = !listStale && page === result.page;
@@ -889,19 +905,23 @@
         listStale = false;
         const rows = result.items;
         const retained = rows.find((row) => row.thread_id === activeMain?.thread_id);
-        if (retained) {
-          activeMain = retained;
-          if (activeThread?.thread_id === retained.thread_id) {
-            activeThread = retained;
-            updateThreadHeading(retained);
+        const selectedArchived = retained?.archived ?? (selectedId === activeMain?.thread_id ? result.selected_archived : null);
+        if (activeMain && typeof selectedArchived === "boolean") {
+          if (archiveStatus !== "all" && selectedArchived !== (archiveStatus === "archived")) {
+            clearThread();
+          } else {
+            activeMain = retained || {...activeMain, archived: selectedArchived};
+            if (activeThread?.thread_id === activeMain.thread_id) {
+              activeThread = activeMain;
+              updateThreadHeading(activeThread);
+            }
+            updateReaderNavigation();
           }
-          updateReaderNavigation();
-        } else if (activeMain && archiveStatus !== "all" && activeMain.archived !== (archiveStatus === "archived")) {
-          clearThread();
         }
-        renderRows(rows, Boolean(query) || archiveStatus !== "all", sortBy, preservePosition);
+        const indexAvailable = result.spawn_index_available !== false;
+        renderRows(rows, Boolean(query) || archiveStatus !== "all", sortBy, preservePosition, indexAvailable);
         byId("results-count").textContent = result.total ? result.total + (result.total === 1 ? " thread" : " threads") : "";
-        setStatus("");
+        setStatus(indexAvailable ? "" : spawnIndexUnavailable, !indexAvailable);
       } catch (error) {
         if (listRequest !== revision) return;
         if (listStale || renderedRows === undefined) byId("results-count").textContent = "";
@@ -940,6 +960,10 @@
       try {
         const result = await callTool("handoff_children", args);
         if (revision !== childRequest) return;
+        if (result.spawn_index_available === false) {
+          childRefreshNeeded = true;
+          throw new Error(spawnIndexUnavailable);
+        }
         byId("include-inherited-control").hidden = result.can_include_inherited !== true;
         if (result.can_include_inherited !== true && byId("include-inherited").checked) {
           byId("include-inherited").checked = false;
@@ -1049,6 +1073,10 @@
         activationTimer = setTimeout(() => {
           activationTimer = undefined;
           if (!panelVisible) return;
+          if (!connected) {
+            if (connectionFailed) void start();
+            return;
+          }
           refreshPending = true;
           flushPendingRefresh();
         }, 120);
@@ -1071,11 +1099,14 @@
     }
 
     async function previewCleanup() {
+      const attempt = {};
+      cleanupPreview = attempt;
       busy = true;
       updateControls();
       setCleanupStatus("Checking for deleted threads...");
       try {
         const result = await callTool("handoff_cleanup", {});
+        if (cleanupPreview !== attempt || !managementDialog.open) return;
         if (result.status !== "ok") throw new Error(result.reason || "Could not verify which threads were deleted.");
         missingThreads = result.thread_ids;
         if (!missingThreads.length) {
@@ -1092,28 +1123,50 @@
         byId("cleanup-dialog").showModal();
         preview.scrollTop = 0;
       } catch (error) {
-        setCleanupStatus(error.message, true);
+        if (cleanupPreview === attempt && managementDialog.open) setCleanupStatus(error.message, true);
       } finally {
-        busy = false;
-        updateControls();
+        if (cleanupPreview === attempt) {
+          cleanupPreview = null;
+          busy = false;
+          updateControls();
+        }
       }
     }
 
     function setCleanupStatus(message, error = false) {
-      byId("cleanup-status").textContent = message;
-      byId("cleanup-status").classList.toggle("error", error);
+      for (const status of [byId("cleanup-status"), byId("cleanup-page-status")]) {
+        status.textContent = message;
+        status.classList.toggle("error", error);
+      }
+    }
+
+    function closeManagement() {
+      managementDialog.close();
+      if (cleanupPreview) {
+        cleanupPreview = null;
+        busy = false;
+        setCleanupStatus("");
+      }
+      updateControls();
     }
 
     async function confirmCleanup() {
-      if (!missingThreads.length) return;
+      if (busy || !missingThreads.length) return;
       const threadIds = missingThreads;
+      missingThreads = [];
       byId("cleanup-dialog").close();
       busy = true;
       updateControls();
       setCleanupStatus("Deleting stored data...");
+      const progress = setTimeout(() => {
+        setCleanupStatus("Still deleting stored data...");
+      }, responseTimeout);
       try {
-        const result = await callTool("handoff_cleanup", {thread_ids: threadIds});
-        if (result.status !== "ok") throw new Error(result.reason || "Could not verify which threads were deleted.");
+        const result = await callTool("handoff_cleanup", {thread_ids: threadIds}, cleanupTimeout);
+        if (result.status !== "ok") {
+          setCleanupStatus(result.reason || "Could not verify which threads were deleted.", true);
+          return;
+        }
         const count = result.deleted;
         const kept = result.kept_thread_ids?.length ?? 0;
         let message = count ? "Deleted " + count + (count === 1 ? " stored record." : " stored records.")
@@ -1136,8 +1189,10 @@
         }
         refreshPending = true;
       } catch (error) {
-        setCleanupStatus(error.message, true);
+        setCleanupStatus("The deletion result is unknown. " + error.message, true);
+        refreshPending = true;
       } finally {
+        clearTimeout(progress);
         busy = false;
         updateControls();
       }
@@ -1173,21 +1228,30 @@
     });
     byId("retry-note").addEventListener("click", () => loadNote(true));
     byId("copy-summary").addEventListener("click", copySummary);
-    byId("manage").addEventListener("click", () => byId("management-dialog").showModal());
-    byId("close-manager").addEventListener("click", () => byId("management-dialog").close());
+    byId("retry-connection").addEventListener("click", start);
+    byId("manage").addEventListener("click", () => {
+      managementDialog.showModal();
+      updateControls();
+    });
+    byId("close-manager").addEventListener("click", closeManagement);
+    managementDialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      closeManagement();
+    });
     byId("check-cleanup").addEventListener("click", previewCleanup);
     byId("cancel-cleanup").addEventListener("click", () => byId("cleanup-dialog").close());
-    byId("cleanup-dialog").addEventListener("close", () => {
+    byId("cleanup-dialog").addEventListener("close", ({currentTarget}) => {
+      if (currentTarget.open) return;
       missingThreads = [];
       byId("missing-threads").textContent = "";
     });
     byId("delete-cleanup").addEventListener("click", confirmCleanup);
 
     async function start() {
-      if (host === window) {
-        setStatus("Open Thread Memory in Codex to view local notes.");
-        return;
-      }
+      if (connected || connecting) return;
+      connecting = true;
+      updateControls();
+      setStatus("Connecting to Codex...");
       try {
         const result = await request("ui/initialize", {
           appInfo: {name: "thread-memory", version: "1"},
@@ -1197,25 +1261,35 @@
         applyHostContext(result.hostContext);
         send({method: "ui/notifications/initialized"});
         connected = true;
-        updateControls();
-        let previousSize;
-        new ResizeObserver(() => {
-          const {width, height} = main.getBoundingClientRect();
-          const dimensions = {width: Math.ceil(width), height: Math.ceil(height)};
-          const size = dimensions.width + ":" + dimensions.height;
-          if (size !== previousSize) {
-            previousSize = size;
-            send({method: "ui/notifications/size-changed", params: dimensions});
-          }
-        }).observe(main);
-        observePanelVisibility();
-        await loadPage(1);
+        connectionFailed = false;
+        setStatus("");
       } catch (error) {
-        setStatus(error.message, true);
+        connectionFailed = true;
+        setStatus("Could not connect to Codex. " + error.message, true);
+        return;
+      } finally {
+        connecting = false;
+        updateControls();
       }
+      let previousSize;
+      new ResizeObserver(() => {
+        const {width, height} = main.getBoundingClientRect();
+        const dimensions = {width: Math.ceil(width), height: Math.ceil(height)};
+        const size = dimensions.width + ":" + dimensions.height;
+        if (size !== previousSize) {
+          previousSize = size;
+          send({method: "ui/notifications/size-changed", params: dimensions});
+        }
+      }).observe(main);
+      await loadPage(1);
     }
 
-    start();
+    if (host === window) {
+      setStatus("Open Thread Memory in Codex to view local notes.");
+    } else {
+      observePanelVisibility();
+      void start();
+    }
   </script>
 </body>
 </html>

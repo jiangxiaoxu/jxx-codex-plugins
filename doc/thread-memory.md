@@ -69,9 +69,11 @@ The local stdio server's `handoff_manager` tool opens `ui://thread-memory/notes`
 
 The panel follows the Codex Desktop theme, including live theme and accent changes. It uses the browser's color scheme when the host omits its theme.
 
-Opening the panel loads the directory. Returning to it or choosing **Refresh** reloads the current view while keeping the selection, search, filters, sort order, and reading position. A note can stay selected after its row moves to a different page. If the current page disappears, the directory goes to the last available page.
+Opening the panel loads the directory. Returning to it or choosing **Refresh** reloads the current view while keeping the selection, search, filters, sort order, and reading position. The panel keeps a selection that moves to another page and checks its archive status before applying the current filter. If the current page disappears, the directory goes to the last available page. An unavailable or rebuilding subagent index leaves previously loaded subagent rows visible with a retry message. Use **Retry connection** or reopen the panel if the initial connection fails.
 
 Cleanup covers notes and search index entries for deleted main threads and their deleted subagents, including threads that only have search entries. It requires a completed local Codex index and checks thread rows, spawn and attachment relationships, the session name index, and active and archived rollout names. Surviving evidence protects stored data for those threads. On confirmation it rechecks the selected IDs and initializes any surviving ordinary fork that still depends on the source note. When an uninitialized fork cannot be verified, the cleanup result identifies sources kept for protection. Codex deletes the spawn subtree together. It blocks deletion while a surviving attached thread or external rollout reference depends on the source. The local index has no retained deletion log, so cleanup infers deletion from the verified absence of all local records.
+
+Closing **Manage data** dismisses a pending cleanup preview. A confirmed deletion can continue after the panel closes the confirmation. The panel reports slow progress and waits for the MCP result. If the result is unknown, it refreshes the directory so you can recheck the stored data before deciding whether to retry.
 
 ## Progressive reads
 
@@ -399,6 +401,9 @@ dotnet run --file plugins/thread-memory/tests/verify-media.cs
 dotnet run --file plugins/thread-memory/tests/verify-memory.cs
 dotnet run --file plugins/thread-memory/tests/verify-hook.cs
 dotnet run --file plugins/thread-memory/tests/verify-panel.cs
+dotnet run --file plugins/thread-memory/tests/verify-panel-ui.cs
 python <skill-creator>/scripts/quick_validate.py plugins/thread-memory/skills/thread-memory
 python <plugin-creator>/scripts/validate_plugin.py plugins/thread-memory
 ```
+
+The panel UI check uses an installed Chrome or Edge with a temporary browser profile and a simulated Codex host.

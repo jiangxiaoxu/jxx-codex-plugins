@@ -21,6 +21,7 @@ try
 {
     SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
     await VerifyPanel(Path.Combine(temporary.Path, "listing"), panel, cli, plugin);
+    await VerifySelectionAndIndexAvailability(Path.Combine(temporary.Path, "selection"), panel, cli);
     await VerifyChildDirectory(Path.Combine(temporary.Path, "children"), panel, cli);
     await VerifyForkDirectory(Path.Combine(temporary.Path, "fork-children"), panel, cli);
     await VerifyCleanup(Path.Combine(temporary.Path, "cleanup"), panel, cli);
@@ -135,6 +136,62 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
     await mcp.Finish();
 }
 
+static async Task VerifySelectionAndIndexAvailability(string home, string panel, string cli)
+{
+    Directory.CreateDirectory(home);
+    string selected = NewId(), keeper = NewId();
+    string database = CreateThreadIndex(home);
+    AddThread(database, selected, "Selected thread", null, archived: false, updatedMs: 2);
+    AddThread(database, keeper, "Keep in directory", null, archived: false, updatedMs: 1);
+    WriteRollout(home, selected);
+    WriteRollout(home, keeper);
+    await SaveNote(cli, home, selected, "Selected note");
+    await SaveNote(cli, home, keeper, "Visible note");
+    await using var mcp = new McpClient(panel, home);
+
+    var before = await mcp.Tool("handoff_list", new { selected_thread_id = selected, sort_by = "thread_updated", limit = 1 });
+    Check(ThreadIds(before).SequenceEqual([selected]) && !before.GetProperty("selected_archived").GetBoolean()
+        && before.GetProperty("spawn_index_available").GetBoolean()
+        && before.GetProperty("items")[0].GetProperty("child_note_count").GetInt32() == 0,
+        "A verified selection must show its current archive status and a confirmed empty spawn count.");
+    var empty = await mcp.Tool("handoff_children", new { thread_id = selected });
+    Check(empty.GetProperty("spawn_index_available").GetBoolean() && empty.GetProperty("total").GetInt32() == 0,
+        "A usable empty spawn index must report a verified empty child directory.");
+    Execute(database, "UPDATE backfill_state SET status = 'running' WHERE id = 1");
+    var backfilling = await mcp.Tool("handoff_children", new { thread_id = selected });
+    Check(!backfilling.GetProperty("spawn_index_available").GetBoolean(),
+        "The child directory cannot classify a partially populated index as empty.");
+    Execute(database, "UPDATE backfill_state SET status = 'complete' WHERE id = 1");
+    var recovered = await mcp.Tool("handoff_children", new { thread_id = selected });
+    Check(recovered.GetProperty("spawn_index_available").GetBoolean(),
+        "The child directory must recover as soon as the index is complete.");
+
+    Execute(database, "UPDATE threads SET archived = 1 WHERE id = $id", ("$id", selected));
+    var refreshed = await mcp.Tool("handoff_list", new
+    {
+        selected_thread_id = selected,
+        archive_status = "active",
+        query = "Keep in directory",
+        limit = 1,
+    });
+    Check(ThreadIds(refreshed).SequenceEqual([keeper]) && refreshed.GetProperty("selected_archived").GetBoolean(),
+        "Refreshing must report the selection's updated status even when filters exclude its row.");
+    var unverified = await mcp.Tool("handoff_list", new { selected_thread_id = NewId() });
+    Check(unverified.GetProperty("selected_archived").ValueKind == JsonValueKind.Null,
+        "An unverified selection must not be treated as an active thread.");
+
+    Execute(database, "DROP TABLE thread_spawn_edges");
+    var unavailable = await mcp.Tool("handoff_list", new { selected_thread_id = selected });
+    Check(!unavailable.GetProperty("spawn_index_available").GetBoolean() && unavailable.GetProperty("selected_archived").GetBoolean()
+        && unavailable.GetProperty("items").EnumerateArray().All(item => item.GetProperty("child_note_count").ValueKind == JsonValueKind.Null)
+        && ThreadIds(unavailable).ToHashSet().SetEquals([selected, keeper]),
+        "An unavailable spawn index must leave verified main notes and selection status readable, with unknown child counts.");
+    var unknownChildren = await mcp.Tool("handoff_children", new { thread_id = selected });
+    Check(!unknownChildren.GetProperty("spawn_index_available").GetBoolean() && !ThreadIds(unknownChildren).Any(),
+        "An unavailable spawn index must explicitly report the child directory as unavailable.");
+    await mcp.Finish();
+}
+
 static async Task VerifyChildDirectory(string home, string panel, string cli)
 {
     Directory.CreateDirectory(home);
@@ -222,7 +279,7 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
     AddChild(originallyEmpty, original);
     var beforeFirstFork = await SaveNote(cli, home, originalEarly, "Original note before first fork");
     string firstCutoff = beforeFirstFork.GetProperty("updated_at").GetString()!;
-    WriteRollout(home, firstFork, forkedFrom: original, timestamp: firstCutoff);
+    string firstForkPath = WriteRollout(home, firstFork, forkedFrom: original, timestamp: firstCutoff);
 
     await SaveNote(cli, home, originalEarly, "Post-fork change belongs to original");
     await SaveNote(cli, home, originallyEmpty, "Note first saved after the fork");
@@ -231,8 +288,13 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
 
     AddChild(forkEarly, firstFork);
     var beforeSecondFork = await SaveNote(cli, home, forkEarly, "First fork note before the second fork");
-    WriteRollout(home, secondFork, forkedFrom: firstFork, timestamp: beforeSecondFork.GetProperty("updated_at").GetString()!);
-    await SaveNote(cli, home, forkEarly, "Post-fork change belongs to the first fork");
+    string secondForkPath = WriteRollout(home, secondFork, forkedFrom: firstFork,
+        timestamp: beforeSecondFork.GetProperty("updated_at").GetString()!);
+    Execute(Path.Combine(home, "state", "plugins", "thread-memory", "handoff.sqlite3"), """
+        INSERT INTO memory_revisions (thread_id, summary, updated_us, effective_us)
+        SELECT thread_id, NULL, updated_us + 1, effective_us + 1 FROM memory_revisions
+        WHERE thread_id = $id ORDER BY effective_us DESC, revision DESC LIMIT 1
+        """, ("$id", forkEarly));
     AddChild(forkLate, firstFork);
     await SaveNote(cli, home, forkLate, "Child created after the second fork");
     AddChild(own, secondFork);
@@ -241,17 +303,27 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
     using (var compressor = new Compressor())
         File.WriteAllBytes(originalPath + ".zst", compressor.Wrap(File.ReadAllBytes(originalPath)).ToArray());
     File.Delete(originalPath);
+    string activeSegment = secondForkPath[..^".jsonl".Length] + "_" + NewId() + ".jsonl";
+    File.WriteAllText(activeSegment, JsonSerializer.Serialize(new
+    {
+        type = "session_meta",
+        payload = new { id = secondFork, timestamp = "2026-01-01T00:00:00Z", source = "vscode" },
+    }) + "\n");
+    Execute(database, """
+        UPDATE threads SET rollout_path = CASE id WHEN $original THEN $archived WHEN $first THEN $first_path ELSE $active END;
+        """, ("$original", original), ("$archived", originalPath), ("$first", firstFork), ("$first_path", firstForkPath),
+        ("$active", activeSegment));
 
     var ownOnly = await mcp.Tool("handoff_children", new { thread_id = secondFork });
     Check(ownOnly.GetProperty("can_include_inherited").GetBoolean() && ThreadIds(ownOnly).SequenceEqual([own])
         && !ownOnly.GetProperty("items")[0].GetProperty("inherited").GetBoolean(),
-        "A fork must offer inherited notes while showing only its own subagent notes by default.");
+        "A fork using a later active segment must show only its own notes and still offer inheritance from its original rollout.");
 
     var inherited = await mcp.Tool("handoff_children", new { thread_id = secondFork, include_inherited = true });
     Check(ThreadIds(inherited).SequenceEqual([own, forkEarly, originalEarly])
         && inherited.GetProperty("items").EnumerateArray().Skip(1).All(row => row.GetProperty("inherited").GetBoolean()
             && row.GetProperty("preview").ValueKind == JsonValueKind.Null),
-        "The inherited view must honor each fork cutoff and omit children without a note at that time.");
+        "The inherited view must honor each fork cutoff, including child notes that were cleared afterward.");
     var archived = inherited.GetProperty("items")[2];
     Check(archived.GetProperty("archived").GetBoolean() && archived.GetProperty("title").GetString() == "Original reviewer"
         && archived.GetProperty("latest_at").GetString() == firstCutoff,
@@ -261,15 +333,25 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
     var forkSnapshot = await mcp.Tool("handoff_read", new { thread_id = forkEarly, from_fork = secondFork });
     var unavailable = await mcp.Tool("handoff_read", new { thread_id = originalLate, from_fork = secondFork });
     var current = await mcp.Tool("handoff_read", new { thread_id = originalEarly });
+    var cleared = await mcp.Tool("handoff_read", new { thread_id = forkEarly });
     Check(originalSnapshot.GetProperty("summary").GetString() == "Original note before first fork"
         && forkSnapshot.GetProperty("summary").GetString() == "First fork note before the second fork"
         && unavailable.GetProperty("summary").ValueKind == JsonValueKind.Null
+        && cleared.GetProperty("summary").ValueKind == JsonValueKind.Null
         && current.GetProperty("summary").GetString() == "Post-fork change belongs to original",
         "Inherited note reads must use the same ancestry cutoffs as the directory without altering current notes.");
 
     var unforked = await mcp.Tool("handoff_children", new { thread_id = original, include_inherited = true });
     Check(!unforked.GetProperty("can_include_inherited").GetBoolean() && unforked.GetProperty("total").GetInt32() == 3,
         "A non-forked thread has only notes from its own subagents.");
+    Execute(database, "DROP TABLE thread_spawn_edges");
+    var unavailableSnapshot = await mcp.Request("tools/call", new
+    {
+        name = "handoff_read",
+        arguments = new { thread_id = originalEarly, from_fork = secondFork },
+    });
+    Check(unavailableSnapshot.GetProperty("isError").GetBoolean(),
+        "An unavailable spawn index must return an error for a historical child read.");
     await mcp.Finish();
 
     void AddChild(string child, string parent, bool archived = false, string? nickname = null)

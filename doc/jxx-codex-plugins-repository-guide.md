@@ -72,6 +72,7 @@ dotnet run --file plugins/thread-memory/tests/verify-media.cs
 dotnet run --file plugins/thread-memory/tests/verify-memory.cs
 dotnet run --file plugins/thread-memory/tests/verify-hook.cs
 dotnet run --file plugins/thread-memory/tests/verify-panel.cs
+dotnet run --file plugins/thread-memory/tests/verify-panel-ui.cs
 python <skill-creator>/scripts/quick_validate.py plugins/thread-memory/skills/thread-memory
 python <plugin-creator>/scripts/validate_plugin.py plugins/thread-memory
 ```
