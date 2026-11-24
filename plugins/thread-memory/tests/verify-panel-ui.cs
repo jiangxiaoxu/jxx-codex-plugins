@@ -99,6 +99,16 @@ static async Task VerifyUi(DevTools browser)
         "The selected thread note should load.");
     await browser.Check("""
         (() => {
+          const size = el('note-size');
+          const NumberFormat = frame.contentWindow.Intl.NumberFormat;
+          const bytes = notePrefix.length + 120 * 10;
+          const readable = new NumberFormat(undefined, {maximumFractionDigits:1}).format(bytes / 1024);
+          return visible('note-size') && size.textContent === readable + ' KiB' &&
+            size.title.includes(new NumberFormat().format(bytes) + ' UTF-8 bytes');
+        })()
+        """, "The note size should use UTF-8 Markdown bytes and show an exact byte count.");
+    await browser.Check("""
+        (() => {
           const note = el('note');
           const task = note.querySelector('li input[type="checkbox"]');
           return note.querySelector('blockquote > p') && task?.disabled && task.checked;
@@ -179,8 +189,8 @@ static async Task VerifyNavigationLayout(DevTools browser)
     await browser.Evaluate("el('root-note').click()");
     await browser.WaitFor("""
         el('detail-heading').textContent === '/root' && el('detail-status').textContent.includes('no saved note') &&
-        !visible('note-last-read') && !el('thread-id').matches(':popover-open')
-        """, "Clicking an empty /root should close the previous note's ID and clear its read time.");
+        !visible('note-last-read') && !visible('note-size') && !el('thread-id').matches(':popover-open')
+        """, "Clicking an empty /root should clear the previous note's metadata and close its ID.");
     await browser.Evaluate("el('subagent-search').value = ''; el('subagent-search').dispatchEvent(new Event('input'))");
     await browser.WaitFor("childNotePaths().length === 2", "Clearing the search should restore the subagent notes.");
 
@@ -232,6 +242,10 @@ static async Task VerifySelectionOnRefresh(DevTools browser)
     await browser.Evaluate("el('subagent-threads').querySelector('button').click()");
     await browser.WaitFor("el('detail-heading').textContent === fixture.ownTitle && el('note').textContent.includes('Example saved note')",
         "The selected child note should be ready for the refresh test.");
+    await browser.Check("""
+        visible('note-size') &&
+        el('note-size').textContent === new frame.contentWindow.Intl.NumberFormat().format(18) + ' B'
+        """, "A short note should show its byte count.");
     await browser.Check("""
         (() => {
           const relative = new frame.contentWindow.Intl.RelativeTimeFormat(undefined, {numeric:'always'});
@@ -527,9 +541,11 @@ static class HostFixture
           latest_at:'2026-11-23T08:29:00Z', title:olderTitle};
         const inheritedChild = {...rows[1], thread_id:inheritedId, latest_at:'2026-11-21T08:29:00Z',
           title:'/root/inherited_context', inherited:true};
-        const formattedNote = '## Example saved note\n\n> First line\n> Second line\n\n- [x] Checked';
+        const notePrefix = '## Example saved note\n\n> First line\n> Second line\n\n- [x] Checked\n\n';
+        const multilingualNote = '笔记😀'.repeat(120);
+        const formattedNote = notePrefix + multilingualNote;
         const formattedNoteHtml = '<h2>Example saved note</h2><blockquote><p><span>First line</span><br>\n<span>Second line</span></p></blockquote>' +
-          '<ul><li class="task-list-item"><input type="checkbox" checked disabled> Checked</li></ul>';
+          '<ul><li class="task-list-item"><input type="checkbox" checked disabled> Checked</li></ul><p>' + multilingualNote + '</p>';
         const cleanupCandidates = [secondId, '00000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000006'];
         const fixture = { firstId, secondId, inheritedId, ownTitle, olderTitle, rows, cleanupCandidates,
           noteUpdatedAt:new Date(Date.now() - 25 * 3600000).toISOString(),

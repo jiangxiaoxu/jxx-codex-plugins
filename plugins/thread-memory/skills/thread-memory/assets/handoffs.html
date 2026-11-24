@@ -137,8 +137,9 @@
       font-size: 15px;
     }
     .reader-identity { display: grid; flex: 1 1 14rem; min-width: 0; gap: 5px; }
-    .reader-title, .note-timestamps { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 12px; }
-    .note-timestamps:not(:has(time:not([hidden]))) { display: none; }
+    .reader-title, .note-meta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 12px; }
+    .note-meta:not(:has(> :not([hidden]))) { display: none; }
+    #note-size { white-space: nowrap; }
     .reader-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-inline-start: auto; }
     .reader-actions button { padding: 6px 9px; font-size: 13px; white-space: nowrap; }
     .reader-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
@@ -343,9 +344,10 @@
                 <span id="note-archived" class="meta archive-label" hidden>Archived</span>
                 <span id="note-inherited" class="meta archive-label" hidden>Inherited</span>
               </div>
-              <div class="note-timestamps meta">
+              <div class="note-meta meta">
                 <time id="note-date" hidden></time>
                 <time id="note-last-read" hidden></time>
+                <span id="note-size" hidden></span>
               </div>
               <p id="note-parent" class="meta" hidden></p>
             </div>
@@ -580,6 +582,18 @@
       noteTimeTimer = setInterval(update, 60000);
     }
 
+    function showNoteSize(summary) {
+      const indicator = byId("note-size");
+      indicator.hidden = !summary;
+      if (indicator.hidden) return;
+
+      const bytes = new TextEncoder().encode(summary).byteLength;
+      const exact = bytes.toLocaleString();
+      indicator.title = "Note size: " + exact + " UTF-8 bytes";
+      indicator.textContent = bytes < 1024 ? exact + " B"
+        : (bytes / 1024).toLocaleString(undefined, {maximumFractionDigits: 1}) + " KiB";
+    }
+
     function threadTitle(row) {
       return row.title?.trim() || (row.parent_thread_id ? "Subagent " + row.thread_id.slice(0, 8) : "Untitled thread");
     }
@@ -778,6 +792,7 @@
       byId("note-directory").hidden = true;
       byId("thread-id").hidePopover();
       showNoteTimes();
+      showNoteSize("");
       if (moveFocus) byId("search").focus({preventScroll: true});
     }
 
@@ -819,6 +834,7 @@
         byId("note").textContent = "";
         byId("copy-summary").hidden = true;
         showNoteTimes();
+        showNoteSize("");
         loadedNote = "";
         hideNoteSource();
       }
@@ -839,6 +855,7 @@
           const scroll = body.scrollTop;
           hideNoteSource();
           renderNote(summary, result.summary_html);
+          showNoteSize(summary);
           body.scrollTop = scroll;
           loadedNote = summary;
         }
