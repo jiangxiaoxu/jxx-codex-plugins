@@ -49,7 +49,7 @@
     input::placeholder { color: var(--muted); }
     button, select, summary { cursor: var(--cursor-interaction, pointer); }
     button:enabled:not([aria-disabled="true"]):hover, summary:hover { background: var(--hover); }
-    :is(button, input, select, summary, #thread-context-title, #detail-heading, #subagent-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+    :is(button, input, select, summary, #notes-heading, #detail-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
     :is(button, select):disabled { opacity: .5; cursor: default; }
     .danger { color: var(--danger); }
     button.danger:enabled:hover { background: color-mix(in srgb, var(--danger-tone) 11%, transparent); }
@@ -62,31 +62,18 @@
       display: grid;
       flex: 1 1 auto;
       min-height: 0;
-      grid-template-areas: "directory context" "directory reader";
+      grid-template-areas: "directory notes" "directory reader";
       grid-template-columns: var(--directory-width) minmax(0, 1fr);
-      grid-template-rows: auto minmax(0, 1fr);
+      grid-template-rows: minmax(0, auto) minmax(0, 1fr);
       border: 1px solid var(--line);
       border-radius: 11px;
       background: var(--page);
     }
     .directory, .reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
     #directory { grid-area: directory; border-inline-end: 1px solid var(--line); }
-    #subagent-directory { grid-area: browser; }
+    #note-directory { grid-area: notes; border-bottom: 1px solid var(--line); }
+    #note-directory[hidden] + #reader { grid-row: 1 / -1; }
     #reader { grid-area: reader; }
-    .thread-context {
-      grid-area: context;
-      display: grid;
-      min-width: 0;
-      gap: 10px;
-      padding: 14px var(--reader-gutter);
-      border-bottom: 1px solid var(--line);
-    }
-    #thread-context-title { font-size: 1.34rem; line-height: 1.34; overflow-wrap: anywhere; }
-    .scope-switch button { border-color: transparent; padding: 6px 10px; font-weight: 600; }
-    .scope-switch button[aria-pressed="true"], .scope-switch button[aria-pressed="true"]:hover {
-      border-color: var(--line);
-      background: var(--hover);
-    }
     .directory-tools { display: grid; gap: 9px; padding: 12px; border-bottom: 1px solid var(--line); }
     .directory-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
     .directory-filters { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -104,6 +91,7 @@
       scrollbar-gutter: stable;
     }
     .thread-list li + li { margin-top: 3px; }
+    .pinned-note { flex: none; padding-bottom: 0; }
     .thread-list button {
       display: grid;
       width: 100%;
@@ -126,7 +114,7 @@
       overflow-wrap: anywhere;
       font-weight: 600;
     }
-    :is(#subagent-threads .label, #detail-heading) { font-family: var(--font-mono, Consolas, monospace); }
+    :is(#note-directory .label, #detail-heading) { font-family: var(--font-mono, Consolas, monospace); }
     .thread-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; }
     .archive-label { border: 1px solid var(--line); border-radius: 4px; padding-inline: 4px; }
     .thread-list .preview {
@@ -140,7 +128,7 @@
     .reader-header { display: grid; gap: 8px; padding: 12px var(--reader-gutter); border-bottom: 1px solid var(--line); }
     .reader-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
     #detail-heading { font-size: 1.13rem; line-height: 1.38; overflow-wrap: anywhere; }
-    #subagent-heading { overflow-wrap: anywhere; }
+    #notes-heading { overflow-wrap: anywhere; }
     #include-inherited-control { display: flex; align-items: center; gap: 7px; }
     #include-inherited { margin: 0; accent-color: var(--focus-ring); }
     #back-to-threads { display: none; justify-self: start; }
@@ -217,42 +205,42 @@
     dialog .actions { justify-content: flex-end; }
     .management-section { border-top: 1px solid var(--line); padding: 12px 0; }
     .management-section > .actions { justify-content: flex-start; margin-top: 7px; }
-    :root[data-display="fullscreen"] main { height: 100dvh; }
-    :root[data-display="fullscreen"] :is(.thread-list, .detail) { max-height: none; }
     @media (min-height: 480px) {
       main { max-height: 100dvh; }
+      :root[data-display="fullscreen"] main { height: 100dvh; }
       :is(.thread-list, .detail) { max-height: none; }
     }
-    main[data-reader-view="children"] #reader,
-    main[data-reader-view="child"] #subagent-directory { display: none; }
-    main[data-reader-view="children"] .workspace {
-      grid-template-areas: "directory context" "directory browser";
+    @media (max-width: 959px) {
+      main { max-height: none; }
+      :root[data-display="fullscreen"] main { height: auto; }
+      #threads { max-height: max(160px, calc(100dvh - 220px)); }
+      #subagent-threads { max-height: min(32dvh, 240px); }
+      #reader-body { max-height: clamp(200px, 55dvh, 600px); }
     }
     @media (max-width: 700px) {
-      .workspace { grid-template-areas: "context" "reader"; grid-template-columns: minmax(0, 1fr); }
-      main[data-reader-view="children"] .workspace { grid-template-areas: "context" "browser"; }
+      .workspace { grid-template-areas: "notes" "reader"; grid-template-columns: minmax(0, 1fr); }
       main[data-view="directory"] .workspace { grid-template-areas: "directory"; grid-template-rows: minmax(0, 1fr); }
-      main[data-view="directory"] :is(#thread-context, #reader, #subagent-directory),
+      main[data-view="directory"] :is(#reader, #note-directory),
       main[data-view="note"] #directory { display: none; }
       #directory { border-inline-end: 0; }
       #back-to-threads { display: inline-block; }
-      :is(.thread-list button, #back-to-threads, .scope-switch button) { min-height: 42px; }
+      :is(.thread-list button, #back-to-threads) { min-height: 42px; }
       main > header { margin-bottom: 10px; }
       main > header button { padding-inline: 8px; }
     }
-    @media (min-width: 1280px) {
-      main:is([data-reader-view="children"], [data-reader-view="child"]) .workspace {
-        grid-template-areas: "directory context context" "directory browser reader";
-        grid-template-columns: var(--directory-width) clamp(235px, 21vw, 336px) minmax(0, 1fr);
+    @media (min-width: 960px) {
+      .workspace {
+        grid-template-areas: "directory notes reader";
+        grid-template-columns: var(--directory-width) var(--directory-width) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
       }
-      main[data-reader-view="children"] #reader,
-      main[data-reader-view="child"] #subagent-directory { display: flex; }
-      #subagent-directory { border-inline-end: 1px solid var(--line); }
+      #note-directory { border-inline-end: 1px solid var(--line); border-bottom: 0; }
+      #note-directory[hidden] + #reader { grid-column: notes-start / reader-end; }
     }
   </style>
 </head>
 <body>
-  <main data-view="directory" data-reader-view="empty">
+  <main data-view="directory">
     <header>
       <h1>Thread Memory</h1>
       <div class="actions">
@@ -290,26 +278,20 @@
           <button id="next" type="button" aria-label="Next main-thread page" disabled>Next</button>
         </footer>
       </nav>
-      <div id="thread-context" class="thread-context" hidden>
-        <button id="back-to-threads" type="button">Back to main threads</button>
-        <h2 id="thread-context-title" tabindex="-1"></h2>
-        <div class="actions scope-switch" role="group" aria-label="Notes view">
-          <button id="subagent-back-main" type="button" aria-pressed="true" aria-controls="reader">Main note</button>
-          <button id="show-subagents" type="button" aria-pressed="false" aria-controls="subagent-directory">Subagent notes</button>
-        </div>
-      </div>
-      <nav id="subagent-directory" class="directory" aria-labelledby="subagent-heading" hidden>
+      <nav id="note-directory" class="directory" aria-labelledby="notes-heading" hidden>
         <div class="directory-tools">
-          <div class="directory-heading">
-            <h2 id="subagent-heading" tabindex="-1">Subagents</h2>
-            <p id="subagent-count" class="meta" role="status"></p>
-          </div>
+          <button id="back-to-threads" type="button">Back to main threads</button>
+          <h2 id="notes-heading" tabindex="-1"></h2>
+          <p id="subagent-count" class="meta" role="status"></p>
           <input id="subagent-search" type="search" maxlength="200" aria-label="Search subagent notes" placeholder="Search agent path or thread ID">
           <label id="include-inherited-control" class="meta" title="Show notes saved by subagents of the source thread when this thread was forked." hidden>
             <input id="include-inherited" type="checkbox">Include inherited subagent notes
           </label>
           <p id="subagent-status" class="status error" role="status" hidden></p>
         </div>
+        <ul class="thread-list pinned-note">
+          <li><button id="root-note" type="button" aria-current="true"><span class="label">/root</span></button></li>
+        </ul>
         <ul id="subagent-threads" class="thread-list"></ul>
         <footer id="subagent-pagination" hidden>
           <button id="subagent-previous" type="button" aria-label="Previous subagent page" disabled>Previous</button>
@@ -320,7 +302,7 @@
       <section id="reader" class="reader" aria-label="Thread notes">
         <p id="reader-empty" class="reader-empty">Choose a main thread to read its note.</p>
         <div id="reader-header" class="reader-header" hidden>
-          <h2 id="detail-heading" tabindex="-1" hidden></h2>
+          <h2 id="detail-heading" tabindex="-1"></h2>
           <p id="note-parent" class="meta" hidden></p>
           <div class="reader-tools">
             <div class="thread-meta meta">
@@ -381,6 +363,7 @@
     const main = document.querySelector("main");
     const managementDialog = byId("management-dialog");
     const compactLayout = window.matchMedia("(max-width: 700px)");
+    const stackedLayout = window.matchMedia("(max-width: 959px)");
     const pending = new Map();
     const responseTimeout = 25000;
     // Let Codex's configured 120-second tool timeout report before giving up locally.
@@ -407,7 +390,6 @@
     let refreshing = false;
     let activeMain = null;
     let activeThread = null;
-    let view = "empty";
     let noteRequest = 0;
     let noteLoading = false;
     let childPage = 1;
@@ -616,10 +598,12 @@
     }
 
     function updateThreadHeading(row) {
-      byId("detail-heading").textContent = threadTitle(row);
+      byId("detail-heading").textContent = row.thread_id === activeMain.thread_id ? "/root" : threadTitle(row);
       byId("detail-key").textContent = row.thread_id;
       byId("note-archived").hidden = !row.archived;
       byId("note-inherited").hidden = !row.inherited;
+      byId("note-parent").textContent = row.inherited ? "Fork snapshot for " + threadTitle(activeMain) : "";
+      byId("note-parent").hidden = !row.inherited;
     }
 
     function openThread(row) {
@@ -637,70 +621,34 @@
         ++noteRequest;
         noteLoading = false;
       }
-      showNote(row, false, compactLayout.matches);
+      byId("notes-heading").textContent = threadTitle(row);
+      byId("note-directory").hidden = false;
+      byId("subagent-threads").scrollTop = childScrollTop;
+      showNote(row);
+      if (compactLayout.matches) byId("notes-heading").focus({preventScroll: true});
+      if ((renderedChildren === undefined || childRefreshNeeded) && !childLoading) void loadChildren(childPage);
     }
 
-    function updateReaderNavigation() {
-      const count = activeMain?.child_note_count ?? 0;
-      const parentTitle = activeMain ? threadTitle(activeMain) : "";
-      const isChildNote = activeThread && activeThread.thread_id !== activeMain?.thread_id;
-      byId("thread-context").hidden = !activeMain;
-      byId("thread-context-title").textContent = parentTitle;
-      byId("show-subagents").textContent = count > 0 ? "Subagent notes (" + count + ")" : "Subagent notes";
-      byId("show-subagents").setAttribute("aria-pressed", String(view === "children" || view === "child"));
-      byId("subagent-back-main").setAttribute("aria-pressed", String(view === "main"));
-      byId("detail-heading").hidden = !isChildNote;
-      byId("note-parent").textContent = activeThread?.inherited ? "Fork snapshot for " + parentTitle : "";
-      byId("note-parent").hidden = !activeThread?.inherited;
-    }
-
-    function showNote(row, isChild, moveFocus = false) {
-      const children = byId("subagent-threads");
-      if (!isChild && children.getClientRects().length) childScrollTop = children.scrollTop;
+    function showNote(row, moveFocus = false) {
       const sameThread = activeThread?.thread_id === row.thread_id &&
         Boolean(activeThread.inherited) === Boolean(row.inherited);
       activeThread = row;
-      view = isChild ? "child" : "main";
-      main.dataset.readerView = view;
       updateThreadHeading(row);
-      updateReaderNavigation();
+      byId("root-note").setAttribute("aria-current", String(row.thread_id === activeMain.thread_id));
+      for (const button of byId("subagent-threads").querySelectorAll("button")) {
+        button.setAttribute("aria-current", String(button.dataset.thread === row.thread_id));
+      }
       byId("reader-empty").hidden = true;
       byId("reader-header").hidden = false;
       byId("reader-body").hidden = false;
-      byId("subagent-directory").hidden = !isChild;
       if (!sameThread) byId("thread-id").open = false;
-      if (moveFocus) byId(isChild ? "detail-heading" : "thread-context-title").focus({preventScroll: true});
+      if (moveFocus) byId("detail-heading").focus();
       loadNote(sameThread);
-    }
-
-    function showChildren(moveFocus = true) {
-      if (!activeMain) return;
-      const threads = byId("subagent-threads");
-      if (threads.getClientRects().length) childScrollTop = threads.scrollTop;
-      view = "children";
-      main.dataset.readerView = view;
-      updateReaderNavigation();
-      byId("reader-empty").hidden = Boolean(activeThread);
-      byId("reader-empty").textContent = "Choose a subagent to read its note.";
-      byId("reader-header").hidden = !activeThread;
-      byId("reader-body").hidden = !activeThread;
-      byId("subagent-directory").hidden = false;
-      threads.scrollTop = childScrollTop;
-      if (moveFocus) {
-        const selected = childStale || childRefreshNeeded ? null : threads.querySelector('[aria-current="true"]');
-        (selected || byId("subagent-heading")).focus({preventScroll: true});
-      }
-      if ((renderedChildren === undefined || childRefreshNeeded) && !childLoading) void loadChildren(childPage);
     }
 
     function openChild(row) {
       if (childStale || childRefreshNeeded) return;
-      const threads = byId("subagent-threads");
-      childScrollTop = threads.scrollTop;
-      for (const button of threads.querySelectorAll("button")) {
-        button.setAttribute("aria-current", String(button.dataset.thread === row.thread_id));
-      }
-      showNote(row, true, true);
+      showNote(row, stackedLayout.matches);
     }
 
     function resetChildren() {
@@ -723,6 +671,7 @@
     }
 
     function showDirectory() {
+      childScrollTop = byId("subagent-threads").scrollTop;
       main.dataset.view = "directory";
       const threads = byId("threads");
       threads.scrollTop = directoryScrollTop;
@@ -733,23 +682,18 @@
 
     function clearThread() {
       const moveFocus = byId("reader").contains(document.activeElement) ||
-        byId("subagent-directory").contains(document.activeElement) ||
-        byId("thread-context").contains(document.activeElement);
+        byId("note-directory").contains(document.activeElement);
       activeMain = null;
       activeThread = null;
       ++noteRequest;
       noteLoading = false;
-      view = "empty";
-      main.dataset.readerView = view;
       resetChildren();
       byId("threads").querySelector('[aria-current="true"]')?.setAttribute("aria-current", "false");
       main.dataset.view = "directory";
       byId("reader-empty").hidden = false;
-      byId("reader-empty").textContent = "Choose a main thread to read its note.";
       byId("reader-header").hidden = true;
       byId("reader-body").hidden = true;
-      byId("subagent-directory").hidden = true;
-      updateReaderNavigation();
+      byId("note-directory").hidden = true;
       if (moveFocus) byId("search").focus({preventScroll: true});
     }
 
@@ -936,7 +880,7 @@
               activeThread = activeMain;
               updateThreadHeading(activeThread);
             }
-            updateReaderNavigation();
+            byId("notes-heading").textContent = threadTitle(activeMain);
           }
         }
         const indexAvailable = result.spawn_index_available !== false;
@@ -1061,11 +1005,7 @@
     }
 
     function dismissInheritedNote() {
-      if (!activeThread?.inherited) return;
-      activeThread = null;
-      ++noteRequest;
-      noteLoading = false;
-      showChildren(false);
+      if (activeThread?.inherited) showNote(activeMain);
     }
 
     async function refresh() {
@@ -1078,9 +1018,8 @@
         const revision = listRequest;
         await listing;
         if (revision === listRequest && selectedMain && activeMain?.thread_id === selectedMain) {
-          if (view === "main" && renderedChildren !== undefined) childRefreshNeeded = true;
           await Promise.all([
-            !childLoading && (view === "children" || view === "child") ? loadChildren(childPage) : null,
+            !childLoading ? loadChildren(childPage) : null,
             selected && activeThread?.thread_id === selected && reading === noteRequest ? loadNote(true) : null,
           ]);
         }
@@ -1242,10 +1181,7 @@
         if (count && result.thread_ids?.includes(activeMain?.thread_id)) {
           clearThread();
         } else if (count && result.thread_ids?.includes(activeThread?.thread_id)) {
-          activeThread = null;
-          ++noteRequest;
-          noteLoading = false;
-          showChildren(false);
+          showNote(activeMain);
         }
         refreshPending = true;
       } catch (error) {
@@ -1271,11 +1207,8 @@
     byId("archive-status").addEventListener("change", () => reloadDirectory());
     byId("sort-by").addEventListener("change", () => reloadDirectory());
     byId("back-to-threads").addEventListener("click", showDirectory);
-    byId("subagent-back-main").addEventListener("click", () => {
-      if (activeMain && view !== "main") showNote(activeMain, false, true);
-    });
-    byId("show-subagents").addEventListener("click", () => {
-      if (view !== "children") showChildren();
+    byId("root-note").addEventListener("click", () => {
+      if (activeMain) showNote(activeMain, stackedLayout.matches);
     });
     byId("subagent-search").addEventListener("input", () => searchChildren());
     byId("include-inherited").addEventListener("change", ({currentTarget}) => {

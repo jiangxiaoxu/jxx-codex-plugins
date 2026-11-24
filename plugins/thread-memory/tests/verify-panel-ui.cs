@@ -113,50 +113,58 @@ static async Task VerifyNavigationLayout(DevTools browser)
 {
     await browser.Command("Emulation.setDeviceMetricsOverride", new { width = 1440, height = 860, deviceScaleFactor = 1, mobile = false });
     await browser.Evaluate("el('threads').querySelector('button').click()");
-    await browser.WaitFor("visible('reader') && el('note').textContent.includes('Example saved note')",
-        "Opening a thread should start at its main note.");
+    await browser.WaitFor("""
+        visible('directory') && visible('note-directory') && visible('reader') &&
+        el('detail-heading').textContent === '/root' && !el('note-feedback').hidden &&
+        el('detail-status').textContent.includes('no saved note') && childNotePaths().length === 2
+        """, "A wide panel should open the empty /root note beside its directory and the main threads.");
     await browser.Check("""
-        visible('thread-context') && el('thread-context-title').textContent === 'Thread 2' &&
-        visible('subagent-back-main') && visible('show-subagents') &&
-        el('subagent-back-main').getAttribute('aria-pressed') === 'true' &&
-        el('show-subagents').getAttribute('aria-pressed') === 'false'
-        """, "The selected thread should show its title and both mode controls at the main note.");
-    await browser.Evaluate("fixture.wideControls = modeControlPositions(); el('show-subagents').click()");
-    await browser.WaitFor("visible('subagent-directory') && el('subagent-threads').querySelector('button')?.textContent.includes(fixture.ownTitle)",
-        "The shared subagent control should list the subagent by its full path.");
-    await browser.Check("""
-        samePositions(fixture.wideControls, modeControlPositions()) &&
-        el('show-subagents').getAttribute('aria-pressed') === 'true' &&
-        el('subagent-back-main').getAttribute('aria-pressed') === 'false'
-        """, "Switching to the subagent directory should leave the controls in place and mark its mode active.");
+        ['directory', 'note-directory', 'reader'].every(id => effectiveBackground(el(id)) === 'rgb(24, 24, 24)') &&
+        rootPinned() && childNotePaths().join() === [fixture.ownTitle, fixture.olderTitle].join()
+        """, "The directories should share the reader's dark surface, with /root first and agent paths in update order.");
     await browser.Evaluate("el('subagent-threads').querySelector('button').click()");
-    await browser.WaitFor("visible('reader') && visible('subagent-directory') && el('detail-heading').textContent === fixture.ownTitle",
-        "A wide panel should show the selected subagent note and path beside its directory.");
-    await browser.Check("""
-        samePositions(fixture.wideControls, modeControlPositions()) &&
-        el('thread-context-title').textContent === 'Thread 2' &&
-        el('show-subagents').getAttribute('aria-pressed') === 'true' &&
-        ['directory', 'subagent-directory', 'reader'].every(id => effectiveBackground(el(id)) === 'rgb(24, 24, 24)')
-        """, "The subagent reader should retain the shared controls and use the same dark surface as both directories.");
-    await browser.Evaluate("el('subagent-back-main').click()");
-    await browser.WaitFor("el('detail-heading').textContent === 'Thread 2' && el('subagent-back-main').getAttribute('aria-pressed') === 'true'",
-        "The main-note control should return to the selected main thread.");
+    await browser.WaitFor("""
+        visible('note-directory') && visible('reader') && rootPinned() &&
+        el('detail-heading').textContent === fixture.ownTitle && el('note').textContent.includes('Example saved note')
+        """, "Opening a subagent note should retain the same directory.");
+    await browser.Evaluate("el('subagent-search').value = 'no match'; el('subagent-search').dispatchEvent(new Event('input'))");
+    await browser.WaitFor("fixture.childQuery === 'no match' && childNotePaths().length === 0 && rootPinned()",
+        "A search that excludes every subagent should keep /root available.");
+    await browser.Evaluate("el('root-note').click()");
+    await browser.WaitFor("el('detail-heading').textContent === '/root' && el('detail-status').textContent.includes('no saved note')",
+        "Clicking /root in the filtered directory should open the main note.");
+    await browser.Evaluate("el('subagent-search').value = ''; el('subagent-search').dispatchEvent(new Event('input'))");
+    await browser.WaitFor("childNotePaths().length === 2", "Clearing the search should restore the subagent notes.");
 
-    await browser.Command("Emulation.setDeviceMetricsOverride", new { width = 480, height = 760, deviceScaleFactor = 1, mobile = false });
-    await browser.WaitFor("visible('back-to-threads') && !visible('directory')", "A narrow note view should show its way back to the main directory.");
-    await browser.Evaluate("fixture.narrowControls = modeControlPositions(); el('show-subagents').click()");
-    await browser.WaitFor("visible('subagent-directory') && !visible('reader')", "A narrow panel should first show the subagent directory on its own.");
-    await browser.Check("samePositions(fixture.narrowControls, modeControlPositions()) && visible('back-to-threads')",
-        "The narrow subagent directory should keep the shared navigation in place.");
+    await browser.Evaluate("""
+        fixture.extraChildren = 48;
+        send({method:'ui/notifications/host-context-changed', params:{displayMode:'fullscreen'}});
+        el('refresh').click();
+        """);
+    await browser.WaitFor("frame.contentDocument.documentElement.dataset.display === 'fullscreen' && el('subagent-page').textContent === 'Page 1 of 2'",
+        "The full note directory should open in fullscreen.");
+    await browser.Command("Emulation.setDeviceMetricsOverride", new { width = 480, height = 320, deviceScaleFactor = 1, mobile = false });
+    await browser.WaitFor("visible('back-to-threads') && !visible('directory') && visible('note-directory') && visible('reader')",
+        "A narrow panel should keep the note directory and the reader together, with a way back to main threads.");
     await browser.Evaluate("el('subagent-threads').querySelector('button').click()");
-    await browser.WaitFor("visible('reader') && !visible('subagent-directory') && el('detail-heading').textContent === fixture.ownTitle",
-        "A narrow panel should show the selected subagent note on its own.");
-    await browser.Check("samePositions(fixture.narrowControls, modeControlPositions()) && visible('back-to-threads')",
-        "The narrow subagent reader should keep the shared navigation in place.");
+    await browser.WaitFor("""
+        visible('note-directory') && visible('reader') && rootPinned() &&
+        el('detail-heading').textContent === fixture.ownTitle && el('note').textContent.includes('Example saved note')
+        """,
+        "Opening an agent note on a narrow panel should leave the common directory and /root available.");
+    await browser.Check("el('note').getBoundingClientRect().bottom <= el('reader-body').getBoundingClientRect().bottom",
+        "The saved note should fit in its reader even in a short fullscreen panel with a full directory.");
     await browser.Evaluate("el('back-to-threads').click()");
-    await browser.WaitFor("visible('directory') && !visible('thread-context') && !visible('reader')",
-        "The shared narrow navigation should return to the main directory.");
+    await browser.WaitFor("visible('directory') && !visible('note-directory') && !visible('reader')",
+        "Narrow navigation should return to the main thread directory.");
     await browser.Command("Emulation.clearDeviceMetricsOverride", new { });
+    await browser.Evaluate("""
+        fixture.extraChildren = 0;
+        send({method:'ui/notifications/host-context-changed', params:{displayMode:'inline'}});
+        el('refresh').click();
+        """);
+    await browser.WaitFor("childNotePaths().length === 2 && el('refresh').getAttribute('aria-disabled') === 'false'",
+        "Leaving fullscreen should restore the ordinary note directory.");
 }
 
 static async Task VerifyModalVisibility(DevTools browser)
@@ -185,11 +193,11 @@ static async Task VerifyModalVisibility(DevTools browser)
 
 static async Task VerifyInheritance(DevTools browser)
 {
-    await browser.Evaluate("el('threads').querySelector('button').click(); el('show-subagents').click()");
-    await browser.WaitFor("!el('include-inherited-control').hidden && el('subagent-threads').querySelectorAll('button').length === 1",
+    await browser.Evaluate("el('threads').querySelector('button').click()");
+    await browser.WaitFor("!el('include-inherited-control').hidden && childNotePaths().length === 2",
         "A fork should offer inherited notes while showing its own notes by default.");
     await browser.Evaluate("el('include-inherited').click()");
-    await browser.WaitFor("el('subagent-threads').querySelectorAll('button').length === 2",
+    await browser.WaitFor("childNotePaths().length === 3",
         "Checking the inheritance filter should list the saved snapshot.");
     await browser.Evaluate("""el('subagent-threads').querySelector('[data-thread="' + fixture.inheritedId + '"]').click()""");
     await browser.WaitFor("!el('note-inherited').hidden && el('note').textContent.includes('Example fork snapshot')",
@@ -202,7 +210,7 @@ static async Task VerifyInheritance(DevTools browser)
         """, "A transient fork read failure should warn about both the directory and snapshot.");
     await browser.Check("""
         !el('include-inherited-control').hidden && el('include-inherited').checked &&
-        el('subagent-threads').querySelectorAll('button').length === 2 &&
+        childNotePaths().length === 3 &&
         !el('note-inherited').hidden && el('note').textContent.includes('Example fork snapshot')
         """, "An unavailable fork should retain its filter, previously loaded directory and selected note.");
 
@@ -210,7 +218,7 @@ static async Task VerifyInheritance(DevTools browser)
     await browser.Evaluate("fixture.inheritance = 'partial'; el('refresh').click()");
     await browser.WaitFor("""
         el('subagent-status').textContent.includes('Some inherited notes') &&
-        el('subagent-threads').querySelectorAll('button').length === 1 &&
+        childNotePaths().length === 2 &&
         el('refresh').getAttribute('aria-disabled') === 'false'
         """, "A partial result should show verified notes with a warning.");
     await browser.Check("el('include-inherited').checked && el('note').textContent.includes('Example fork snapshot')",
@@ -219,11 +227,11 @@ static async Task VerifyInheritance(DevTools browser)
     await browser.Evaluate("fixture.inheritance = 'available'; el('refresh').click()");
     await browser.WaitFor("""
         el('subagent-status').hidden && el('note-feedback').hidden && el('include-inherited').checked &&
-        el('subagent-threads').querySelectorAll('button').length === 2 &&
+        childNotePaths().length === 3 &&
         el('refresh').getAttribute('aria-disabled') === 'false'
         """, "A successful retry should restore the complete directory and clear the temporary warnings.");
 
-    await browser.Evaluate("fixture.extraChildren = 49; el('refresh').click()");
+    await browser.Evaluate("fixture.extraChildren = 48; el('refresh').click()");
     await browser.WaitFor("el('subagent-page').textContent === 'Page 1 of 3' && el('refresh').getAttribute('aria-disabled') === 'false'",
         "The complete inherited directory should have three pages.");
     await browser.Evaluate("el('subagent-next').click()");
@@ -233,8 +241,8 @@ static async Task VerifyInheritance(DevTools browser)
     await browser.WaitFor("""
         el('subagent-page').textContent === 'Page 3 of 3' &&
         el('subagent-threads').querySelector('button')?.dataset.thread === fixture.inheritedId &&
-        el('refresh').getAttribute('aria-disabled') === 'false'
-        """, "The third subagent page should show the inherited snapshot.");
+        el('refresh').getAttribute('aria-disabled') === 'false' && rootPinned()
+        """, "The third subagent page should show the inherited snapshot below /root.");
     await browser.Evaluate("fixture.inheritance = 'partial'; el('refresh').click()");
     await browser.WaitFor("""
         !el('subagent-status').hidden && el('subagent-status').textContent.includes('Some inherited notes') &&
@@ -390,11 +398,12 @@ static class HostFixture
           const node = el(id);
           return node?.getClientRects().length > 0 && frame.contentWindow.getComputedStyle(node).visibility === 'visible';
         };
-        const modeControlPositions = () => ['subagent-back-main', 'show-subagents'].flatMap(id => {
-          const {left, top} = el(id).getBoundingClientRect();
-          return [left, top];
-        });
-        const samePositions = (before, after) => before.every((value, i) => Math.abs(value - after[i]) < 1);
+        const childNotePaths = () => Array.from(el('subagent-threads').querySelectorAll('button .label'), label => label.textContent);
+        const rootPinned = () => {
+          const firstChild = el('subagent-threads').querySelector('button');
+          return visible('root-note') && el('root-note').querySelector('.label')?.textContent === '/root' &&
+            (!firstChild || el('root-note').getBoundingClientRect().bottom <= firstChild.getBoundingClientRect().top);
+        };
         function effectiveBackground(node) {
           while (node) {
             const color = frame.contentWindow.getComputedStyle(node).backgroundColor;
@@ -409,10 +418,14 @@ static class HostFixture
         }));
         const inheritedId = '00000000-0000-4000-8000-000000000003';
         const ownTitle = '/root/principal_language';
+        const olderTitle = '/root/archived_worker';
         const ownChild = {...rows[1], thread_id:'00000000-0000-4000-8000-000000000004', title:ownTitle};
-        const inheritedChild = {...rows[1], thread_id:inheritedId, title:'/root/inherited_context', inherited:true};
+        const olderChild = {...ownChild, thread_id:'00000000-0000-4000-8000-000000000007',
+          latest_at:'2026-11-23T08:29:00Z', title:olderTitle};
+        const inheritedChild = {...rows[1], thread_id:inheritedId, latest_at:'2026-11-21T08:29:00Z',
+          title:'/root/inherited_context', inherited:true};
         const cleanupCandidates = [secondId, '00000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000006'];
-        const fixture = { firstId, secondId, inheritedId, ownTitle, rows, cleanupCandidates,
+        const fixture = { firstId, secondId, inheritedId, ownTitle, olderTitle, rows, cleanupCandidates,
           initializations:0, lists:[], previews:[], inheritance:'available', extraChildren:0 };
         const send = fields => frame.contentWindow.postMessage({jsonrpc:'2.0', ...fields}, '*');
         function postBarrier() { send({id:'test-barrier', method:'ping'}); }
@@ -440,15 +453,18 @@ static class HostFixture
               }
               case 'handoff_children': {
                 fixture.requestedChildPage = args.page;
-                const candidates = [ownChild, ...Array.from({length:fixture.extraChildren}, (_, i) => ({
+                fixture.childQuery = args.query;
+                const candidates = [ownChild, olderChild, ...Array.from({length:fixture.extraChildren}, (_, i) => ({
                   ...ownChild, thread_id:'00000000-0000-4000-8000-' + String(i + 100).padStart(12, '0'),
-                  title:'/root/archived_' + (i + 1), archived:true
+                  latest_at:'2026-11-22T08:29:00Z', title:'/root/archived_' + (i + 1), archived:true
                 }))];
                 if (args.include_inherited && fixture.inheritance === 'available') candidates.push(inheritedChild);
-                const total_pages = Math.max(1, Math.ceil(candidates.length / args.limit));
+                const matches = candidates.filter(row => !args.query ||
+                  [row.title, row.thread_id].some(value => value.toLowerCase().includes(args.query.toLowerCase())));
+                const total_pages = Math.max(1, Math.ceil(matches.length / args.limit));
                 const page = Math.min(args.page, total_pages);
-                const items = candidates.slice((page - 1) * args.limit, page * args.limit);
-                tool({items, total:candidates.length, page, total_pages, spawn_index_available:true,
+                const items = matches.slice((page - 1) * args.limit, page * args.limit);
+                tool({items, total:matches.length, page, total_pages, spawn_index_available:true,
                   can_include_inherited:fixture.inheritance !== 'unavailable', inheritance_status:fixture.inheritance});
                 break;
               }
@@ -456,6 +472,8 @@ static class HostFixture
                 if (args.from_fork === secondId && args.thread_id === inheritedId) {
                   if (fixture.inheritance === 'available') tool({summary:'Example fork snapshot', updated_at:'2026-11-24T08:29:00Z'});
                   else reply({isError:true, content:[{type:'text', text:'Could not verify the fork history.'}]});
+                } else if (args.thread_id === secondId) {
+                  tool({summary:null, updated_at:null});
                 } else tool({summary:'Example saved note', updated_at:'2026-11-24T08:29:00Z'});
                 break;
               case 'handoff_cleanup':
