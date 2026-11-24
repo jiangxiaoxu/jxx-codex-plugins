@@ -49,15 +49,54 @@ internal static partial class HistoryTools
         (type.ToLowerInvariant() is "image" or "audio" or "input_image" or "inputimage" or "input_audio" or "inputaudio" ||
             type.StartsWith("encrypted", StringComparison.OrdinalIgnoreCase));
 
+    private static string PropertyName(JsonProperty property)
+    {
+        try
+        {
+            return property.Name;
+        }
+        catch (InvalidOperationException)
+        {
+            // The property retains the wire spelling even if its name cannot
+            // be decoded. Repair only the quoted name, leaving its value alone.
+            string raw = property.ToString();
+            for (int end = 1; end < raw.Length; end++)
+            {
+                if (raw[end] == '\\')
+                    end++;
+                else if (raw[end] == '"')
+                    return JsonElement.Parse(raw[..(end + 1)]).StringValue()!;
+            }
+            throw;
+        }
+    }
+
+    private static JsonElement ToolProperty(JsonElement value, string key)
+    {
+        try
+        {
+            return value.Get(key);
+        }
+        catch (InvalidOperationException)
+        {
+            // A malformed name can also prevent lookup of a different key.
+            JsonElement match = default;
+            foreach (var property in value.EnumerateObject())
+                if (PropertyName(property) == key)
+                    match = property.Value;
+            return match;
+        }
+    }
+
     private static string? LocalImageReference(JsonElement block, string? type)
     {
         if (type is "image" or "input_image" or "inputImage")
         {
-            string? reference = block.Text("image_url");
+            string? reference = ToolProperty(block, "image_url").StringValue();
             if (string.IsNullOrEmpty(reference))
-                reference = block.Text("imageUrl");
+                reference = ToolProperty(block, "imageUrl").StringValue();
             if (string.IsNullOrEmpty(reference))
-                reference = block.Text("url");
+                reference = ToolProperty(block, "url").StringValue();
             if (reference is not null && LocalReference().IsMatch(reference))
                 return reference;
         }
@@ -125,7 +164,8 @@ internal static partial class HistoryTools
             if (field == "result")
                 return McpText(value, field);
             return value.ValueKind == JsonValueKind.Object
-                ? Values(value.Get("message"), "error.message").Concat(McpText(value.Get("result"), "error.result"))
+                ? Values(ToolProperty(value, "message"), "error.message")
+                    .Concat(McpText(ToolProperty(value, "result"), "error.result"))
                 : Values(value, field);
         }
         if (ContentBlockField(field) && value.ValueKind == JsonValueKind.Array)
@@ -137,12 +177,12 @@ internal static partial class HistoryTools
     {
         if (value.ValueKind != JsonValueKind.Object)
             return [];
-        if (value.Get("Err") is { ValueKind: not JsonValueKind.Undefined } error)
+        if (ToolProperty(value, "Err") is { ValueKind: not JsonValueKind.Undefined } error)
             return Values(EmbeddedJson(error), field + ".error");
-        if (value.Get("Ok") is { ValueKind: not JsonValueKind.Undefined } ok)
+        if (ToolProperty(value, "Ok") is { ValueKind: not JsonValueKind.Undefined } ok)
             value = ok;
-        return Parts(value.Get("content"), field + ".content")
-            .Concat(Values(value.Get("structuredContent"), field + ".structuredContent"));
+        return Parts(ToolProperty(value, "content"), field + ".content")
+            .Concat(Values(ToolProperty(value, "structuredContent"), field + ".structuredContent"));
     }
 
     private static IEnumerable<(string Field, string Body)> Parts(JsonElement value, string field)
@@ -151,22 +191,22 @@ internal static partial class HistoryTools
         foreach (JsonElement part in value.Items())
         {
             string path = $"{field}[{++index}]";
-            string? type = part.Text("type");
+            string? type = ToolProperty(part, "type").StringValue();
             if (TextPart(type))
-                foreach (var pair in Values(EmbeddedJson(part.Get("text")), path + ".text"))
+                foreach (var pair in Values(EmbeddedJson(ToolProperty(part, "text")), path + ".text"))
                     yield return pair;
             else if (PathPart(type))
-                foreach (var pair in Values(part.Get("path"), path + ".path"))
+                foreach (var pair in Values(ToolProperty(part, "path"), path + ".path"))
                     yield return pair;
             else if (LocalImageReference(part, type) is { } reference)
                 yield return (path + ".image_url", reference);
             else if (type is "resource" or "resource_link")
             {
                 bool resource = type == "resource";
-                JsonElement owner = resource ? part.Get("resource") : part;
+                JsonElement owner = resource ? ToolProperty(part, "resource") : part;
                 string location = resource ? path + ".resource." : path + ".";
                 foreach (string property in resource ? ResourceProperties : LinkProperties)
-                    foreach (var pair in Values(owner.Get(property), location + property))
+                    foreach (var pair in Values(ToolProperty(owner, property), location + property))
                         yield return pair;
             }
         }
@@ -192,15 +232,17 @@ internal static partial class HistoryTools
                         yield return pair;
                 break;
             case JsonValueKind.Object:
-                if (HiddenType(value.Text("type")))
+                if (HiddenType(ToolProperty(value, "type").StringValue()))
                     break;
                 foreach (var property in value.EnumerateObject())
-                    if (!HiddenKey(property.Name))
-                    {
-                        string key = Characters(property.Name.AsSpan()) <= 80 ? property.Name : "[key]";
-                        foreach (var pair in Values(property.Value, $"{field}.{key}"))
-                            yield return pair;
-                    }
+                {
+                    string name = PropertyName(property);
+                    if (HiddenKey(name))
+                        continue;
+                    string key = Characters(name.AsSpan()) <= 80 ? name : "[key]";
+                    foreach (var pair in Values(property.Value, $"{field}.{key}"))
+                        yield return pair;
+                }
                 break;
         }
     }
@@ -210,7 +252,7 @@ internal static partial class HistoryTools
         internal object At(int index)
         {
             JsonElement part = Blocks[index];
-            string? type = part.Text("type");
+            string? type = ToolProperty(part, "type").StringValue();
             if (TextPart(type))
             {
                 var fields = Present(part, ["type", "text"]);
@@ -222,11 +264,11 @@ internal static partial class HistoryTools
                 return Present(part, ["type", "path"]);
             if (LocalImageReference(part, type) is { } path)
                 return new Dictionary<string, object?> { ["path"] = path };
-            if (type == "resource" && part.Get("resource").ValueKind == JsonValueKind.Object)
+            if (type == "resource" && ToolProperty(part, "resource") is { ValueKind: JsonValueKind.Object } resource)
                 return new Dictionary<string, object?>
                 {
-                    ["type"] = part.Get("type"),
-                    ["resource"] = Present(part.Get("resource"), ResourceProperties),
+                    ["type"] = ToolProperty(part, "type"),
+                    ["resource"] = Present(resource, ResourceProperties),
                 };
             return type == "resource_link"
                 ? Present(part, ["type", .. LinkProperties])
@@ -238,7 +280,7 @@ internal static partial class HistoryTools
     {
         var fields = new Dictionary<string, object?>();
         foreach (string key in properties)
-            if (value.Get(key) is { ValueKind: not JsonValueKind.Undefined } child)
+            if (ToolProperty(value, key) is { ValueKind: not JsonValueKind.Undefined } child)
                 fields[key] = child;
         return fields;
     }
@@ -247,16 +289,16 @@ internal static partial class HistoryTools
     {
         if (value.ValueKind != JsonValueKind.Object)
             return value;
-        if (value.Get("Err") is { ValueKind: not JsonValueKind.Undefined } error)
+        if (ToolProperty(value, "Err") is { ValueKind: not JsonValueKind.Undefined } error)
             return new Dictionary<string, object?> { ["error"] = error };
-        if (value.Get("Ok") is { ValueKind: not JsonValueKind.Undefined } ok)
+        if (ToolProperty(value, "Ok") is { ValueKind: not JsonValueKind.Undefined } ok)
             value = ok;
         if (value.ValueKind != JsonValueKind.Object)
             return value;
         var result = Present(value, ["structuredContent", "content"]);
-        if (value.Get("isError") is { ValueKind: JsonValueKind.True or JsonValueKind.False } isError)
+        if (ToolProperty(value, "isError") is { ValueKind: JsonValueKind.True or JsonValueKind.False } isError)
             result["isError"] = isError;
-        if (value.Get("content") is { ValueKind: JsonValueKind.Array } content)
+        if (ToolProperty(value, "content") is { ValueKind: JsonValueKind.Array } content)
             result["content"] = new ProjectedContent(content);
         return result;
     }
@@ -278,7 +320,7 @@ internal static partial class HistoryTools
                 {
                     var error = Present(value, ["message", "result"]);
                     if (error.ContainsKey("result"))
-                        error["result"] = McpValue(value.Get("result"));
+                        error["result"] = McpValue(ToolProperty(value, "result"));
                     root[key] = error;
                 }
                 else
@@ -319,7 +361,7 @@ internal static partial class HistoryTools
         if (value is Dictionary<string, object?> map)
             return !HiddenKey(key) && map.TryGetValue(key, out var child) ? child : Missing;
         if (value is JsonElement { ValueKind: JsonValueKind.Object } element)
-            return !HiddenKey(key) ? element.Get(key) : Missing;
+            return !HiddenKey(key) ? ToolProperty(element, key) : Missing;
         if (key.AsSpan().IndexOfAnyExceptInRange('0', '9') >= 0 ||
             !int.TryParse(key, NumberStyles.None, CultureInfo.InvariantCulture, out int index) ||
             key.Length > 1 && key[0] == '0')
@@ -332,7 +374,8 @@ internal static partial class HistoryTools
     }
 
     private static bool HiddenValue(object? value) => value == Missing ||
-        value is JsonElement element && (element.ValueKind == JsonValueKind.Undefined || HiddenType(element.Text("type")));
+        value is JsonElement element && (element.ValueKind == JsonValueKind.Undefined ||
+            HiddenType(ToolProperty(element, "type").StringValue()));
 
     private static JsonNode? CleanValue(object? value, ref long budget)
     {
@@ -345,7 +388,7 @@ internal static partial class HistoryTools
         if (value is JsonElement element)
         {
             if (element.ValueKind == JsonValueKind.Object)
-                return CleanObject(element.EnumerateObject().Select(pair => (pair.Name, (object?)pair.Value)), ref budget);
+                return CleanObject(element.EnumerateObject().Select(pair => (PropertyName(pair), (object?)pair.Value)), ref budget);
             if (element.ValueKind == JsonValueKind.Array)
                 return CleanArray(element.EnumerateArray().Select(child => (object?)child), ref budget);
             if (element.ValueKind != JsonValueKind.String)

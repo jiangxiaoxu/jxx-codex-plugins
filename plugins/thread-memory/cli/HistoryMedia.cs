@@ -205,15 +205,34 @@ internal static partial class HistoryMedia
     {
         string? kind = item.Text("type");
         int index = 0;
+        List<(int Part, JsonElement Resource)>? embedded = null;
+        bool mcp = kind is "McpToolCall" or "mcp_tool_call_end";
         foreach (JsonElement part in ContentParts(item, kind))
         {
             string? partKind = part.Text("type");
-            string medium = partKind is "image" or "input_image" or "inputImage" ? "image" : "audio";
-            PartSource? source = media is not null && medium != media ? null :
-                medium == "image" ? ImagePart(part, partKind, cwd) : AudioPart(part, partKind, cwd);
-            if (source is not null)
-                yield return (index, medium, source);
+            if (mcp && partKind == "resource")
+                (embedded ??= []).Add((index, part.Get("resource")));
+            else
+            {
+                string medium = partKind is "image" or "input_image" or "inputImage" ? "image" : "audio";
+                PartSource? source = media is not null && medium != media ? null :
+                    medium == "image" ? ImagePart(part, partKind, cwd) : AudioPart(part, partKind, cwd);
+                if (source is not null)
+                    yield return (index, medium, source);
+            }
             index++;
+        }
+        // Append newly recognized resource parts so existing direct-media IDs stay stable.
+        if (embedded is not null)
+        {
+            foreach (var (part, resource) in embedded)
+            {
+                if (resource.Text("mimeType") is not string mime || !Mime().IsMatch(mime))
+                    continue;
+                string medium = mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase) ? "image" : "audio";
+                if ((media is null || medium == media) && resource.Text("blob") is { Length: > 0 } blob)
+                    yield return (part, medium, new("inline", blob, MediaType: mime.ToLowerInvariant()));
+            }
         }
 
         if (kind == "user_message" && media != "audio")
@@ -282,7 +301,9 @@ internal static partial class HistoryMedia
         "user_message" => item.Get("local_images").Items().Select(path => path.StringValue()),
         "UserMessage" => item.Get("content").Items().Where(part => part.Text("type") == "local_image").Select(part => part.Text("path")),
         "view_image_tool_call" or "ImageView" => [item.Text("path")],
-        "image_generation_end" or "ImageGeneration" => [item.Text("saved_path")],
+        "ImageGeneration" => [item.Text("saved_path")],
+        "image_generation_end" => new[] { item.Text("saved_path") }
+            .Concat(item.Get("input_images").Items().Select(part => part.Text("path"))),
         "Extension" when IsImageExtension(item) => new[] { item.Text("savedPath") }
             .Concat(item.Get("inputImages").Items().Select(part => part.Text("path"))),
         _ => [],

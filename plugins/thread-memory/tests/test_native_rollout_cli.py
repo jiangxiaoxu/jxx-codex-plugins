@@ -76,7 +76,7 @@ class NativeRolloutCLITest(unittest.TestCase):
                 "2026-01-01T00:01:00Z"),
             row("response_item", {
                 "type": "function_call", "name": "exec_command", "call_id": "call-new",
-                "arguments": '{"cmd":"private-argument","nested":[true,"\u6821\u9a8c",3]}',
+                "arguments": '{"cmd":"private-argument","nested":[true,"\u6821\u9a8c",3],"\\ud800":"legacy key"}',
             }, "2026-01-01T00:02:00Z"),
             b"\n",
             row("event_msg", {"type": "token_count", "turn_id": "other-turn"},
@@ -106,6 +106,8 @@ class NativeRolloutCLITest(unittest.TestCase):
                 value = self.query("tool-input", "--id", "-", "--pointer", "/arguments/nested",
                                    cli=cli, stdin=call["input_id"] + "\n")
                 self.assertEqual(value["value"], [True, "\u6821\u9a8c", 3])
+                root = self.query("tool-input", "--id", call["input_id"], "--pointer", "", cli=cli)
+                self.assertEqual(root["value"]["arguments"]["\ufffd"], "legacy key")
                 output = self.query("tool-output", "--id", "-", "--lines", "2:2", cli=cli,
                                     stdin=result["output_id"] + "\n")
                 self.assertEqual([item["text"] for item in output["items"]], ["\u8f93\u51fa \U0001f680\n"])
@@ -184,6 +186,108 @@ class NativeRolloutCLITest(unittest.TestCase):
         self.assertEqual(result["unknown_ids"], [])
         (saved,) = result["attachments"]
         self.assertEqual(Path(saved["audio_file"]).read_bytes(), audio)
+
+    def test_original_image_export_returns_bytes_and_local_path_without_thumbnail(self):
+        inline = b'<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"/>'
+        local_path = self.home / "original.png"
+        local_path.write_bytes(png(2048, 16))
+        encoded = base64.b64encode(inline).decode("ascii")
+        self.seed(
+            message("user", "original attachments", parts=(
+                {"type": "input_image", "image_url": "https://example.test/remote.png"},
+                {"type": "input_image", "image_url": "data:image/png;base64," + ("AAAA" * 16384) + "%%%%"},
+                {"type": "input_image", "image_url": f"data:image/svg+xml;base64,{encoded}"},
+            )),
+            row("event_msg", {
+                "type": "image_generation_end",
+                "status": "completed",
+                "input_images": [{"path": str(local_path)}],
+            }),
+            row("compacted", {"window_number": 1, "replacement_history": []}),
+        )
+        listed = self.query("images")["items"]
+        recovery = self.query("recover", "--max-messages", "0")
+        (recovered,) = [
+            image for record in recovery["image_records"] for image in record["images"]
+            if image.get("media_type") == "image/svg+xml"
+        ]
+        self.assertEqual(recovered["image_id"], listed[2]["image_id"])
+        destination = self.home / "originals"
+        result = self.query("export-image", "--original", "--id", "-", "--output-dir", str(destination),
+                            stdin="\n".join(item["image_id"] for item in listed) + "\n")
+        remote, invalid, embedded, local = result["images"]
+        self.assertEqual(result["unknown_ids"], [])
+        self.assertTrue(remote["export_error"])
+        self.assertTrue(invalid["export_error"])
+        exported_path = Path(embedded["original_file"])
+        self.assertEqual(exported_path.suffix, ".svg")
+        self.assertEqual(exported_path.read_bytes(), inline)
+        self.assertEqual(Path(local["original_file"]), local_path)
+        self.assertEqual(list(destination.iterdir()), [exported_path])
+        preview = self.query("export-image", "--id", listed[-1]["image_id"],
+                             "--output-dir", str(self.home / "previews"))["images"][0]
+        self.assertEqual((preview["thumbnail_width"], preview["thumbnail_height"]), (1024, 8))
+
+    def test_tool_resource_blobs_are_discoverable_only_as_attachments(self):
+        image = png(2, 1)
+        audio = b"stored audio clip"
+        image_blob = base64.b64encode(image).decode("ascii")
+        audio_blob = base64.b64encode(audio).decode("ascii")
+        self.seed(row("event_msg", {
+            "type": "item_completed",
+            "item": {
+                "type": "McpToolCall", "id": "tool-resource", "server": "files", "tool": "read",
+                "status": "completed", "arguments": {},
+                "result": {"content": [
+                    {"type": "resource", "resource": {
+                        "uri": "file:///fixture.png", "mimeType": "image/png", "blob": image_blob,
+                    }},
+                    {"type": "resource", "resource": {
+                        "uri": "file:///fixture.wav", "mimeType": "audio/wav", "blob": audio_blob,
+                    }},
+                ]},
+            },
+        }))
+        item, = self.query("read", "--lines", "2:2")["items"]
+        result = self.query("tool-output", "--id", item["output_id"], "--pointer", "")
+        self.assertNotIn(image_blob, json.dumps(result))
+        self.assertNotIn(audio_blob, json.dumps(result))
+
+        image_item, audio_item = self.query("attachments")["items"]
+        destination = self.home / "resources"
+        original, = self.query("export-image", "--id", image_item["image_id"], "--original",
+                               "--output-dir", str(destination))["images"]
+        self.assertEqual(Path(original["original_file"]).read_bytes(), image)
+        exported, = self.query("export-audio", "--id", audio_item["attachment_id"],
+                               "--output-dir", str(destination))["attachments"]
+        self.assertEqual(Path(exported["audio_file"]).read_bytes(), audio)
+
+    def test_realtime_transcripts_are_searchable_and_can_be_reopened(self):
+        self.seed(
+            row("realtime_item", {
+                "id": "voice-user", "realtime_session_id": "voice",
+                "type": "frame", "channels": {"voice_transcript": {
+                    "role": "user", "text": "voice question",
+                }},
+            }),
+            row("realtime_item", {
+                "id": "voice-assistant", "realtime_session_id": "voice",
+                "type": "transcript_segment", "role": "assistant", "text": "voice answer",
+            }),
+            row("realtime_item", {
+                "id": "wrapped", "realtime_session_id": "voice",
+                "type": "session_input_saved", "reason": "chunk",
+                "source_event_ids": ["voice-user"], "input_item_id": "input", "input": "voice handoff",
+            }),
+        )
+        self.assertEqual([item["role"] for item in self.query("transcript")["items"]], ["user", "assistant"])
+        matches = self.query("search", "voice", "--since", START)["items"]
+        self.assertEqual([item["text"] for item in matches], ["voice question", "voice answer"])
+        recent = self.query("transcript", "--last", "1")["items"]
+        self.assertEqual(recent[0]["text"], "voice answer")
+        reopened, = self.query("read", "--ref", "-", stdin=recent[0]["ref"] + "\n")["items"]
+        self.assertEqual(reopened["fields"][0]["text"], "voice answer")
+        self.assertEqual(self.query("transcript", "--phase", "final")["items"], [])
 
 
 if __name__ == "__main__":

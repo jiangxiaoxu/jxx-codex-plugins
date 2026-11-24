@@ -432,8 +432,9 @@ internal sealed class HistorySource
 
     private static JsonElement ReadHeader(string path, HistoryLineReader lines)
     {
-        var raw = ReadLine(lines, path, MaxHeaderBytes + 1L);
-        if (raw.Length > MaxHeaderBytes)
+        var raw = ReadLine(lines, path, MaxHeaderBytes + 3L);
+        int terminator = raw.Span.EndsWith("\r\n"u8) ? 2 : raw.Span.EndsWith("\n"u8) ? 1 : 0;
+        if (raw.Length - terminator > MaxHeaderBytes)
             throw new RolloutReadException($"session_meta is larger than {MaxHeaderBytes} bytes", path, 1);
         if (!TryParse(raw, out var row, out string reason))
             throw new RolloutReadException($"invalid session_meta JSON ({reason})", path, 1);
@@ -885,14 +886,18 @@ internal sealed class HistorySource
 
     private bool TranscriptCandidate(HistoryRow row)
     {
-        if (row.Type == "response_item" && row.ItemType == "message")
+        string type = row.Type;
+        if (type == "response_item" && row.ItemType == "message")
             return true;
-        if (row.Type == "event_msg")
+        if (type == "realtime_item" && RecordProjection.VoiceTranscript(row.Payload) is not null)
+            return true;
+        if (type == "event_msg")
         {
-            if (row.ItemType == "agent_message" && row.Payload.Text("delivery") == "async")
+            string? eventType = row.ItemType;
+            if (eventType == "agent_message" && row.Payload.Text("delivery") == "async")
                 return true;
             var item = row.Payload.Get("item");
-            if (row.ItemType == "item_completed" && item.Text("type") == "AgentMessage"
+            if (eventType == "item_completed" && item.Text("type") == "AgentMessage"
                 && item.Text("delivery") == "async")
                 return true;
         }

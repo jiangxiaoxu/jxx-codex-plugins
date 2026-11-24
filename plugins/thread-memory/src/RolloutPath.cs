@@ -8,6 +8,7 @@ internal readonly partial record struct RolloutPath(string Key, string Name, Rol
     private const int InitialPathLength = 512;
     private const int MaximumPathLength = 32_768;
     private const uint OpenedName = 8;
+    private const uint DirectoryHandle = 0x02000000; // FILE_FLAG_BACKUP_SEMANTICS
 
     internal static RolloutPath Resolve(string original, FileStream stream)
     {
@@ -15,6 +16,13 @@ internal readonly partial record struct RolloutPath(string Key, string Name, Rol
         SafeFileHandle handle = stream.SafeFileHandle;
         string path = ReadFinalPath(handle, 0) ?? ReadFinalPath(handle, OpenedName) ?? ExtendedPath(original);
         return new RolloutPath(path, Path.GetFileName(path), stat);
+    }
+
+    internal static string? ResolveDirectory(string path)
+    {
+        using SafeFileHandle handle = CreateFileW(ExtendedPath(path), 0, FileShare.ReadWrite | FileShare.Delete,
+            0, FileMode.Open, DirectoryHandle, 0);
+        return handle.IsInvalid ? null : ReadFinalPath(handle, 0) ?? ReadFinalPath(handle, OpenedName);
     }
 
     private static string ExtendedPath(string original)
@@ -51,4 +59,8 @@ internal readonly partial record struct RolloutPath(string Key, string Name, Rol
     [LibraryImport("kernel32.dll")]
     private static unsafe partial uint GetFinalPathNameByHandleW(
         SafeFileHandle handle, char* filePath, uint characterCount, uint flags);
+
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    private static partial SafeFileHandle CreateFileW(string path, uint access, FileShare share,
+        nint securityAttributes, FileMode creation, uint flags, nint template);
 }

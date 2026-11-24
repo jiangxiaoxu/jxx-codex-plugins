@@ -1,4 +1,5 @@
 using System.Buffers;
+using System.Buffers.Text;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Meziantou.Framework.Imaging;
@@ -8,7 +9,7 @@ namespace ThreadMemoryCli;
 
 internal static partial class HistoryMedia
 {
-    private const int DefaultResolution = 512;
+    internal const int DefaultResolution = 1024;
     private const int DecodeChunk = 64 * 1024;
     private static readonly SearchValues<char> Base64Whitespace = SearchValues.Create(" \r\n\t");
     private static readonly ImageDecodeOptions PreviewDecode = new()
@@ -54,6 +55,8 @@ internal static partial class HistoryMedia
         }
 
         bool image = medium == "image";
+        bool thumbnail = image && !args.Has("--original");
+        string? outputDir = args.One("--output-dir");
         string? directory = null;
         var cache = new Dictionary<(string Kind, string Destination), JsonObject>();
         foreach (HistoryRow row in source.FindMany(targets.Keys))
@@ -75,11 +78,13 @@ internal static partial class HistoryMedia
                 var key = (item.Kind, identity);
                 if (!cache.TryGetValue(key, out JsonObject? export))
                 {
-                    if (image || item.Kind == "inline")
-                        directory ??= ExportDirectory(args.One("--output-dir"), image ? "images" : "audio");
-                    export = image
-                        ? ExportImage(item, directory!, scale, resolution, item.ResolvedPath is null ? identity : null)
-                        : ExportAudio(item, directory, identity);
+                    if (thumbnail)
+                    {
+                        directory ??= ExportDirectory(outputDir, "images");
+                        export = ExportImage(item, directory, scale, resolution, item.ResolvedPath is null ? identity : null);
+                    }
+                    else
+                        export = ExportOriginal(item, outputDir, ref directory, identity);
                     cache.Add(key, export);
                 }
                 foreach (var (field, value) in export)
@@ -155,10 +160,7 @@ internal static partial class HistoryMedia
             };
             if (original is not null)
             {
-                var format = picture.Metadata.SourceFormat;
-                string extension = format == ImageFormat.Jpeg ? ".jpeg" : ImageFormatInfo.Get(format).DefaultFileExtension;
-                if (!extension.StartsWith('.'))
-                    extension = '.' + extension;
+                string extension = ImageExtension(picture.Metadata.SourceFormat);
                 result["embedded_file"] = WriteNew(directory, name, extension, stream => stream.Write(original, 0, originalSize));
             }
             return result;
@@ -171,60 +173,93 @@ internal static partial class HistoryMedia
         }
     }
 
-    private static JsonObject ExportAudio(HistoryAttachment item, string? directory, string digest)
+    private static JsonObject ExportOriginal(HistoryAttachment item, string? outputDir, ref string? directory, string digest)
     {
+        bool image = item.Media == "image";
+        string field = image ? "original_file" : "audio_file";
         try
         {
             if (item.ResolvedPath is string path)
             {
                 if (!File.Exists(path))
-                    throw new FileNotFoundException("The recorded audio file is unavailable.");
-                return new() { ["audio_file"] = path };
+                    throw new FileNotFoundException($"The recorded {item.Media} file is unavailable.");
+                return new() { [field] = path };
             }
-            string raw = item.Raw!;
-            int start = Base64Start(raw, "audio");
-            if (start == raw.Length)
-                throw new FormatException("Inline audio payload is empty.");
-            Directory.CreateDirectory(directory!);
-            string suffix = item.MediaType switch
+            string raw = item.Raw ?? "";
+            int start = Base64Start(raw, item.Media);
+            var encoded = raw.AsSpan(start);
+            if (encoded.IsEmpty)
+                throw new FormatException($"Inline {item.Media} payload is empty.");
+            if (encoded.ContainsAny(Base64Whitespace) || !Base64.IsValid(encoded))
+                throw new FormatException($"Invalid Base64 {item.Media} payload.");
+
+            byte[] buffer = ArrayPool<byte>.Shared.Rent(DecodeChunk * 3 / 4);
+            try
             {
-                "audio/wav" or "audio/wave" or "audio/x-wav" => ".wav",
-                "audio/aac" => ".aac",
-                "audio/flac" => ".flac",
-                "audio/mp4" => ".m4a",
-                "audio/mpeg" => ".mp3",
-                "audio/ogg" => ".ogg",
-                "audio/webm" => ".webm",
-                _ => ".audio",
-            };
-            string file = WriteNew(directory!, $"audio-{digest[..24]}", suffix, output =>
-            {
-                byte[] buffer = ArrayPool<byte>.Shared.Rent(DecodeChunk * 3 / 4);
-                try
+                int next = DecodeBase64Chunk(raw, start, item.Media, buffer, out int written);
+                string extension = image ? OriginalImageExtension(item.MediaType, buffer.AsSpan(0, written)) : AudioExtension(item.MediaType);
+                string destination = directory ?? ExportDirectory(outputDir, image ? "images" : "audio");
+                Directory.CreateDirectory(destination);
+                string file = WriteNew(destination, image ? digest : $"audio-{digest[..24]}", extension, output =>
                 {
-                    for (int offset = start; offset < raw.Length;)
+                    output.Write(buffer, 0, written);
+                    for (int offset = next; offset < raw.Length;)
                     {
-                        int length = Math.Min(DecodeChunk, raw.Length - offset);
-                        ReadOnlySpan<char> chunk = raw.AsSpan(offset, length);
-                        offset += length;
-                        if (chunk.ContainsAny(Base64Whitespace) || (offset < raw.Length && chunk.Contains('=')) ||
-                            !Convert.TryFromBase64Chars(chunk, buffer, out int written))
-                            throw new FormatException("Invalid Base64 audio payload.");
-                        output.Write(buffer, 0, written);
+                        offset = DecodeBase64Chunk(raw, offset, item.Media, buffer, out int count);
+                        output.Write(buffer, 0, count);
                     }
-                }
-                finally
-                {
-                    ArrayPool<byte>.Shared.Return(buffer);
-                }
-            });
-            return new() { ["audio_file"] = file };
+                });
+                directory = destination;
+                return new() { [field] = file };
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
         catch (Exception error) when (error is FormatException or IOException or UnauthorizedAccessException or ArgumentException)
         {
             return new() { ["export_error"] = error.Message };
         }
     }
+
+    private static int DecodeBase64Chunk(string raw, int offset, string medium, byte[] buffer, out int written)
+    {
+        int length = Math.Min(DecodeChunk, raw.Length - offset);
+        if (!Convert.TryFromBase64Chars(raw.AsSpan(offset, length), buffer, out written))
+            throw new FormatException($"Invalid Base64 {medium} payload.");
+        return offset + length;
+    }
+
+    private static string OriginalImageExtension(string? mimeType, ReadOnlySpan<byte> bytes)
+    {
+        ImageFormat format = Image.DetectFormat(bytes);
+        if (format != ImageFormat.Unknown)
+            return ImageExtension(format);
+        if (ImageFormatInfo.TryGetByMimeType(mimeType, out var info))
+            return ImageExtension(info.Format);
+        return mimeType == "image/svg+xml" ? ".svg" : ".image";
+    }
+
+    private static string ImageExtension(ImageFormat format)
+    {
+        if (format == ImageFormat.Jpeg)
+            return ".jpeg";
+        string extension = ImageFormatInfo.Get(format).DefaultFileExtension;
+        return extension.StartsWith('.') ? extension : '.' + extension;
+    }
+
+    private static string AudioExtension(string? mediaType) => mediaType switch
+    {
+        "audio/wav" or "audio/wave" or "audio/x-wav" => ".wav",
+        "audio/aac" => ".aac",
+        "audio/flac" => ".flac",
+        "audio/mp4" => ".m4a",
+        "audio/mpeg" => ".mp3",
+        "audio/ogg" => ".ogg",
+        "audio/webm" => ".webm",
+        _ => ".audio",
+    };
 
     private static string UnavailableAttachment(HistoryAttachment item) => item.Kind == "reference"
         ? $"The rollout contains an opaque file ID or remote {item.Media} reference."

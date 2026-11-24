@@ -145,6 +145,14 @@ internal static partial class HistoryChat
             audio = content.Audio;
             turn ??= payload.Get("internal_chat_message_metadata_passthrough").Text("turn_id");
         }
+        else if (phase is null && row.Type == "realtime_item" && RecordProjection.VoiceTranscript(payload) is { } voice)
+        {
+            role = voice.Role;
+            if (role == "user" ? !user : !assistant)
+                return null;
+            body = voice.Text.StringValue() ?? "";
+            recordedPhase = null;
+        }
         else if (row.Type == "event_msg" && assistant)
         {
             JsonElement item = row.ItemType == "item_completed" ? payload.Get("item") : payload;

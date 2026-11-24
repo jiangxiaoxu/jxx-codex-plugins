@@ -221,7 +221,9 @@ internal sealed class HistoryIndex : IDisposable
 
     private static bool IsUnder(string path, string directory)
     {
-        string relative = Path.GetRelativePath(OrdinaryPath(Path.GetFullPath(directory)), path);
+        if (RolloutPath.ResolveDirectory(directory) is not string resolved)
+            return false;
+        string relative = Path.GetRelativePath(OrdinaryPath(resolved), path);
         return relative != "." && relative != ".." && !relative.StartsWith(@"..\", StringComparison.Ordinal) &&
             !Path.IsPathRooted(relative);
     }

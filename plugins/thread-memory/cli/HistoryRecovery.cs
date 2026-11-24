@@ -20,7 +20,7 @@ internal static class HistoryRecovery
         int maxMessages = args.Integer("--max-messages", 8, minimum: 0);
         int maxChars = args.Integer("--max-chars", 2400, minimum: 0);
         int maxImages = args.Integer("--max-images", 8, minimum: 0);
-        int maxResolution = args.Integer("--max-resolution", 512, minimum: 1);
+        int maxResolution = args.Integer("--max-resolution", HistoryMedia.DefaultResolution, minimum: 1);
         string? scaleArg = args.One("--scale");
         double scale = args.Has("--max-resolution") ? 1 : 0.25;
         if (scaleArg is not null && (!double.TryParse(scaleArg, NumberStyles.Float, CultureInfo.InvariantCulture, out scale) ||
@@ -348,6 +348,7 @@ internal static class HistoryRecovery
             JsonObject metadata = image.EventPath ? (JsonObject)image.Locator.DeepClone()
                 : new JsonObject { ["rollout"] = image.Attachment.Rollout, ["line"] = image.Attachment.Line };
             string? path = Redact(image.Attachment.Path);
+            metadata["image_id"] = image.Attachment.Id;
             metadata["path"] = path;
             if (!image.EventPath)
             {
@@ -396,7 +397,11 @@ internal static class HistoryRecovery
 
     private static JsonObject DescribeImage(Image image)
     {
-        var result = new JsonObject { ["part"] = image.Attachment.Part };
+        var result = new JsonObject
+        {
+            ["part"] = image.Attachment.Part,
+            ["image_id"] = image.Attachment.Id,
+        };
         if (image.Attachment.Kind == "inline")
         {
             result["media_type"] = image.Attachment.MediaType;

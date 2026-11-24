@@ -20,6 +20,12 @@ $ref | & $cli attachments @source --ref - --media image --kind inline --limit 1 
 & $cli export-audio @source --id $audioId | jq -er '.attachments[0].audio_file'
 ```
 
-Image export creates WebP thumbnails with Lanczos resampling. Thumbnails preserve aspect ratio and cap both dimensions at 512 pixels by default. For an inline image, export also saves the decoded original. Audio export returns an existing local path or decodes embedded audio to a file. Use `--output-dir DIR` to choose where new files are written.
+Image export creates WebP thumbnails with Lanczos resampling. Thumbnails preserve aspect ratio and cap both dimensions at 1,024 pixels by default. For an inline image, export also saves the decoded original. Audio export returns an existing local path or decodes embedded audio to a file. Use `--output-dir DIR` to choose where new files are written.
+
+Use a thumbnail for ordinary inspection. When full resolution is needed, request the original file.
+
+```powershell
+& $cli export-image @source --id $imageId --original | jq -er '.images[0].original_file'
+```
 
 To export several selected attachments, repeat `--id` or pass newline-delimited IDs with `--id -`. Inspect `.unknown_ids` and each result's `.export_error`, since successful and failed items can appear together.

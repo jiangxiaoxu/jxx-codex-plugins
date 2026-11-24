@@ -147,6 +147,21 @@ class RolloutQueryIndexTest(unittest.TestCase):
         self.assertEqual([hit["text"] for hit in result["items"]], ["needle from a backup"])
         self.assertFalse(self.index.exists())
 
+    def test_relocated_sessions_directory_can_build_a_search_index(self):
+        sessions = self.rollout.parent
+        storage = sessions.rename(self.home / "rollout-storage")
+        junction = subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", str(sessions), str(storage)],
+            capture_output=True,
+        )
+        self.assertEqual(junction.returncode, 0, junction.stderr)
+        stamp = "2026-01-01T10:00:00Z"
+        self.append(message(stamp, "user", "needle in relocated sessions"))
+
+        result = self.query("search", "needle", "--since", stamp)
+        self.assertEqual([hit["text"] for hit in result["items"]], ["needle in relocated sessions"])
+        self.assertTrue(self.index.is_file())
+
     def test_search_streams_when_session_filename_has_a_different_owner(self):
         self.rollout = self.rollout.rename(self.rollout.with_name(
             "rollout-2026-01-01T00-00-00-00000000-0000-4000-8000-000000000002.jsonl"
@@ -160,10 +175,12 @@ class RolloutQueryIndexTest(unittest.TestCase):
 
     def test_reference_survives_append_and_recent_chat_includes_the_new_row(self):
         stamp = "2026-01-01T10:00:00Z"
-        self.rollout.write_bytes(row("session_meta", stamp, {
+        header = row("session_meta", "2026-01-01T00:00:00Z", {
             "id": "00000000-0000-4000-8000-000000000001",
-            "base_instructions": {"text": "x" * (4 * 1024 * 1024)},
-        }))
+            "base_instructions": {"text": ""},
+        }).removesuffix(b"\n")
+        payload = b"x" * (32 * 1024 * 1024 - len(header))
+        self.rollout.write_bytes(header.replace(b'""', b'"' + payload + b'"', 1) + b"\r\n")
         self.append(message(stamp, "user", "needle before append"))
         hit, = self.query("search", "needle", "--since", stamp)["items"]
         self.assertTrue(self.index.is_file())

@@ -15,7 +15,7 @@ internal sealed class CliOptions
     private static readonly UTF8Encoding Utf8 = new(false, true);
     private static readonly HashSet<string> Switches = [
         "--salvage", "--with-tokens", "--by-response", "--by-summary", "--metadata-only", "--summary",
-        "--regex", "--ignore-case"
+        "--regex", "--ignore-case", "--original"
     ];
     private static readonly HashSet<string> Nonnegative = [
         "--before", "--after", "--field-index", "--item", "--max-images", "--max-messages"
@@ -38,7 +38,7 @@ internal sealed class CliOptions
         ["transcript"] = $"{Source} {Scope} {TextPage} --role --last --phase --format",
         ["images"] = $"{Source} {Scope} {Page} --ref --kind --role",
         ["attachments"] = $"{Source} {Scope} {Page} --ref --media --kind --role",
-        ["export-image"] = $"{Source} --id --output-dir --scale --max-resolution",
+        ["export-image"] = $"{Source} --id --output-dir --original --scale --max-resolution",
         ["export-audio"] = $"{Source} --id --output-dir",
         ["recover"] = $"{Source} --window --max-images --export-images --scale --max-resolution --max-messages --max-chars",
     };
@@ -196,6 +196,8 @@ internal sealed class CliOptions
         }
         if (Command is "export-image" or "export-audio" && !Has("--id"))
             throw Invalid("--id is required.");
+        if (Has("--original") && (Has("--scale") || Has("--max-resolution")))
+            throw Invalid("--original cannot be combined with thumbnail sizing options.");
         if (Command == "instructions" && !Has("--window"))
             throw Invalid("--window is required.");
         if (Command == "tokens" && Has("--cursor") && !Has("--by-response") && !Has("--by-summary"))

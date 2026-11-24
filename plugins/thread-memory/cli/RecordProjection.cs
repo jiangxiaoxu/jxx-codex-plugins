@@ -186,6 +186,20 @@ internal static partial class RecordProjection
     internal sealed record View(string Kind, string? ItemType, string? Role, IEnumerable<(string Name, string Text)> Fields,
         JsonObject? Tool, JsonObject? Encrypted);
 
+    internal static (string Role, string Field, JsonElement Text)? VoiceTranscript(JsonElement payload)
+    {
+        // Both shapes are sealed, durable speech items. Realtime UI deltas and
+        // model-input receipts have separate record types.
+        string? type = payload.Text("type");
+        bool frame = type == "frame";
+        JsonElement speech = frame ? payload.Get("channels").Get("voice_transcript")
+            : type == "transcript_segment" ? payload : default;
+        string? role = speech.Text("role");
+        JsonElement text = speech.Get("text");
+        return role is "user" or "assistant" && text.ValueKind == JsonValueKind.String
+            ? (role, frame ? "channels.voice_transcript.text" : "text", text) : null;
+    }
+
     internal static View Project(HistoryRow row)
     {
         var kind = row.Type;
@@ -220,6 +234,8 @@ internal static partial class RecordProjection
             return Of("user", Questions(item, includeAnswers: true));
         if (kind == "retained_context" && type == "delivered_assistant_message")
             return Of("assistant", Strings(item, ["text"]));
+        if (kind == "realtime_item")
+            return VoiceTranscript(item) is { } voice ? Of(voice.Role, Values(voice.Text, voice.Field)) : Of(null, []);
         if (kind == "compacted")
         {
             type = null;

@@ -24,7 +24,7 @@ Hunk locations and original lines must match. A mismatch, empty result, or resul
 
 ## Recover a missing detail
 
-Use `search` or `transcript` when you already know the phrase or message you need. For a small batch of omitted excerpts use `recover --max-images 0 --max-messages 4 --max-chars 1200`. Add `--window N` for a specific checkpoint. With no window, recovery selects the latest eligible checkpoint written by the selected thread in its active rollout. Use `--max-messages 0` for image candidates only. `--export-images` saves the selected images with WebP previews at quarter scale and at most 512 pixels per side by default.
+Use `search` or `transcript` when you already know the phrase or message you need. For a small batch of omitted excerpts use `recover --max-images 0 --max-messages 4 --max-chars 1200`. Add `--window N` for a specific checkpoint. With no window, recovery selects the latest eligible checkpoint written by the selected thread in its active rollout. Use `--max-messages 0` for image candidates only. `--export-images` saves the selected images with WebP previews at quarter scale and at most 1,024 pixels per side by default. Pass a recovered `image_id` to `export-image --id ID --original` for the full-resolution file.
 
 ```powershell
 & $cli recover @source --max-images 0 --max-messages 4 --max-chars 1200 |
