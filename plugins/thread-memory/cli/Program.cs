@@ -11,7 +11,7 @@ namespace ThreadMemoryCli;
 
 internal static partial class Program
 {
-    private const int MaxNoteBytes = 12_288;
+    internal const int MaxNoteBytes = 12_288;
     private const int MaxPatchBytes = 128 * 1024;
     private const int StdOutputHandle = -11;
     private const string Truncation = "\n\n[Summary truncated]";

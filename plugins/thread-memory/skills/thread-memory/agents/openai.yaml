@@ -1,4 +1,4 @@
 interface:
   display_name: "Thread Memory: Notes and History"
-  short_description: "Maintain thread notes and find Codex history."
-  default_prompt: "Use $thread-memory to maintain this thread's note or find messages, tool activity, and attachments in accessible local Codex history."
+  short_description: "Maintain Markdown notes and find Codex history."
+  default_prompt: "Use $thread-memory to maintain this thread's Markdown note or find messages, tool activity, and attachments in accessible local Codex history."

@@ -186,9 +186,49 @@ internal sealed class CliOptions
         if (Command.Length == 0)
             return "Usage: Thread-Memory COMMAND [OPTIONS]\n\nCommands: " + string.Join(", ", Commands.Keys) +
                 "\nUse Thread-Memory COMMAND --help for options. Queries use --thread UUID or --rollout PATH.";
-        string positional = Command switch { "memory" => " {read|write|patch}", "search" => " PATTERN", _ => "" };
+        if (Command == "memory")
+            return MemoryUsage();
+        string positional = Command == "search" ? " PATTERN" : "";
         return $"Usage: Thread-Memory {Command}{positional} [OPTIONS]\n\n" +
             $"{Commands[Command]}\n\nUse - with --ref, --id, or --cursor to read its selector from stdin.";
+    }
+
+    private string MemoryUsage()
+    {
+        string action = Pattern is "read" or "write" or "patch" ? Pattern : "{read|write|patch}";
+        string noteLimit = Program.MaxNoteBytes.ToString("N0", CultureInfo.InvariantCulture);
+        string description = action switch
+        {
+            "read" => """
+                Return the original Markdown in the JSON summary field and its UTC updated_at.
+                Both fields are null when the thread has no saved note.
+                """,
+            "write" => $"""
+                Create or replace the whole note with UTF-8 Markdown from stdin.
+                Notes over {noteLimit} UTF-8 bytes are shortened and report truncated: true.
+                """,
+            "patch" => $"""
+                Apply a UTF-8 unified diff from stdin to the current Markdown note.
+                Line ranges and context must match. Read the note again if it has changed.
+                A result over {noteLimit} UTF-8 bytes is rejected.
+                """,
+            _ => """
+                read   Return the original Markdown and its update time as JSON.
+                write  Create or replace the whole note with UTF-8 Markdown on stdin.
+                patch  Apply a UTF-8 unified diff from stdin to edit part of the note.
+
+                Use Thread-Memory memory ACTION --help for details.
+                """,
+        };
+        return $"""
+            Usage: Thread-Memory memory {action} [OPTIONS]
+
+            {description}
+
+            Options:
+              --thread UUID      Select a thread (default: CODEX_THREAD_ID).
+              --codex-home PATH  Use a different Codex home.
+            """;
     }
 
     private void Validate()

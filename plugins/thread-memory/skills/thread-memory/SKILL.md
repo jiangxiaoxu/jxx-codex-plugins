@@ -1,31 +1,59 @@
 ---
 name: thread-memory
-description: Keep a concise note for the current Codex thread and update it when important decisions, constraints, progress, or next steps change. Read the note as needed during work and use it to recover context after compaction. Look up messages, instructions, tool calls and results, and image or audio attachments in this or another accessible local Codex thread.
+description: Maintain a persistent Markdown note for the current Codex thread as important decisions, constraints, progress, or next steps change. Save or read the note as needed and use it to recover context after compaction. Look up messages, instructions, tool calls and results, and image or audio attachments in this or another accessible local Codex thread.
 ---
 
 # Thread Memory
 
 In PowerShell, set `$cli = Join-Path '<directory containing this SKILL.md>' '../../bin/Thread-Memory.exe'` using the actual skill directory. Run commands as `& $cli <command>`. Commands default to your own thread via `CODEX_THREAD_ID`. Pass `--thread UUID` to select another thread.
 
-## Maintain the note
+## Maintain the Markdown note
 
-Keep a concise note of the current work. Update existing sections in place, consolidate repeated information, and remove obsolete details. Record the active goal, open requests, important decisions and constraints, verified progress, and next steps. Keep a rollout reference, a tool record ID, or a distinctive phrase from a message for details you may need to retrieve later.
+Keep a concise Markdown document for the current work. Update relevant sections in place, consolidate repeated information, and remove obsolete details. Record the active goal, open requests, important decisions and constraints, verified progress, and next steps. Keep a rollout reference, a tool record ID, or a distinctive phrase for details you may need to find later. Use absolute paths in links to local files.
 
-Write the note as a Markdown document. Use absolute paths in links to local files.
+The note stays with the thread across compaction. A main-thread fork gets its own copy as of its creation time. Subagents start with an empty note, including when they inherit chat history.
 
-Use `memory write` to create or replace the whole note and `memory patch` for a targeted edit to an existing note. Read the current note first if you need its contents. Pass UTF-8 text or a unified diff on stdin.
+Use `memory read` to get the complete Markdown in `.summary` and its UTC timestamp in `.updated_at`. A null `.summary` means there is no saved note. Read the note after compaction and search the rollout as needed for missing details.
 
 ```powershell
-& $cli memory read | jq -er '.summary // ""'
-$summary | & $cli memory write
-$patch | & $cli memory patch
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+$json = & $cli memory read
+$readExit = $LASTEXITCODE
+if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
+$json | jq -r '.summary // empty'
 ```
 
-The note belongs to the thread across compaction. A main-thread fork starts with its own copy as of its recorded creation time. Subagents start with an empty note, including when they inherit chat history. `memory read` returns the current `.summary` and `.updated_at`. A null `.summary` means the thread has no saved note.
+Use `memory write` to create a note or deliberately replace it. Send the full Markdown on stdin, using the UTF-8 settings above. If the receipt has `.truncated: true`, shorten the original Markdown to fit within 12,288 UTF-8 bytes and save it again.
 
-Use the same commands when a hook asks you to update the note. Patches require exact matching lines and a result within 12,288 UTF-8 bytes. Writes over that limit save a truncated note and report `.truncated`. If the user requested a save before manual compaction, confirm success before they run `/compact`.
+```powershell
+$note = @'
+## Progress
+- [ ] Verify the panel
+'@
+$json = $note | & $cli memory write
+$writeExit = $LASTEXITCODE
+if ($writeExit -ne 0) { throw "memory write failed ($writeExit)" }
+$json | jq '{saved, truncated}'
+```
 
-After compaction, follow the recovery hint when available. Otherwise, read the full note with `memory read` to resume. Search the rollout for missing details as needed.
+Use `memory patch` for a targeted edit. Read the current note, then send a unified diff on stdin. Match the line numbers and context to the actual note. If the patch is stale or does not match, reread and rebuild the diff. Patches must leave the result within the same byte limit.
+
+```powershell
+$patch = @'
+--- a/note.md
++++ b/note.md
+@@ -1,2 +1,2 @@
+ ## Progress
+-- [ ] Verify the panel
++- [x] Verify the panel
+'@
+$json = $patch | & $cli memory patch
+$patchExit = $LASTEXITCODE
+if ($patchExit -ne 0) { throw "memory patch failed ($patchExit)" }
+$json | jq '{saved, updated_at}'
+```
+
+Use the same workflow when a hook prompts an update. If the user asks you to save before manual compaction, confirm the note was saved in full before they run `/compact`.
 
 ## Look up rollout history
 

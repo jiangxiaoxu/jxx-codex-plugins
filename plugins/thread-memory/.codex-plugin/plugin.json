@@ -1,15 +1,15 @@
 {
   "name": "thread-memory",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "mcpServers": "./mcp.json",
-  "description": "Maintain persistent Codex thread notes and retrieve details from local rollout history.",
+  "description": "Maintain persistent Markdown notes for Codex threads and retrieve details from local rollout history.",
   "author": {
     "name": "jiangxiaoxu"
   },
   "interface": {
     "displayName": "Thread Memory",
     "shortDescription": "Thread notes and history",
-    "longDescription": "Keep track of decisions, constraints, progress, and next steps in a persistent thread note. Read it back after context compaction or look up earlier messages, instructions, tool calls and results, images, and audio across accessible local Codex threads.",
+    "longDescription": "Keep track of decisions, constraints, progress, and next steps in a Markdown note that stays with the thread across context compaction. Recover context from the note or look up earlier messages, instructions, tool calls and results, images, and audio across accessible local Codex threads.",
     "developerName": "jiangxiaoxu",
     "category": "Productivity",
     "logo": "./assets/thread-memory-icon.png",
