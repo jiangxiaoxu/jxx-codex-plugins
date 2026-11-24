@@ -6,10 +6,15 @@ namespace ThreadMemoryHook;
 
 internal static class ThreadMemory
 {
-    private sealed record Note(string? Summary, long UpdatedUs);
+    internal sealed record Note(string? Summary, long UpdatedUs, long Revision = 0, long EffectiveUs = 0);
 
-    private sealed class InheritanceUnavailable(Exception inner)
-        : Exception("Cannot inherit the thread note.", inner);
+    internal sealed class InheritanceUnavailable(Exception inner)
+        : Exception($"cannot inherit thread note: {inner.Message}", inner);
+
+    internal sealed class InvalidNoteRollout(string path) : Exception("Cannot read a valid session_meta record.")
+    {
+        internal string Path { get; } = path;
+    }
 
     private const string LegacyRevisions = """
         WITH versions AS (
@@ -39,7 +44,8 @@ internal static class ThreadMemory
         {
             return "inheritance_unavailable";
         }
-        catch (Exception error) when (error is InvalidDataException or ArgumentException or JsonException or InvalidOperationException)
+        catch (Exception error) when (error is InvalidNoteRollout or InvalidDataException or ArgumentException
+            or JsonException or InvalidOperationException)
         {
             return "invalid_data";
         }
@@ -51,6 +57,35 @@ internal static class ThreadMemory
         {
             return "sqlite_error";
         }
+    }
+
+    internal static Note? ReadForCli(HookStore store, string home, string threadId) => Initialize(store, home, threadId, []);
+
+    internal static Note? SaveForCli(HookStore store, string threadId, string summary, long expectedRevision)
+    {
+        using var connection = store.OpenWrite();
+        using var transaction = connection.BeginTransaction(deferred: false);
+        var current = ReadNote(connection, threadId, transaction: transaction);
+        if ((current?.Revision ?? 0) != expectedRevision)
+            return null;
+
+        using var insert = CreateRevisionInsert(connection, transaction, threadId);
+        if (current is null)
+        {
+            // A write can start a timeline even when the parent cannot be resolved.
+            CopyLegacyRevisions(connection, transaction, insert, threadId);
+            current = ReadNote(connection, threadId, transaction: transaction);
+        }
+
+        // Sample the time after acquiring the write transaction so a blocked edit
+        // cannot appear in an earlier fork's snapshot.
+        long updatedUs = (DateTimeOffset.UtcNow.UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks) / 10;
+        long effectiveUs = Math.Max(updatedUs, current?.EffectiveUs ?? updatedUs);
+        AppendRevision(insert, summary, updatedUs, effectiveUs);
+
+        var saved = ReadNote(connection, threadId, transaction: transaction);
+        transaction.Commit();
+        return saved;
     }
 
     private static Note? Initialize(HookStore store, string home, string threadId, HashSet<string> visiting)
@@ -65,8 +100,10 @@ internal static class ThreadMemory
         string path = original ?? SessionFiles.FindRollout(home, threadId, current: true)
             ?? throw new FileNotFoundException($"No local rollout found for {threadId}.");
         var header = SessionFiles.ReadHeader(path);
+        if (header.ValueKind == JsonValueKind.Undefined)
+            throw new InvalidNoteRollout(path);
         if (SessionFiles.String(header, "id") != threadId)
-            throw new InvalidDataException($"Rollout header does not identify thread {threadId}.");
+            throw new ArgumentException($"Rollout header does not identify thread {threadId}.");
 
         string? parent = SessionFiles.String(header, "forked_from_id");
         if (parent is null || IsSubagent(header))
@@ -100,7 +137,7 @@ internal static class ThreadMemory
                 visiting.Remove(threadId);
             }
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or ArgumentException
+        catch (Exception error) when (error is IOException or InvalidNoteRollout or InvalidDataException or ArgumentException
             or UnauthorizedAccessException or InvalidOperationException)
         {
             throw new InheritanceUnavailable(error);
@@ -167,44 +204,52 @@ internal static class ThreadMemory
             return existing;
         }
 
-        using var insert = connection.CreateCommand();
+        using var insert = CreateRevisionInsert(connection, transaction, threadId);
+        if (baseline is not null && forkUs is long birth)
+            AppendRevision(insert, baseline.Summary, baseline.UpdatedUs, birth);
+        CopyLegacyRevisions(connection, transaction, insert, threadId, forkUs);
+
+        var current = ReadNote(connection, threadId, transaction: transaction);
+        transaction.Commit();
+        return current;
+    }
+
+    private static SqliteCommand CreateRevisionInsert(SqliteConnection connection, SqliteTransaction transaction, string threadId)
+    {
+        var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
             INSERT INTO memory_revisions (thread_id, summary, updated_us, effective_us)
             VALUES ($id, $summary, $updated, $effective)
             """;
         insert.Parameters.AddWithValue("$id", threadId);
-        var summary = insert.Parameters.Add("$summary", SqliteType.Text);
-        var updated = insert.Parameters.Add("$updated", SqliteType.Integer);
-        var effective = insert.Parameters.Add("$effective", SqliteType.Integer);
+        insert.Parameters.Add("$summary", SqliteType.Text);
+        insert.Parameters.Add("$updated", SqliteType.Integer);
+        insert.Parameters.Add("$effective", SqliteType.Integer);
+        return insert;
+    }
 
-        if (baseline is not null && forkUs is long birth)
+    private static void AppendRevision(SqliteCommand insert, string? summary, long updatedUs, long effectiveUs)
+    {
+        insert.Parameters["$summary"].Value = (object?)summary ?? DBNull.Value;
+        insert.Parameters["$updated"].Value = updatedUs;
+        insert.Parameters["$effective"].Value = effectiveUs;
+        insert.ExecuteNonQuery();
+    }
+
+    private static void CopyLegacyRevisions(SqliteConnection connection, SqliteTransaction transaction,
+        SqliteCommand insert, string threadId, long? forkUs = null)
+    {
+        using var legacy = connection.CreateCommand();
+        legacy.Transaction = transaction;
+        legacy.CommandText = LegacyRevisions + "\nORDER BY at, window, is_current, revision";
+        legacy.Parameters.AddWithValue("$id", threadId);
+        using var versions = legacy.ExecuteReader();
+        while (versions.Read())
         {
-            summary.Value = (object?)baseline.Summary ?? DBNull.Value;
-            updated.Value = baseline.UpdatedUs;
-            effective.Value = birth;
-            insert.ExecuteNonQuery();
+            long savedUs = TimestampUs(versions.GetString(1));
+            AppendRevision(insert, versions.GetString(0), savedUs, Math.Max(savedUs, forkUs ?? savedUs));
         }
-
-        using (var legacy = connection.CreateCommand())
-        {
-            legacy.Transaction = transaction;
-            legacy.CommandText = LegacyRevisions + "\nORDER BY at, window, is_current, revision";
-            legacy.Parameters.AddWithValue("$id", threadId);
-            using var versions = legacy.ExecuteReader();
-            while (versions.Read())
-            {
-                long savedUs = TimestampUs(versions.GetString(1));
-                summary.Value = versions.GetString(0);
-                updated.Value = savedUs;
-                effective.Value = Math.Max(savedUs, forkUs ?? savedUs);
-                insert.ExecuteNonQuery();
-            }
-        }
-
-        var current = ReadNote(connection, threadId, transaction: transaction);
-        transaction.Commit();
-        return current;
     }
 
     private static Note? ReadNote(SqliteConnection connection, string threadId, long? cutoffUs = null, SqliteTransaction? transaction = null)
@@ -212,7 +257,7 @@ internal static class ThreadMemory
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT summary, updated_us FROM memory_revisions WHERE thread_id = $id
+            SELECT summary, updated_us, revision, effective_us FROM memory_revisions WHERE thread_id = $id
             """;
         command.Parameters.AddWithValue("$id", threadId);
         if (cutoffUs is long cutoff)
@@ -222,7 +267,8 @@ internal static class ThreadMemory
         }
         command.CommandText += " ORDER BY effective_us DESC, revision DESC LIMIT 1";
         using var row = command.ExecuteReader();
-        return row.Read() ? new Note(row.IsDBNull(0) ? null : row.GetString(0), row.GetInt64(1)) : null;
+        return row.Read() ? new Note(row.IsDBNull(0) ? null : row.GetString(0), row.GetInt64(1),
+            row.GetInt64(2), row.GetInt64(3)) : null;
     }
 
     private static Note? ReadLegacy(SqliteConnection connection, string threadId, long? cutoffUs = null)

@@ -347,7 +347,16 @@ JSON output renders isolated UTF-16 surrogate escapes from old records as U+FFFD
 
 ## Runtime and validation
 
-The Windows x64 native hook uses the system `winsqlite3` library and runs without a separately installed .NET runtime or Python. The CLI and MCP panel use Python 3.10 or newer. For Python commands, reading `.jsonl.zst` requires `zstandard`, and image export requires Pillow 9.1 or newer with WebP support. Reading Codex configuration from Python 3.10 can also require `tomli`.
+The Windows x64 native hook and note commands use the system `winsqlite3` library and run without a separately installed .NET runtime or Python. The skill's current CLI and the MCP panel use Python 3.10 or newer. For Python commands, reading `.jsonl.zst` requires `zstandard`, and image export requires Pillow 9.1 or newer with WebP support. Reading Codex configuration from Python 3.10 can also require `tomli`.
+
+The first stage of the native CLI migration covers `memory read`, `memory write`, and `memory patch`. Run `bin/Thread-Memory.exe` in the plugin directory to use these commands. The native CLI shares the existing SQLite database and accepts `--thread UUID` and `--codex-home PATH`. When it needs to verify a rollout header for a note, it uses the same 4 MiB `session_meta` limit as the hook. The skill continues to use `rollout.py` for its published workflow until the native history commands are ready.
+
+```powershell
+$native = 'plugins/thread-memory/bin/Thread-Memory.exe'
+& $native memory read | jq -r '.summary // empty'
+$note | & $native memory write
+$diff | & $native memory patch
+```
 
 In **Thread Memory**, **Dependencies** shows which optional features the plugin's Python can run. **Install missing dependencies** uses that interpreter's pip and standard `site-packages` directory. It installs wheels for the unavailable packages shown in the panel. Installation requires network access, pip, and write permission to that Python installation.
 
@@ -355,20 +364,25 @@ Window and token queries fully decode records when they need their payloads. Ski
 
 ### Build and validate
 
-From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include `bin/Thread-Memory-Hook.exe` and `THIRD-PARTY-NOTICES.txt` in the plugin package.
+From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include both EXEs and `THIRD-PARTY-NOTICES.txt` in the plugin package.
 
 ```powershell
 $plugin = 'plugins/thread-memory'
 $artifacts = Join-Path (Resolve-Path .) 'tmp/thread-memory-native'
-$publish = Join-Path $artifacts 'publish'
-dotnet publish "$plugin/src/thread-memory-hook.csproj" -c Release -r win-x64 --artifacts-path $artifacts -o $publish
-$publishExit = $LASTEXITCODE
-if ($publishExit -ne 0) { throw "Native AOT publish failed ($publishExit)" }
-New-Item -ItemType Directory -Path "$plugin/bin" -Force | Out-Null
-Copy-Item "$publish/Thread-Memory-Hook.exe" "$plugin/bin/"
+$targets = @{
+    'Thread-Memory-Hook' = 'src/thread-memory-hook.csproj'
+    'Thread-Memory' = 'cli/thread-memory-cli.csproj'
+}
+foreach ($target in $targets.GetEnumerator()) {
+    $publish = Join-Path $artifacts $target.Key
+    dotnet publish "$plugin/$($target.Value)" -c Release -r win-x64 --artifacts-path $artifacts -o $publish
+    $publishExit = $LASTEXITCODE
+    if ($publishExit -ne 0) { throw "Native AOT publish failed for $($target.Key) ($publishExit)" }
+    Copy-Item -LiteralPath (Join-Path $publish "$($target.Key).exe") -Destination "$plugin/bin/"
+}
 ```
 
-Run the Python suite after packaging the executable. Hook integration tests send UTF-8 JSON on stdin to `bin/Thread-Memory-Hook.exe` and verify its output and shared SQLite state through the Python CLI. Set `THREAD_MEMORY_TEST_HOOK_EXE` to test another published binary in isolation.
+Run the Python suite after packaging the executables. The integration tests exercise the hook's JSON on stdin and note operations across both CLIs. Set `THREAD_MEMORY_TEST_HOOK_EXE` or `THREAD_MEMORY_TEST_CLI_EXE` to test alternate published binaries in isolation.
 
 ```text
 python -m unittest discover -s plugins/thread-memory/tests -p "test_*.py"
