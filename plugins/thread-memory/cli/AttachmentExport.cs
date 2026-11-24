@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using Meziantou.Framework.Imaging;
 using Meziantou.Framework.Imaging.Formats;
+using ThreadMemoryHook;
 
 namespace ThreadMemoryCli;
 
@@ -136,7 +137,7 @@ internal static partial class HistoryMedia
             }
             catch (FormatException error)
             {
-                return new() { ["export_error"] = error.Message };
+                return new() { ["export_error"] = MediaText.OmitDataUrls(error.Message) };
             }
         }
 
@@ -178,7 +179,7 @@ internal static partial class HistoryMedia
         {
             if (thumbnail is not null)
                 File.Delete(thumbnail);
-            return new() { ["export_error"] = $"Could not create an image thumbnail: {error.Message}" };
+            return new() { ["export_error"] = $"Could not create an image thumbnail: {MediaText.OmitDataUrls(error.Message)}" };
         }
     }
 
@@ -228,7 +229,7 @@ internal static partial class HistoryMedia
         }
         catch (Exception error) when (error is FormatException or IOException or UnauthorizedAccessException or ArgumentException)
         {
-            return new() { ["export_error"] = error.Message };
+            return new() { ["export_error"] = MediaText.OmitDataUrls(error.Message) };
         }
     }
 

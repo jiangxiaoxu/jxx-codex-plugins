@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using ThreadMemoryHook;
 
 namespace ThreadMemoryCli;
 
@@ -179,7 +180,7 @@ internal static partial class HistoryChat
         {
             ["timestamp"] = row.Timestamp,
             ["role"] = role,
-            ["text"] = RecordProjection.OmitDataUrls(body),
+            ["text"] = MediaText.OmitDataUrls(body),
             ["turn_id"] = turn,
             ["path"] = row.Path,
             ["line"] = row.Line,

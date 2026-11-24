@@ -1,0 +1,4 @@
+[mcp_servers.thread-memory-hook-probe]
+command = 'C:\absolute\path\Thread-Memory-Mcp-Hook-Probe.exe'
+args = ['--codex-home', 'C:\absolute\path\to\isolated-codex-home']
+required = true

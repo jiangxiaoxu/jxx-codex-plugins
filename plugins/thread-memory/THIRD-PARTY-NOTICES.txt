@@ -2,7 +2,7 @@ Thread Memory third-party notices
 =================================
 
 These notices accompany the Windows x64 Native AOT executables
-bin/Thread-Memory-Hook.exe and bin/Thread-Memory.exe.
+bin/Thread-Memory-Hook.exe, bin/Thread-Memory.exe, and bin/Thread-Memory-Panel.exe.
 SQLite itself is supplied by Windows (winsqlite3.dll).
 
 .NET 10 Native AOT runtime (10.0.15) and Microsoft.Data.Sqlite.Core (10.0.11)

@@ -183,7 +183,7 @@ internal static class ThreadMemory
         return initialized is null ? null : ReadNote(initialized, threadId, cutoffUs);
     }
 
-    private static bool IsSubagent(JsonElement header)
+    internal static bool IsSubagent(JsonElement header)
     {
         var source = SessionFiles.Property(header, "source");
         if (source.ValueKind == JsonValueKind.Object && source.TryGetProperty("subagent", out _))

@@ -4,6 +4,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using Meziantou.Framework.Imaging;
+using ThreadMemoryHook;
 
 namespace ThreadMemoryCli;
 
@@ -30,7 +32,7 @@ internal sealed record HistoryAttachment(
             ("item_type", ItemType), ("item_id", ItemId), ("role", Role),
         })
             if (!string.IsNullOrEmpty(value))
-                result[name] = RecordProjection.OmitDataUrls(value);
+                result[name] = MediaText.OmitDataUrls(value);
         if (Copied)
         {
             result["timestamp_origin"] = "copied_at";
@@ -46,11 +48,11 @@ internal sealed record HistoryAttachment(
         var result = Locator();
         result["kind"] = Kind;
         if (Path is not null)
-            result["path"] = RecordProjection.OmitDataUrls(Path);
+            result["path"] = MediaText.OmitDataUrls(Path);
         if (ResolvedPath is not null)
-            result["resolved_path"] = RecordProjection.OmitDataUrls(ResolvedPath);
+            result["resolved_path"] = MediaText.OmitDataUrls(ResolvedPath);
         if (Reference is not null)
-            result["reference"] = RecordProjection.OmitDataUrls(Reference);
+            result["reference"] = MediaText.OmitDataUrls(Reference);
         if (MediaType is not null)
             result["media_type"] = MediaType;
         if (Media == "image")
@@ -246,8 +248,8 @@ internal static partial class HistoryMedia
             }
             foreach (var image in item.Get("file_ids").Items())
             {
-                if (image.StringValue() is { Length: > 0 } fileId)
-                    yield return (index, "image", new("reference", fileId));
+                if (ImageSource(null, image.StringValue(), null, null, cwd) is { } imageSource)
+                    yield return (index, "image", imageSource);
                 index++;
             }
         }
@@ -318,7 +320,9 @@ internal static partial class HistoryMedia
 
     private static PartSource? ImageSource(string? url, string? file, string? data, string? mime, string? cwd)
     {
-        if (!string.IsNullOrEmpty(file))
+        if (IsDataUrl(file))
+            url = file;
+        else if (!string.IsNullOrEmpty(file))
             return new("reference", file);
         if (IsDataUrl(url))
             return new("inline", url, MediaType: HeaderMime(url!, "image") ?? "application/octet-stream");
@@ -326,6 +330,8 @@ internal static partial class HistoryMedia
             return new("inline", data, MediaType: HeaderMime(data, "image") ?? ValidMime(mime, "image") ?? "image/unknown");
         if (string.IsNullOrEmpty(url))
             return null;
+        if (InlineMime(url, "image") is string inlineMime)
+            return new("inline", url, MediaType: inlineMime);
         string? path = LocalPath(url);
         if (path is not null)
             return new("local", null, url, path);
@@ -346,12 +352,16 @@ internal static partial class HistoryMedia
 
     private static PartSource? AudioSource(string? url, string? file, string? data = null, string? mime = null)
     {
-        if (!string.IsNullOrEmpty(file))
+        if (IsDataUrl(file))
+            url = file;
+        else if (!string.IsNullOrEmpty(file))
             return new("reference", file);
         if (!string.IsNullOrEmpty(url))
         {
             if (IsDataUrl(url))
                 return new("inline", url, MediaType: HeaderMime(url, "audio") ?? "audio/unknown");
+            if (InlineMime(url, "audio") is string inlineMime)
+                return new("inline", url, MediaType: inlineMime);
             if (LocalPath(url) is string path)
                 return new("local", null, url, path);
             return new("reference", url);
@@ -431,7 +441,44 @@ internal static partial class HistoryMedia
         }
     }
 
-    internal static bool IsDataUrl(string? value) => value?.StartsWith("data:", StringComparison.OrdinalIgnoreCase) == true;
+    internal static bool IsDataUrl(string? value) =>
+        value is not null && value.AsSpan().TrimStart().StartsWith("data:", StringComparison.OrdinalIgnoreCase);
+
+    // A typed media URL can be recorded without its data-URL header. Recognize only media signatures.
+    private static string? InlineMime(string value, string media)
+    {
+        if (Path.IsPathFullyQualified(value))
+            return null;
+        ReadOnlySpan<char> encoded = value.AsSpan().TrimStart();
+        int count = Math.Min(encoded.Length, 32) / 4 * 4;
+        Span<byte> prefix = stackalloc byte[24];
+        if (count == 0 || !Convert.TryFromBase64Chars(encoded[..count], prefix, out int length))
+            return null;
+        var bytes = prefix[..length];
+        if (media == "audio")
+            return AudioMime(bytes);
+        ImageFormat format = Image.DetectFormat(bytes);
+        return format is ImageFormat.Unknown or ImageFormat.Tga ? null : ImageFormatInfo.Get(format).MimeType;
+    }
+
+    private static string? AudioMime(ReadOnlySpan<byte> bytes)
+    {
+        if (bytes.Length >= 12 && bytes.StartsWith("RIFF"u8) && bytes[8..12].SequenceEqual("WAVE"u8))
+            return "audio/wav";
+        if (bytes.StartsWith("fLaC"u8))
+            return "audio/flac";
+        if (bytes.StartsWith("OggS\0"u8))
+            return "audio/ogg";
+        if (bytes is [(byte)'I', (byte)'D', (byte)'3', 2 or 3 or 4, ..])
+            return "audio/mpeg";
+        if (bytes.Length >= 12 && bytes[4..12].SequenceEqual("ftypM4A "u8))
+            return "audio/mp4";
+        if (bytes is [0x1a, 0x45, 0xdf, 0xa3, ..])
+            return "audio/webm";
+        if (bytes.StartsWith("ADIF"u8))
+            return "audio/aac";
+        return null;
+    }
 
     private static string? HeaderMime(string value, string media)
     {

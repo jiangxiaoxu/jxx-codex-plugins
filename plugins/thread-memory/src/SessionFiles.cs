@@ -182,7 +182,7 @@ internal static class SessionFiles
         return null;
     }
 
-    private static string? ActiveStateDatabase(string home)
+    internal static string? ActiveStateDatabase(string home)
     {
         TomlTable config;
         try

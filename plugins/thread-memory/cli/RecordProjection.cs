@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using ThreadMemoryHook;
 
 namespace ThreadMemoryCli;
 
@@ -15,10 +16,6 @@ internal static partial class RecordProjection
         "model", "model_provider_id", "service_tier", "reasoning_effort", "reasoning_summary", "personality",
     ];
 
-    [GeneratedRegex("data:[^\\s\"'<>;,]*(?:;[^\\s\"'<>;,]+)*;base64,[a-z0-9+/=_-]*",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex DataUrl();
-
     [GeneratedRegex("^(?:file:|[a-z]:[/\\\\]|[/\\\\])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex LocalReference();
 
@@ -27,9 +24,6 @@ internal static partial class RecordProjection
 
     [GeneratedRegex("^[a-zA-Z][a-zA-Z0-9_]{0,63}$")]
     private static partial Regex ErrorType();
-
-    internal static string OmitDataUrls(string text) =>
-        text.Contains("data:", StringComparison.OrdinalIgnoreCase) ? DataUrl().Replace(text, "[data URL omitted]") : text;
 
     internal static bool IsUserShellPart(string text, string? kind) => kind == "shell.user_command"
         || kind is null or "" or "unknown" && ShellBoundary(text) is not null;
@@ -79,7 +73,7 @@ internal static partial class RecordProjection
                     if (key is "base64" or "b64_json" or "image_url" or "imageurl" or "audio_url" or "audiourl" or "raw_content" or "_meta" or "blob"
                         || key.StartsWith("encrypted", StringComparison.Ordinal) || key.EndsWith("base64", StringComparison.Ordinal))
                         continue;
-                    var name = CharacterCount(property.Name) <= 80 && !DataUrl().IsMatch(property.Name) ? property.Name : "[key]";
+                    var name = CharacterCount(property.Name) <= 80 && !MediaText.ContainsDataUrl(property.Name) ? property.Name : "[key]";
                     foreach (var part in Values(property.Value, $"{field}.{name}"))
                         yield return part;
                 }
@@ -432,7 +426,7 @@ internal static partial class RecordProjection
                 var names = new JsonArray();
                 foreach (var item in recipients.Items().Take(8))
                     if (item.StringValue() is { } name && CharacterCount(name) <= 128)
-                        names.Add((JsonNode?)OmitDataUrls(name));
+                        names.Add((JsonNode?)MediaText.OmitDataUrls(name));
                 details["other_recipients"] = names;
                 details["other_recipient_count"] = recipients.GetArrayLength();
             }
@@ -470,7 +464,7 @@ internal static partial class RecordProjection
                     var settings = payload.Get("thread_settings");
                     AddLabels(details, settings, SettingsLabels);
                     if (settings.Get("collaboration_mode").Text("mode") is { } mode && CharacterCount(mode) <= 256)
-                        details["collaboration_mode"] = OmitDataUrls(mode);
+                        details["collaboration_mode"] = MediaText.OmitDataUrls(mode);
                     break;
                 case "agent_message" or "AgentMessage":
                     if (view.ItemType == "AgentMessage")
@@ -497,7 +491,7 @@ internal static partial class RecordProjection
     {
         foreach (var (name, value) in Strings(item, labels))
             if (CharacterCount(value) <= 256)
-                details[name] = OmitDataUrls(value);
+                details[name] = MediaText.OmitDataUrls(value);
     }
 
     private static void AddNumbers(JsonObject details, JsonElement item, string[] numbers)
@@ -515,7 +509,7 @@ internal static partial class RecordProjection
         int index = 0;
         foreach (var (name, value) in fields)
         {
-            var text = OmitDataUrls(value);
+            var text = MediaText.OmitDataUrls(value);
             if (!string.IsNullOrWhiteSpace(text))
                 yield return (index++, Slice(name, 0, 256), text);
         }

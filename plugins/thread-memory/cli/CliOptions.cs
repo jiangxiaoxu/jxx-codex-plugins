@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using ThreadMemoryHook;
 
 namespace ThreadMemoryCli;
 
@@ -124,12 +125,11 @@ internal sealed class CliOptions
             if (value is null && i + 1 < args.Length && (!args[i + 1].StartsWith('-') || args[i + 1] == "-"))
                 value = args[++i];
             value ??= name == "--export-images" ? "" : throw Invalid($"{name} requires a value.");
-            if (value.AsSpan().TrimStart().StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            bool path = name is "--rollout" or "--previous" or "--codex-home" or "--output" or "--output-dir" or "--export-images";
+            if ((path || name == "--segment") && IsInlineMediaArgument(value))
             {
-                if (name is "--rollout" or "--previous" or "--codex-home" or "--output" or "--output-dir" or "--export-images")
-                    throw Invalid($"{name} requires a filesystem path. Received an inline data URL.");
-                if (name == "--segment")
-                    throw Invalid("--segment requires a rollout name or ID. Received an inline data URL.");
+                string expected = path ? "a filesystem path" : "a rollout name or ID";
+                throw Invalid($"{name} requires {expected}. Received an inline data URL.");
             }
             if (name is "--previous" or "--role" or "--type" || name == "--id" && export)
             {
@@ -142,6 +142,15 @@ internal sealed class CliOptions
         }
         options.Validate();
         return options;
+    }
+
+    private static bool IsInlineMediaArgument(string value)
+    {
+        ReadOnlySpan<char> selector = value.AsSpan().TrimStart();
+        if (!selector.IsEmpty && selector[0] is '"' or '\'')
+            selector = selector[1..].TrimStart();
+        return selector.StartsWith("data:", StringComparison.OrdinalIgnoreCase) ||
+            MediaText.ContainsDataUrl(value);
     }
 
     internal void ResolveStdin()

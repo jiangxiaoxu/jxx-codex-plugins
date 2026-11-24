@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="../../../plugins/thread-memory/Directory.Build.props" />
+  <PropertyGroup>
+    <AssemblyName>Thread-Memory-Mcp-Hook-Probe</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="verify-probe.cs" />
+    <Compile Include="../../../plugins/thread-memory/src/*.cs"
+             Exclude="../../../plugins/thread-memory/src/Program.cs" />
+  </ItemGroup>
+</Project>

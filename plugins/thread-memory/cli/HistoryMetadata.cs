@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ThreadMemoryHook;
 
 namespace ThreadMemoryCli;
 
@@ -398,7 +399,7 @@ internal static class HistoryMetadata
         foreach (var part in message.Get("content").Items())
             if (part.Text("type") is "input_text" or "inputText" or "output_text" or "text" or "Text" or "summary_text"
                 && part.Text("text") is { Length: > 0 } text)
-                yield return RecordProjection.OmitDataUrls(text);
+                yield return MediaText.OmitDataUrls(text);
     }
 
     private static string InstructionCursor(HistoryRow row, int window, HashSet<string> roles, int? item, long start, long end)

@@ -397,7 +397,7 @@ internal sealed class HookStore(string home)
         error is SqliteException or IOException or UnauthorizedAccessException or
             ArgumentException or InvalidOperationException or System.Text.Json.JsonException or OverflowException;
 
-    private SqliteConnection? OpenExisting(SqliteOpenMode mode)
+    internal SqliteConnection? OpenExisting(SqliteOpenMode mode)
     {
         try
         {

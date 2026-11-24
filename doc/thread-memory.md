@@ -6,6 +6,8 @@ Use `$thread-memory` to maintain thread notes across context compaction in main 
 
 The plugin registers asynchronous `SessionStart(startup|compact|fork)`, `SubagentStart`, `PostCompact`, and `PostToolUse` hooks. On Windows x64, these hooks require PowerShell as the Codex environment shell. Each callback runs the bundled Native AOT executable directly with `& "$env:PLUGIN_ROOT/bin/Thread-Memory-Hook.exe"`. It reads a UTF-8 JSON request from stdin and returns `hookSpecificOutput` on stdout when it has additional context. Codex queues that context for delivery when it checks completed hooks. A reminder can arrive after compaction, and recovery guidance can arrive after the first continuation. With manual `/compact`, Codex normally dispatches `SessionStart` on the next regular turn.
 
+For a synchronous command experiment, set `async` to `false` on the selected `SessionStart`, `SubagentStart`, or `PostCompact` handler in an isolated test configuration. Keep `PostToolUse` asynchronous. Main-thread recovery guidance comes from `SessionStart(compact)`. For a child thread, `PostCompact` records the checkpoint and `PostToolUse` delivers recovery guidance. The [synchronous MCP Hook probe](../test-reference/thread-memory/mcp-hook-probe/README.md) uses the same Hook logic over MCP stdio.
+
 After a Desktop plugin update, check the Hook list for enabled and trusted Thread Memory hooks. Codex ties hook trust to plugin content and can request approval again for an updated package.
 
 In main threads, `SessionStart(startup)` asks the agent to maintain its thread note proactively as important decisions, constraints, progress, or next steps change. `SessionStart(compact)` repeats that instruction alongside recovery guidance. If a note is available, read it in full with `memory read`, then search the rollout as needed. If no note is available, search the rollout for missing details. `SessionStart(fork)` prepares the note copy silently.
@@ -36,7 +38,7 @@ Ask Codex to maintain a thread note, save progress before manual `/compact`, or 
 
 Main-thread forks use the creation timestamp in the new thread's original verified rollout header to choose the parent's version. The first `SessionStart(fork)` or first memory access copies that version, including an empty result if the parent had no note at that time. Further reads and edits use the new thread's revisions, and a later main-thread fork can inherit them. If a verified fork's inheritance is unavailable, an explicit `memory write` can start its own note and returns `inheritance_unavailable` in the receipt. The note store and fork logic use local SQLite and rollout headers.
 
-The native hook, native CLI, and Python panel share `$CODEX_HOME/state/plugins/thread-memory/handoff.sqlite3`. Thread Memory opens it on the first state write, including a Hook diagnostic or a note edit. `PRAGMA user_version` identifies the schema. Version 1 commits its tables and schema version in one transaction. Existing window notes are included in the durable note during initialization, including the snapshots needed for fork inheritance.
+The native Hook, CLI, and panel share `$CODEX_HOME/state/plugins/thread-memory/handoff.sqlite3`. Thread Memory opens it on the first state write, including a Hook diagnostic or a note edit. `PRAGMA user_version` identifies the schema. Version 1 commits its tables and schema version in one transaction. Existing window notes are included in the durable note during initialization, including the snapshots needed for fork inheritance.
 
 ### Hook diagnostics
 
@@ -59,7 +61,7 @@ The SQLite schema remains at version 1 and adds optional tables for observations
 
 Open **Thread Memory** from Codex Desktop's sidebar to browse main threads with saved notes, including ordinary user forks. Choose **All**, **Active** (unarchived), or **Archived** and search by title or UUID. Sort newest first by **Note updated** (the default) or **Thread updated**. The latter uses the Codex thread index and falls back to the note time when the thread time is unavailable. Counts reflect the filters, and pagination follows the selected order. Select a thread to read or copy its current note. Threads with only legacy handoffs show the latest saved handoff. On narrow panels, **Back to threads** returns to the current filters, sort order, and page. The app reads titles and previews from the Codex thread index and can verify a thread's type from its rollout header when the index has no match.
 
-The local stdio server's `handoff_manager` tool opens `ui://thread-memory/notes` as a global MCP Apps entrypoint. The plugin list uses `assets/thread-memory-icon.png`. The sidebar uses `skills/thread-memory/assets/thread-memory-entrypoint.png`. [Server implementation](../plugins/thread-memory/skills/thread-memory/scripts/rollout_handoff_app.py) · [Shared Codex MCP Apps guide](codex-mcp-apps.md)
+The local stdio server's `handoff_manager` tool opens `ui://thread-memory/notes` as a global MCP Apps entrypoint. The plugin list uses `assets/thread-memory-icon.png`. The sidebar uses `skills/thread-memory/assets/thread-memory-entrypoint.png`. [Server implementation](../plugins/thread-memory/panel/Program.cs) · [Shared Codex MCP Apps guide](codex-mcp-apps.md)
 
 Opening a new panel loads the directory. When the existing panel becomes visible again, it refreshes the current page and the selected note, keeping the search, filters, and sort order.
 
@@ -351,7 +353,7 @@ JSON output renders isolated UTF-16 surrogate escapes from old records as U+FFFD
 
 ## Runtime and validation
 
-The Windows x64 Native AOT hook and CLI use the system `winsqlite3` library and run without a separately installed .NET runtime or Python. The CLI includes Zstandard decoding for `.jsonl.zst` and the image thumbnail implementation. It accepts a `session_meta` record up to 32 MiB before the line ending. The hook accepts up to 4 MiB.
+The Windows x64 Native AOT hook, CLI, and MCP panel use the system `winsqlite3` library and run without a separately installed .NET runtime or Python. The panel serves its packaged HTML to Codex over MCP stdio and uses the same note database and rollout index as the CLI. The CLI includes Zstandard decoding for `.jsonl.zst` and the image thumbnail implementation. It accepts a `session_meta` record up to 32 MiB before the line ending. The hook accepts up to 4 MiB.
 
 ```powershell
 $cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path
@@ -360,13 +362,11 @@ $note | & $cli memory write
 $diff | & $cli memory patch
 ```
 
-The Desktop MCP panel uses Python 3.10 or newer. Its **Dependencies** view checks `zstandard` for compressed rollout headers and `tomli` for configuration on Python 3.10. **Install missing dependencies** invokes the interpreter's pip and installs the wheels in its standard `site-packages` directory. Installation requires network access, pip, and write permission to that Python installation.
-
 Zstandard archives are read sequentially. A scan that reaches a truncated frame reports the affected archive as `invalid_rollout`.
 
 ### Build and validate
 
-From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include both EXEs and `THIRD-PARTY-NOTICES.txt` in the plugin package.
+From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include the three EXEs and `THIRD-PARTY-NOTICES.txt` in the plugin package.
 
 ```powershell
 $plugin = 'plugins/thread-memory'
@@ -374,6 +374,7 @@ $artifacts = Join-Path (Resolve-Path .) 'tmp/thread-memory-native'
 $targets = @{
     'Thread-Memory-Hook' = 'src/thread-memory-hook.csproj'
     'Thread-Memory' = 'cli/thread-memory-cli.csproj'
+    'Thread-Memory-Panel' = 'panel/thread-memory-panel.csproj'
 }
 foreach ($target in $targets.GetEnumerator()) {
     $publish = Join-Path $artifacts $target.Key
@@ -384,10 +385,14 @@ foreach ($target in $targets.GetEnumerator()) {
 }
 ```
 
-Run the Python suite after packaging the executables. The integration tests exercise the hook and native CLI, including note operations, rollout queries, and interoperability with the panel. Set `THREAD_MEMORY_TEST_HOOK_EXE` or `THREAD_MEMORY_TEST_CLI_EXE` to test alternate published binaries in isolation.
+Run the file-based C# integration checks after packaging the executables. Each check creates an isolated Codex home. It can also take explicit executable paths after `--`.
 
 ```text
-python -m unittest discover -s plugins/thread-memory/tests -p "test_*.py"
+dotnet run --file plugins/thread-memory/tests/verify-rollout.cs
+dotnet run --file plugins/thread-memory/tests/verify-media.cs
+dotnet run --file plugins/thread-memory/tests/verify-memory.cs
+dotnet run --file plugins/thread-memory/tests/verify-hook.cs
+dotnet run --file plugins/thread-memory/tests/verify-panel.cs
 python <skill-creator>/scripts/quick_validate.py plugins/thread-memory/skills/thread-memory
 python <plugin-creator>/scripts/validate_plugin.py plugins/thread-memory
 ```

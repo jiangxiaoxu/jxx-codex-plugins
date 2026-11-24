@@ -1,0 +1,60 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "^(startup|compact|fork)$",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "thread-memory-hook-probe",
+            "tool": "thread_memory_hook",
+            "input": {
+              "hook_event_name": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "transcript_path": "${transcript_path}",
+              "source": "${source}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "thread-memory-hook-probe",
+            "tool": "thread_memory_hook",
+            "input": {
+              "hook_event_name": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "transcript_path": "${transcript_path}",
+              "agent_id": "${agent_id}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "^(manual|auto)$",
+        "hooks": [
+          {
+            "type": "mcp_tool",
+            "server": "thread-memory-hook-probe",
+            "tool": "thread_memory_hook",
+            "input": {
+              "hook_event_name": "${hook_event_name}",
+              "session_id": "${session_id}",
+              "transcript_path": "${transcript_path}"
+            },
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

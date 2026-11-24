@@ -3,6 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ThreadMemoryHook;
 
 namespace ThreadMemoryCli;
 
@@ -194,7 +195,7 @@ internal static class HistoryRecovery
         string fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(body.Trim())));
         string key = role + ":" + fingerprint + ":" + string.Concat(images.Select(image =>
             (image.Key?.Length ?? -1).ToString(CultureInfo.InvariantCulture) + ":" + image.Key));
-        string text = maxChars > 0 ? RecordProjection.OmitDataUrls(body) : "";
+        string text = maxChars > 0 ? MediaText.OmitDataUrls(body) : "";
         int chars = RecordProjection.CharacterCount(text);
         if (chars > maxChars)
             text = RecordProjection.Slice(text, 0, maxChars);
@@ -384,7 +385,7 @@ internal static class HistoryRecovery
         }
         catch (Exception error) when (error is RolloutReadException or HistoryIndexUnavailable or IOException or UnauthorizedAccessException)
         {
-            readError = error.Message;
+            readError = MediaText.OmitDataUrls(error.Message);
         }
         foreach (var (image, report) in images.Values)
         {
@@ -423,10 +424,11 @@ internal static class HistoryRecovery
         }
         catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException or FormatException)
         {
-            output["export_error"] = image.EventPath ? error.Message
-                : $"{image.Locator["rollout"]}:{image.Locator["line"]}: {error.Message}";
+            string message = MediaText.OmitDataUrls(error.Message);
+            output["export_error"] = image.EventPath ? message
+                : $"{image.Locator["rollout"]}:{image.Locator["line"]}: {message}";
         }
     }
 
-    private static string? Redact(string? text) => text is null ? null : RecordProjection.OmitDataUrls(text);
+    private static string? Redact(string? text) => text is null ? null : MediaText.OmitDataUrls(text);
 }

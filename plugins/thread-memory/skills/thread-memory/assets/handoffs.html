@@ -100,13 +100,6 @@
       font-size: 15px;
       line-height: 1.7;
     }
-    #dependencies > summary { font-weight: 600; padding: 7px 0; }
-    .dependency-body { padding: 5px 0; }
-    .dependency-body dl:not([hidden]) { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 10px; margin: 0 0 10px; }
-    .dependency-body dd { margin: 0; }
-    #dependency-items { list-style: none; padding: 0; margin: 0 0 10px; }
-    #dependency-items li { border-top: 1px solid var(--line); padding: 6px 0; }
-    #dependency-items strong { margin-right: 8px; }
     .thread { display: block; font: 12px/1.5 var(--font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
     .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
     footer { padding: 9px 14px; border-top: 1px solid var(--line); }
@@ -202,21 +195,6 @@
       <h2 id="management-heading">Manage thread memory</h2>
       <button id="close-manager" type="button" autofocus>Close</button>
     </header>
-    <details id="dependencies" class="management-section">
-      <summary>Python dependencies</summary>
-      <div class="dependency-body">
-        <p id="dependency-status" class="status" role="status"></p>
-        <dl id="dependency-environment" hidden>
-          <dt>Interpreter</dt><dd id="dependency-python" class="thread"></dd>
-          <dt>Install target</dt><dd id="dependency-target" class="thread"></dd>
-        </dl>
-        <ul id="dependency-items"></ul>
-        <div class="actions">
-          <button id="check-dependencies" type="button" disabled>Check again</button>
-          <button id="install-dependencies" type="button" disabled>Install missing dependencies</button>
-        </div>
-      </div>
-    </details>
     <section class="management-section" aria-labelledby="cleanup-label">
       <h2 id="cleanup-label">Deleted threads</h2>
       <p class="meta">Remove saved data for deleted threads and their subagents. Archived threads are kept.</p>
@@ -257,21 +235,18 @@
     let noteRequest = 0;
     let noteLoading = false;
     let missingThreads = [];
-    let dependenciesBusy = false;
-    let installingDependencies = false;
-    let dependencyItems = [];
 
     function send(fields) {
       host.postMessage({jsonrpc: "2.0", ...fields}, "*");
     }
 
-    function request(method, params, timeoutMs = 25000) {
+    function request(method, params) {
       const id = ++requestId;
       return new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
           pending.delete(id);
           reject(new Error("Codex did not respond. Check the current state before trying again."));
-        }, timeoutMs);
+        }, 25000);
         pending.set(id, {resolve, reject, timeout});
         send({id, method, params});
       });
@@ -304,8 +279,8 @@
       }
     });
 
-    async function callTool(name, args, timeoutMs) {
-      const result = await request("tools/call", {name, arguments: args}, timeoutMs);
+    async function callTool(name, args) {
+      const result = await request("tools/call", {name, arguments: args});
       if (result?.isError) {
         throw new Error(result.content?.find((item) => item.type === "text")?.text || "The request failed.");
       }
@@ -319,77 +294,18 @@
     }
 
     function updateControls() {
-      const blocked = busy || installingDependencies;
-      byId("refresh").disabled = !connected || blocked || listLoading || noteLoading;
+      byId("refresh").disabled = !connected || busy || listLoading || noteLoading;
       byId("manage").disabled = !connected;
-      byId("check-cleanup").disabled = !connected || blocked;
-      byId("search").disabled = !connected || installingDependencies;
-      byId("archive-status").disabled = !connected || installingDependencies;
-      byId("sort-by").disabled = !connected || installingDependencies;
-      const paginationBlocked = blocked || listLoading;
+      byId("check-cleanup").disabled = !connected || busy;
+      byId("search").disabled = !connected;
+      byId("archive-status").disabled = !connected;
+      byId("sort-by").disabled = !connected;
+      const paginationBlocked = busy || listLoading;
       byId("previous").disabled = paginationBlocked || pageIndex === 0;
       byId("next").disabled = paginationBlocked || !cursors[pageIndex + 1];
-      byId("retry-note").disabled = installingDependencies || noteLoading;
+      byId("retry-note").disabled = noteLoading;
       byId("threads").setAttribute("aria-busy", String(listLoading));
       byId("note").setAttribute("aria-busy", String(noteLoading));
-      for (const button of byId("threads").querySelectorAll("button")) {
-        button.disabled = installingDependencies;
-      }
-      updateDependencyControls();
-    }
-
-    function updateDependencyControls() {
-      byId("check-dependencies").disabled = !connected || dependenciesBusy;
-      byId("install-dependencies").disabled = !connected || busy || listLoading || noteLoading || dependenciesBusy ||
-        !dependencyItems.some((item) => !item.available);
-    }
-
-    function setDependencyStatus(message, error = false) {
-      byId("dependency-status").textContent = message;
-      byId("dependency-status").classList.toggle("error", error);
-    }
-
-    async function loadDependencies(install = false) {
-      if (!connected || dependenciesBusy) return;
-      dependenciesBusy = true;
-      installingDependencies = install;
-      updateControls();
-      setDependencyStatus(install ? "Installing missing dependencies..." : "Checking dependencies...");
-      if (install) setStatus("Installing Python dependencies...");
-      try {
-        const result = install
-          ? await callTool("install_dependencies", {}, 125000)
-          : await callTool("dependency_status", {});
-        dependencyItems = result.items;
-        byId("dependency-python").textContent = result.python;
-        byId("dependency-target").textContent = result.site_packages;
-        byId("dependency-environment").hidden = false;
-        byId("dependency-items").replaceChildren(...dependencyItems.map((item) => {
-          const entry = document.createElement("li");
-          const name = document.createElement("strong");
-          name.textContent = item.name;
-          const status = document.createElement("span");
-          status.className = "meta";
-          status.textContent = item.available ? "Available" : "Unavailable";
-          const purpose = document.createElement("p");
-          purpose.className = "meta";
-          purpose.textContent = item.purpose;
-          entry.append(name, status, purpose);
-          return entry;
-        }));
-        if (result.error) setDependencyStatus(result.error, true);
-        else if (dependencyItems.every((item) => item.available)) setDependencyStatus("All dependencies are available.");
-        else if (install) setDependencyStatus("Some dependencies are still missing.", true);
-        else setDependencyStatus("");
-      } catch (error) {
-        dependencyItems = [];
-        setDependencyStatus(error.message, true);
-      } finally {
-        dependenciesBusy = false;
-        installingDependencies = false;
-        if (install) setStatus("");
-        updateControls();
-      }
     }
 
     function formatDate(value) {
@@ -489,7 +405,7 @@
     }
 
     async function loadNote(preservePosition = false) {
-      if (!activeThread || installingDependencies) return;
+      if (!activeThread) return;
       const threadId = activeThread.thread_id;
       const reading = ++noteRequest;
       if (!preservePosition) {
@@ -540,7 +456,7 @@
 
     async function loadPage(index) {
       clearTimeout(searchTimer);
-      if (!connected || installingDependencies) return;
+      if (!connected) return;
       const revision = ++listRequest;
       const query = byId("search").value.trim();
       const archiveStatus = byId("archive-status").value;
@@ -614,7 +530,7 @@
           const reopened = isIntersecting && !wasVisible && shown;
           wasVisible = isIntersecting;
           shown ||= isIntersecting;
-          if (reopened && !busy && !installingDependencies) {
+          if (reopened && !busy) {
             if (!listLoading) refresh(pageIndex);
             else if (!noteLoading) loadNote(true);
           }
@@ -705,11 +621,6 @@
       byId("missing-threads").textContent = "";
     });
     byId("delete-cleanup").addEventListener("click", confirmCleanup);
-    byId("dependencies").addEventListener("toggle", () => {
-      if (byId("dependencies").open) loadDependencies();
-    });
-    byId("check-dependencies").addEventListener("click", () => loadDependencies());
-    byId("install-dependencies").addEventListener("click", () => loadDependencies(true));
 
     async function start() {
       if (host === window) {

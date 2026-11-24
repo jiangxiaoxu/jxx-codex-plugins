@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <AssemblyName>Thread-Memory-Panel</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/HookInstructions.cs" />
+  </ItemGroup>
+</Project>

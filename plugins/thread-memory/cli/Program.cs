@@ -314,6 +314,7 @@ internal static partial class Program
     private static int WriteError(string code, string message, int status = 1, string? path = null,
         long? line = null, string? hint = null)
     {
+        message = MediaText.OmitDataUrls(message);
         using var output = Console.OpenStandardError();
         WriteObject(output, writer =>
         {
@@ -321,9 +322,10 @@ internal static partial class Program
             writer.WriteString("code", code);
             writer.WriteString("message", message.Length <= 400 ? message : message[..400] + "…");
             if (hint is not null || status == 2)
-                writer.WriteString("hint", hint ?? "Run Thread-Memory COMMAND --help for valid options.");
+                writer.WriteString("hint", hint is null
+                    ? "Run Thread-Memory COMMAND --help for valid options." : MediaText.OmitDataUrls(hint));
             if (path is not null)
-                writer.WriteString("path", path);
+                writer.WriteString("path", MediaText.OmitDataUrls(path));
             if (line is long position)
                 writer.WriteNumber("line", position);
             writer.WriteEndObject();

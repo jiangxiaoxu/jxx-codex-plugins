@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using ThreadMemoryHook;
 
 namespace ThreadMemoryCli;
 
@@ -36,7 +37,7 @@ internal static partial class HistoryTools
 
     private static bool ContainsUrl(string text) => text.Contains("data:", StringComparison.OrdinalIgnoreCase);
     private static string HideDataUrls(string text) =>
-        ContainsUrl(text) ? DataUrls().Replace(text, HiddenDataUrl) : text;
+        ContainsUrl(text) ? DataUrls().Replace(MediaText.OmitDataUrls(text), HiddenDataUrl) : text;
 
     private static bool HiddenKey(string key) =>
         OpaqueKeys.Contains(key) ||
