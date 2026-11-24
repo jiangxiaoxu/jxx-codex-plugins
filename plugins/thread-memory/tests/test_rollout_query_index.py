@@ -1,14 +1,12 @@
 import json
 import os
 import subprocess
-import sys
 import tempfile
-import textwrap
 import unittest
 from pathlib import Path
 
 
-CLI = Path(__file__).resolve().parents[1] / "skills" / "thread-memory" / "scripts" / "rollout.py"
+from native_hook_fixture import CLI_EXE
 
 
 def row(kind, timestamp, payload):
@@ -46,7 +44,7 @@ class RolloutQueryIndexTest(unittest.TestCase):
     def query(self, command, *options):
         result = subprocess.run(
             [
-                sys.executable, "-B", str(CLI), command,
+                str(CLI_EXE), command,
                 "--rollout", str(self.rollout), "--codex-home", str(self.home), *options,
             ],
             capture_output=True,
@@ -160,53 +158,21 @@ class RolloutQueryIndexTest(unittest.TestCase):
         self.assertEqual([hit["text"] for hit in result["items"]], ["needle from a renamed file"])
         self.assertFalse(self.index.exists())
 
-    def test_truncated_search_replays_after_a_same_size_rewrite_of_the_first_hit(self):
+    def test_reference_survives_append_and_recent_chat_includes_the_new_row(self):
         stamp = "2026-01-01T10:00:00Z"
-        self.append(*(message(stamp, "user", f"needle {word}") for word in ("old", "two", "three")))
-        options = ("needle", "--since", stamp, "--limit", "1")
-        first = self.query("search", *options)
-        self.assertEqual(first["items"][0]["text"], "needle old")
-        self.assertTrue(first["next_cursor"])
+        self.rollout.write_bytes(row("session_meta", stamp, {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "base_instructions": {"text": "x" * (4 * 1024 * 1024)},
+        }))
+        self.append(message(stamp, "user", "needle before append"))
+        hit, = self.query("search", "needle", "--since", stamp)["items"]
         self.assertTrue(self.index.is_file())
+        self.append(message(stamp, "assistant", "new reply"))
 
-        concurrent_rewrite = textwrap.dedent("""\
-            import sys
-            from pathlib import Path
-
-            cli, source, home, offset, *options = sys.argv[1:]
-            sys.path.insert(0, str(Path(cli).parent))
-            from rollout import main
-            from rollout_query_index import RolloutIndex
-
-            original_rows = RolloutIndex.rows
-
-            def rows_with_rewrite(self, *args, **kwargs):
-                for entry in original_rows(self, *args, **kwargs):
-                    yield entry
-                    if entry[0] == 2:
-                        with Path(source).open("r+b") as writer:
-                            writer.seek(int(offset))
-                            old = writer.readline()
-                            new = old.replace(b"needle old", b"needle new", 1)
-                            assert old != new and len(old) == len(new)
-                            writer.seek(int(offset))
-                            writer.write(new)
-
-            RolloutIndex.rows = rows_with_rewrite
-            sys.argv = [cli, "search", "--rollout", source, "--codex-home", home, *options]
-            raise SystemExit(main())
-        """)
-        result = subprocess.run(
-            [
-                sys.executable, "-B", "-c", concurrent_rewrite, str(CLI),
-                str(self.rollout), str(self.home), str(len(self.header)), *options,
-            ],
-            capture_output=True,
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        updated = json.loads(result.stdout)
-        self.assertEqual(updated["items"][0]["text"], "needle new")
-        self.assertEqual(updated, self.query("search", *options, "--salvage"))
+        selected, = self.query("read", "--ref", hit["ref"])["items"]
+        self.assertEqual(selected["fields"][0]["text"], "needle before append")
+        recent = self.query("transcript", "--last", "2")["items"]
+        self.assertEqual([item["text"] for item in recent], ["needle before append", "new reply"])
 
 
 if __name__ == "__main__":

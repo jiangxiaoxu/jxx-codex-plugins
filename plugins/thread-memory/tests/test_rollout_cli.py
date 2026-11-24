@@ -2,20 +2,13 @@ import json
 import os
 import sqlite3
 import subprocess
-import sys
 import tempfile
 import unittest
 from contextlib import closing
 from pathlib import Path
 from uuid import uuid4
 
-CLI = (
-    Path(__file__).resolve().parents[1]
-    / "skills"
-    / "thread-memory"
-    / "scripts"
-    / "rollout.py"
-)
+from native_hook_fixture import CLI_EXE
 
 
 def encoded(*rows):
@@ -36,7 +29,7 @@ def response(ordinal, message):
 
 class RolloutCLITest(unittest.TestCase):
     def test_fatal_errors_emit_one_json_diagnostic(self):
-        cli = [sys.executable, "-B", str(CLI)]
+        cli = [str(CLI_EXE)]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "fixture.jsonl"
             path.write_bytes(
@@ -113,7 +106,7 @@ class RolloutCLITest(unittest.TestCase):
                     os.close(read_fd)
                     try:
                         result = subprocess.run(
-                            [sys.executable, "-B", str(CLI), *arguments],
+                            [str(CLI_EXE), *arguments],
                             stdout=write_fd,
                             stderr=subprocess.PIPE,
                             check=False,
@@ -144,9 +137,7 @@ class RolloutCLITest(unittest.TestCase):
                 )
             )
             command = [
-                sys.executable,
-                "-B",
-                str(CLI),
+                str(CLI_EXE),
                 "recover",
                 "--rollout",
                 str(path),
@@ -232,9 +223,7 @@ class RolloutCLITest(unittest.TestCase):
             def run(command, *options, stdin=None, check=True):
                 return subprocess.run(
                     [
-                        sys.executable,
-                        "-B",
-                        str(CLI),
+                        str(CLI_EXE),
                         command,
                         "--rollout",
                         str(path),
@@ -349,7 +338,7 @@ class RolloutCLITest(unittest.TestCase):
                     message,
                 )
             )
-            cli = [sys.executable, "-B", str(CLI)]
+            cli = [str(CLI_EXE)]
             source = ["--rollout", str(path)]
             search = json.loads(
                 subprocess.check_output(
@@ -469,7 +458,7 @@ class RolloutCLITest(unittest.TestCase):
                     },
                 )
             )
-            cli = [sys.executable, "-B", str(CLI)]
+            cli = [str(CLI_EXE)]
             source = ["--rollout", str(path)]
             raw = subprocess.check_output(
                 [*cli, "inventory", *source, "--type", "FutureWidget"]
@@ -528,7 +517,7 @@ class RolloutCLITest(unittest.TestCase):
                     },
                 )
             )
-            cli = [sys.executable, "-B", str(CLI)]
+            cli = [str(CLI_EXE)]
             source = ["--rollout", str(path)]
             page = json.loads(
                 subprocess.check_output([*cli, "read", *source, "--role", "tool"])
@@ -569,9 +558,7 @@ class RolloutCLITest(unittest.TestCase):
                 + b'{"type":'
             )
             command = [
-                sys.executable,
-                "-B",
-                str(CLI),
+                str(CLI_EXE),
                 "search",
                 "needle",
                 "--rollout",
@@ -672,9 +659,7 @@ class RolloutCLITest(unittest.TestCase):
                 return json.loads(
                     subprocess.check_output(
                         [
-                            sys.executable,
-                            "-B",
-                            str(CLI),
+                            str(CLI_EXE),
                             command,
                             "--codex-home",
                             str(home),
@@ -795,9 +780,7 @@ class RolloutCLITest(unittest.TestCase):
             def run(command, *args):
                 output = subprocess.check_output(
                     [
-                        sys.executable,
-                        "-B",
-                        str(CLI),
+                        str(CLI_EXE),
                         command,
                         "--rollout",
                         str(path),
@@ -874,7 +857,7 @@ class RolloutCLITest(unittest.TestCase):
                     },
                 )
             )
-            cli = [sys.executable, "-B", str(CLI)]
+            cli = [str(CLI_EXE)]
             source = ["--rollout", str(path)]
             raw = subprocess.check_output(
                 [*cli, "instructions", *source, "--window", "3", "--role", "developer"]
@@ -921,9 +904,7 @@ class RolloutCLITest(unittest.TestCase):
                 + encoded(response(2, "unpaired \ud800 surrogate"))
             )
             command = [
-                sys.executable,
-                "-B",
-                str(CLI),
+                str(CLI_EXE),
                 "transcript",
                 "--rollout",
                 str(path),
@@ -958,7 +939,7 @@ class RolloutCLITest(unittest.TestCase):
                     {
                         "type": "compacted",
                         "payload": {"window_number": 1, "replacement_history": []},
-                        "timestamp": "2026-11-21T16:10:00Z",
+                        "timestamp": "2026-11-21T16:10:00.123456789Z",
                     },
                     {**response(4, "outside"), "timestamp": "2026-11-21T16:11:00Z"},
                 )
@@ -967,9 +948,7 @@ class RolloutCLITest(unittest.TestCase):
             def run(command, *options, stdin=None, check=True):
                 return subprocess.run(
                     [
-                        sys.executable,
-                        "-B",
-                        str(CLI),
+                        str(CLI_EXE),
                         command,
                         "--rollout",
                         str(path),
@@ -989,8 +968,12 @@ class RolloutCLITest(unittest.TestCase):
             windows = json.loads(run("windows", *period).stdout)["items"]
             self.assertEqual(
                 [(window["window"], window["compacted_at"]) for window in windows],
-                [(1, "2026-11-21T16:10:00Z")],
+                [(1, "2026-11-21T16:10:00.123456789Z")],
             )
+            checkpoint_boundary = json.loads(
+                run("windows", "--window", "1", "--since", windows[0]["compacted_at"]).stdout
+            )["items"]
+            self.assertEqual([window["window"] for window in checkpoint_boundary], [1])
             first = json.loads(run("transcript", *period, "--limit", "1").stdout)
             self.assertRegex(first["next_cursor"], r"\A[0-9a-f]{16}:2\Z")
             cursor = (first["next_cursor"] + "\n").encode("utf-8")
@@ -1095,9 +1078,7 @@ class RolloutCLITest(unittest.TestCase):
                 )
             )
             command = [
-                sys.executable,
-                "-B",
-                str(CLI),
+                str(CLI_EXE),
                 "search",
                 "needle",
                 "--thread",

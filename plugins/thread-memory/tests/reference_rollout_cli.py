@@ -1,4 +1,4 @@
-"""Inspect, search, and recover local Codex rollout history."""
+"""Python reference CLI for parity and cross-runtime storage tests."""
 
 from __future__ import annotations
 
@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import BinaryIO
 from uuid import UUID
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "skills" / "thread-memory" / "scripts"))
 
 from rollout_checkpoint_instructions import checkpoint_instructions
 from rollout_handoff_store import MAX_HOOK_DIAGNOSTICS, read_hook_diagnostics, read_reminder_telemetry

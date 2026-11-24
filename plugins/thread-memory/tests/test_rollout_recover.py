@@ -5,6 +5,8 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from native_hook_fixture import CLI_EXE
+
 SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "thread-memory" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 from rollout_recover import recover
@@ -44,9 +46,7 @@ class RecoveryTests(unittest.TestCase):
             )
             process = subprocess.run(
                 [
-                    sys.executable,
-                    "-B",
-                    str(SCRIPTS / "rollout.py"),
+                    str(CLI_EXE),
                     "recover",
                     "--rollout",
                     str(source),

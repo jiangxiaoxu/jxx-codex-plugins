@@ -4,5 +4,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="../src/*.cs" Exclude="../src/Program.cs;../src/HookInstructions.cs" />
+    <PackageReference Include="Meziantou.Framework.Imaging" Version="1.2.18" />
   </ItemGroup>
 </Project>

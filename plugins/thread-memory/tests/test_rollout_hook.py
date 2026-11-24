@@ -13,11 +13,11 @@ from hashlib import blake2s
 from pathlib import Path
 from uuid import uuid4
 
-from native_hook_fixture import run_native_hook
+from native_hook_fixture import CLI_EXE, run_native_hook
 
 PLUGIN = Path(__file__).resolve().parents[1]
-SCRIPT = PLUGIN / "skills" / "thread-memory" / "scripts" / "rollout.py"
-sys.path.insert(0, str(SCRIPT.parent))
+SCRIPT = Path(__file__).with_name("reference_rollout_cli.py")
+sys.path.insert(0, str(SCRIPT.parents[1] / "skills" / "thread-memory" / "scripts"))
 
 from rollout_handoff_snapshot import reminder_window_id, snapshot
 
@@ -79,9 +79,7 @@ class RolloutHookTest(unittest.TestCase):
     def diagnostics(self, thread_id):
         result = subprocess.run(
             [
-                sys.executable,
-                "-B",
-                str(SCRIPT),
+                str(CLI_EXE),
                 "diagnostics",
                 "--thread",
                 thread_id,
@@ -646,7 +644,7 @@ class RolloutHookTest(unittest.TestCase):
         ))
 
         result = subprocess.run(
-            [sys.executable, "-B", str(SCRIPT), "diagnostics", "--summary", "--codex-home", str(self.codex_home)],
+            [str(CLI_EXE), "diagnostics", "--summary", "--codex-home", str(self.codex_home)],
             capture_output=True, check=True,
         )
         summary = json.loads(result.stdout)["items"]

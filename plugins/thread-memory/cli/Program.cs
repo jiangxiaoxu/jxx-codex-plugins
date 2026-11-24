@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Win32.SafeHandles;
 using ThreadMemoryHook;
 
@@ -10,7 +11,6 @@ namespace ThreadMemoryCli;
 
 internal static partial class Program
 {
-    private const string Usage = "Usage: Thread-Memory memory {read|write|patch} [--thread UUID] [--codex-home PATH]";
     private const int MaxNoteBytes = 12_288;
     private const int MaxPatchBytes = 128 * 1024;
     private const int StdOutputHandle = -11;
@@ -19,55 +19,37 @@ internal static partial class Program
 
     public static int Main(string[] args)
     {
-        if (args is ["--help" or "-h"])
-        {
-            Console.WriteLine(Usage);
-            return 0;
-        }
-        if (args is not ["memory", ..])
-            return WriteError("invalid_arguments", Usage, 2);
-
-        string? action = null;
-        string? thread = null;
-        string? home = null;
-        for (int i = 1; i < args.Length; i++)
-        {
-            string option = args[i];
-            if (option is "--help" or "-h")
-            {
-                Console.WriteLine(Usage);
-                return 0;
-            }
-            if (action is null && option is ("read" or "write" or "patch"))
-            {
-                action = option;
-                continue;
-            }
-            int equals = option.IndexOf('=');
-            string name = equals < 0 ? option : option[..equals];
-            if (name is not ("--thread" or "--codex-home"))
-                return WriteError("invalid_arguments", $"Unrecognized argument: {name}", 2);
-            if (equals < 0 && (i + 1 == args.Length || args[i + 1].StartsWith('-')))
-                return WriteError("invalid_arguments", $"{name} expects one value.", 2);
-            string value = equals >= 0 ? option[(equals + 1)..] : args[++i];
-            if (name == "--thread")
-                thread = value;
-            else
-                home = value;
-        }
-        if (action is null)
-            return WriteError("invalid_arguments", Usage, 2);
-
         try
         {
-            if (string.IsNullOrEmpty(thread))
-                thread = Environment.GetEnvironmentVariable("CODEX_THREAD_ID");
-            if (!Guid.TryParse(thread, out var id))
-                throw new ArgumentException("memory requires --thread or CODEX_THREAD_ID with a thread UUID");
-            home ??= Environment.GetEnvironmentVariable("CODEX_HOME") ??
-                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex");
+            var options = CliOptions.Parse(args);
+            if (options.Help)
+                return WriteStdout(output => output.Write(Utf8.GetBytes(options.Usage() + "\n")));
+            Console.CancelKeyPress += (_, signal) =>
+            {
+                signal.Cancel = true;
+                Environment.Exit(WriteError("interrupted", "Interrupted by user.", 130));
+            };
             SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
-            return Memory(action, home, id.ToString("D"));
+            if (options.Command == "memory")
+            {
+                if (!Guid.TryParse(options.Thread, out var id))
+                    throw new CliInputException("memory requires --thread or CODEX_THREAD_ID with a thread UUID");
+                return Memory(options.Pattern!, options.Home, id.ToString("D"));
+            }
+            if (options.Command == "diagnostics")
+                return WriteDocument(Diagnostics.Run(options));
+            options.ResolveStdin();
+            return Query(options);
+        }
+        catch (CliInputException error)
+        {
+            return WriteError(error.Code, error.Message, error.Code == "invalid_arguments" ? 2 : 1);
+        }
+        catch (RolloutReadException error)
+        {
+            return WriteError("invalid_rollout", error.Message, path: error.Path, line: error.Line,
+                hint: error.Message.StartsWith("invalid JSONL", StringComparison.Ordinal)
+                    ? "Retry with --salvage to skip damaged records." : null);
         }
         catch (ThreadMemory.InheritanceUnavailable error)
         {
@@ -75,7 +57,7 @@ internal static partial class Program
         }
         catch (ThreadMemory.InvalidNoteRollout error)
         {
-            return WriteError("invalid_rollout", error.Message, path: error.Path);
+            return WriteError("invalid_rollout", error.Message, path: error.Path, line: 1);
         }
         catch (FileNotFoundException error)
         {
@@ -103,6 +85,83 @@ internal static partial class Program
         }
     }
 
+    private static int Query(CliOptions options)
+    {
+        string? destination = options.One("--output") is string path ? Path.GetFullPath(path) : null;
+        if (destination is not null && File.Exists(destination))
+            throw new CliInputException($"Output already exists: {destination}", "output_exists");
+        bool pureRead = options.Command is not ("export-image" or "export-audio") &&
+            !(options.Command == "recover" && options.Has("--export-images"));
+        var source = HistorySource.Open(options, allowIndex: pureRead);
+        JsonObject result;
+        try
+        {
+            result = Dispatch(options, source);
+        }
+        catch (HistoryIndexUnavailable) when (pureRead)
+        {
+            source = HistorySource.Open(options, allowIndex: false);
+            result = Dispatch(options, source);
+        }
+        var gaps = source.MissingBaseRollouts;
+        var damaged = source.DamagedRecords;
+        if (gaps.Count != 0)
+            result["missing_base_rollouts"] = gaps.DeepClone();
+        if (damaged.Count != 0)
+        {
+            int count = damaged.Count;
+            int shown = destination is null ? Math.Min(count, 20) : count;
+            result["damaged_records"] = new JsonObject
+            {
+                ["count"] = count,
+                ["truncated"] = shown < count,
+                ["items"] = new JsonArray(damaged.Take(shown).Select(item => item?.DeepClone()).ToArray()),
+            };
+        }
+
+        bool markdown = options.Command == "transcript" && options.One("--format") == "markdown";
+        void WriteOutput(Stream output)
+        {
+            if (markdown)
+                output.Write(Utf8.GetBytes(HistoryChat.FormatMarkdown(result)));
+            else
+                WriteJson(output, writer => result.WriteTo(writer));
+        }
+        if (destination is null)
+            return WriteStdout(WriteOutput);
+
+        long length;
+        try
+        {
+            using var file = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+            WriteOutput(file);
+            length = file.Position;
+        }
+        catch (IOException error) when ((error.HResult & 0xffff) is 80 or 183)
+        {
+            throw new CliInputException($"Output already exists: {destination}", "output_exists");
+        }
+        var receipt = new JsonObject { ["output"] = destination, ["bytes"] = length };
+        if (result.TryGetPropertyValue("next_cursor", out var cursor))
+            receipt["next_cursor"] = cursor?.DeepClone();
+        if (damaged.Count != 0)
+            receipt["damaged_record_count"] = damaged.Count;
+        if (gaps.Count != 0)
+            receipt["missing_base_rollout_count"] = gaps.Count;
+        return WriteDocument(receipt);
+    }
+
+    private static JsonObject Dispatch(CliOptions options, HistorySource source) => options.Command switch
+    {
+        "search" or "read" or "inventory" => HistoryRecords.Run(options, source),
+        "tool-input" or "tool-output" => HistoryTools.Run(options, source),
+        "transcript" => HistoryChat.Run(options, source),
+        "recover" => HistoryRecovery.Run(options, source),
+        "inspect" or "lineage" or "windows" or "tokens" or "instructions" => HistoryMetadata.Run(options, source),
+        "images" or "attachments" or "export-image" or "export-audio" => HistoryMedia.Run(options, source),
+        _ => throw new InvalidOperationException($"Unrouted command: {options.Command}."),
+    };
+
     private static int Memory(string action, string home, string threadId)
     {
         string? summary = null;
@@ -128,7 +187,7 @@ internal static partial class Program
         string? inheritance = null;
         try
         {
-            current = ThreadMemory.ReadForCli(store, home, threadId);
+            current = ThreadMemory.ReadForCli(store, home, threadId, ReadNoteHeader);
         }
         catch (ThreadMemory.InheritanceUnavailable error) when (action == "write")
         {
@@ -170,6 +229,18 @@ internal static partial class Program
             if (action == "write")
                 writer.WriteBoolean("truncated", truncated);
         });
+    }
+
+    private static JsonElement ReadNoteHeader(string path)
+    {
+        try
+        {
+            return HistorySource.ReadHeader(path);
+        }
+        catch (RolloutReadException error)
+        {
+            throw new ThreadMemory.InvalidNoteRollout(path, error.Message);
+        }
     }
 
     private static (string Summary, bool Truncated) ReadNote(Stream stdin)
@@ -215,14 +286,20 @@ internal static partial class Program
         DateTimeOffset.UnixEpoch.AddTicks(checked(microseconds * 10))
             .ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'", CultureInfo.InvariantCulture);
 
-    private static int WriteResult(Action<Utf8JsonWriter> fields)
+    private static int WriteResult(Action<Utf8JsonWriter> fields) =>
+        WriteStdout(output => WriteObject(output, fields));
+
+    private static int WriteDocument(JsonObject result) =>
+        WriteStdout(output => WriteJson(output, writer => result.WriteTo(writer)));
+
+    private static int WriteStdout(Action<Stream> write)
     {
         try
         {
             // Console's standard stream suppresses Windows broken-pipe errors.
             using var handle = new SafeFileHandle(GetStdHandle(StdOutputHandle), ownsHandle: false);
             using var output = new FileStream(handle, FileAccess.Write);
-            WriteJson(output, fields);
+            write(output);
             return 0;
         }
         catch (IOException error) when ((error.HResult & 0xffff) is 109 or 232)
@@ -234,35 +311,41 @@ internal static partial class Program
     [LibraryImport("kernel32.dll")]
     private static partial IntPtr GetStdHandle(int standardHandle);
 
-    private static int WriteError(string code, string message, int status = 1, string? path = null)
+    private static int WriteError(string code, string message, int status = 1, string? path = null,
+        long? line = null, string? hint = null)
     {
         using var output = Console.OpenStandardError();
-        WriteJson(output, writer =>
+        WriteObject(output, writer =>
         {
             writer.WriteStartObject("error");
             writer.WriteString("code", code);
             writer.WriteString("message", message.Length <= 400 ? message : message[..400] + "…");
-            if (status == 2)
-                writer.WriteString("hint", "Run Thread-Memory memory --help for valid options.");
+            if (hint is not null || status == 2)
+                writer.WriteString("hint", hint ?? "Run Thread-Memory COMMAND --help for valid options.");
             if (path is not null)
-            {
                 writer.WriteString("path", path);
-                writer.WriteNumber("line", 1);
-            }
+            if (line is long position)
+                writer.WriteNumber("line", position);
             writer.WriteEndObject();
         });
         return status;
     }
 
-    private static void WriteJson(Stream output, Action<Utf8JsonWriter> fields)
+    private static void WriteObject(Stream output, Action<Utf8JsonWriter> fields) =>
+        WriteJson(output, writer =>
+        {
+            writer.WriteStartObject();
+            fields(writer);
+            writer.WriteEndObject();
+        });
+
+    private static void WriteJson(Stream output, Action<Utf8JsonWriter> document)
     {
         using var writer = new Utf8JsonWriter(output, new JsonWriterOptions
         {
             Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         });
-        writer.WriteStartObject();
-        fields(writer);
-        writer.WriteEndObject();
+        document(writer);
         writer.Flush();
         output.WriteByte((byte)'\n');
     }

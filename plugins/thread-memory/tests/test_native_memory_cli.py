@@ -8,15 +8,11 @@ from pathlib import Path
 from uuid import uuid4
 
 
-PLUGIN = Path(__file__).resolve().parents[1]
-NATIVE_CLI = (
-    str(Path(os.environ.get(
-        "THREAD_MEMORY_TEST_CLI_EXE", PLUGIN / "bin" / "Thread-Memory.exe"
-    )).resolve()),
-)
-PYTHON_CLI = (
-    sys.executable, "-B", str(PLUGIN / "skills" / "thread-memory" / "scripts" / "rollout.py"),
-)
+from native_hook_fixture import CLI_EXE, REFERENCE_CLI
+
+
+NATIVE_CLI = (str(CLI_EXE),)
+PYTHON_CLI = (sys.executable, "-B", str(REFERENCE_CLI))
 
 
 class NativeMemoryCLITest(unittest.TestCase):

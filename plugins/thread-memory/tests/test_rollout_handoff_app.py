@@ -11,6 +11,8 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
+from native_hook_fixture import CLI_EXE
+
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "skills" / "thread-memory" / "scripts"
 sys.path.insert(0, str(SCRIPTS))
@@ -137,7 +139,7 @@ class HandoffAppTest(unittest.TestCase):
         with path.open("a", encoding="utf-8") as stream:
             stream.write(json.dumps(item) + "\n")
         result = subprocess.run(
-            [sys.executable, "-B", str(SCRIPTS / "rollout.py"), "search",
+            [str(CLI_EXE), "search",
              "--rollout", str(path), "--codex-home", str(self.home), "--since", stamp, "Cached fixture"],
             capture_output=True, env=self.env,
         )

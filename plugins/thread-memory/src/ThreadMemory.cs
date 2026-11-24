@@ -11,7 +11,8 @@ internal static class ThreadMemory
     internal sealed class InheritanceUnavailable(Exception inner)
         : Exception($"cannot inherit thread note: {inner.Message}", inner);
 
-    internal sealed class InvalidNoteRollout(string path) : Exception("Cannot read a valid session_meta record.")
+    internal sealed class InvalidNoteRollout(string path, string message = "Cannot read a valid session_meta record.")
+        : Exception(message)
     {
         internal string Path { get; } = path;
     }
@@ -59,7 +60,8 @@ internal static class ThreadMemory
         }
     }
 
-    internal static Note? ReadForCli(HookStore store, string home, string threadId) => Initialize(store, home, threadId, []);
+    internal static Note? ReadForCli(HookStore store, string home, string threadId,
+        Func<string, JsonElement> readHeader) => Initialize(store, home, threadId, [], readHeader);
 
     internal static Note? SaveForCli(HookStore store, string threadId, string summary, long expectedRevision)
     {
@@ -88,7 +90,8 @@ internal static class ThreadMemory
         return saved;
     }
 
-    private static Note? Initialize(HookStore store, string home, string threadId, HashSet<string> visiting)
+    private static Note? Initialize(HookStore store, string home, string threadId, HashSet<string> visiting,
+        Func<string, JsonElement>? readHeader = null)
     {
         using (var connection = store.OpenRead())
         {
@@ -97,9 +100,10 @@ internal static class ThreadMemory
         }
 
         string? original = SessionFiles.FindRollout(home, threadId);
-        string path = original ?? SessionFiles.FindRollout(home, threadId, current: true)
+        string path = original ?? SessionFiles.FindRollout(home, threadId, current: true,
+            readHeader: readHeader is null ? null : ReadIndexHeader)
             ?? throw new FileNotFoundException($"No local rollout found for {threadId}.");
-        var header = SessionFiles.ReadHeader(path);
+        var header = (readHeader ?? SessionFiles.ReadHeader)(path);
         if (header.ValueKind == JsonValueKind.Undefined)
             throw new InvalidNoteRollout(path);
         if (SessionFiles.String(header, "id") != threadId)
@@ -130,7 +134,7 @@ internal static class ThreadMemory
             visiting.Add(threadId);
             try
             {
-                inherited = NoteAt(store, home, parentId.ToString("D"), forkUs, visiting);
+                inherited = NoteAt(store, home, parentId.ToString("D"), forkUs, visiting, readHeader);
             }
             finally
             {
@@ -144,9 +148,22 @@ internal static class ThreadMemory
         }
         var baseline = inherited is { Summary: not null } ? inherited : new Note(null, forkUs);
         return InitializeRevisions(store, threadId, baseline, forkUs);
+
+        JsonElement ReadIndexHeader(string filename)
+        {
+            try
+            {
+                return readHeader!(filename);
+            }
+            catch (InvalidNoteRollout)
+            {
+                return default;
+            }
+        }
     }
 
-    private static Note? NoteAt(HookStore store, string home, string threadId, long cutoffUs, HashSet<string> visiting)
+    private static Note? NoteAt(HookStore store, string home, string threadId, long cutoffUs, HashSet<string> visiting,
+        Func<string, JsonElement>? readHeader)
     {
         if (visiting.Contains(threadId))
             throw new InvalidDataException($"Cycle in rollout fork ancestry at {threadId}.");
@@ -161,7 +178,7 @@ internal static class ThreadMemory
                     return fallback;
             }
         }
-        Initialize(store, home, threadId, visiting);
+        Initialize(store, home, threadId, visiting, readHeader);
         using var initialized = store.OpenRead();
         return initialized is null ? null : ReadNote(initialized, threadId, cutoffUs);
     }

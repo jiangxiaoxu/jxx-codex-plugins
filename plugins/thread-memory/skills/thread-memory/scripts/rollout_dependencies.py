@@ -8,8 +8,7 @@ import sysconfig
 
 
 _PACKAGES = {
-    "zstandard": ("zstandard", "Read compressed rollout archives."),
-    "Pillow": ("Pillow>=9.1", "Export and resize image attachments."),
+    "zstandard": ("zstandard", "Verify thread headers in compressed rollout archives."),
     "tomli": ("tomli", "Read Codex configuration on Python 3.10."),
 }
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -19,10 +18,6 @@ import sys
 
 def available(name):
     try:
-        if name == 'Pillow':
-            from PIL import Image, ImageOps, features
-            from PIL.Image import Resampling
-            return features.check('webp')
         if name == 'zstandard':
             import zstandard
             return hasattr(zstandard, 'ZstdDecompressor')

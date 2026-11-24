@@ -44,9 +44,10 @@ internal static class SessionFiles
         return value.ValueKind == JsonValueKind.String ? value.GetString() : null;
     }
 
-    internal static string? FindRollout(string home, string threadId, bool current = false)
+    internal static string? FindRollout(string home, string threadId, bool current = false,
+        Func<string, JsonElement>? readHeader = null)
     {
-        if (current && IndexedPath(home, threadId) is { } indexed)
+        if (current && IndexedPath(home, threadId, readHeader ?? ReadHeader) is { } indexed)
             return indexed;
 
         var directoryOptions = new EnumerationOptions
@@ -130,7 +131,7 @@ internal static class SessionFiles
     private static FileStream OpenRead(string path) =>
         new(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
 
-    private static string? IndexedPath(string home, string threadId)
+    private static string? IndexedPath(string home, string threadId, Func<string, JsonElement> readHeader)
     {
         string? path;
         bool authoritative;
@@ -168,7 +169,7 @@ internal static class SessionFiles
         try
         {
             if (!string.IsNullOrEmpty(path) && AvailablePath(path) is { } candidate
-                && String(ReadHeader(candidate), "id") == threadId)
+                && String(readHeader(candidate), "id") == threadId)
                 return candidate;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)

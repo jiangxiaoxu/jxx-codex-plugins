@@ -13,10 +13,8 @@ from uuid import uuid4
 
 from native_hook_fixture import run_native_hook
 
-SCRIPT = (
-    Path(__file__).resolve().parents[1] / "skills" / "thread-memory" / "scripts" / "rollout.py"
-)
-sys.path.insert(0, str(SCRIPT.parent))
+SCRIPT = Path(__file__).with_name("reference_rollout_cli.py")
+sys.path.insert(0, str(SCRIPT.parents[1] / "skills" / "thread-memory" / "scripts"))
 
 import rollout_hook
 from rollout_handoff_diff import apply_handoff_diff
