@@ -97,6 +97,29 @@ static async Task VerifyUi(DevTools browser)
     await browser.Evaluate("el('threads').querySelector('button').click()");
     await browser.WaitFor("!el('reader-body').hidden && el('note').textContent.includes('Example saved note')",
         "The selected thread note should load.");
+    await browser.Check("""
+        (() => {
+          const note = el('note');
+          const task = note.querySelector('li input[type="checkbox"]');
+          return note.querySelector('blockquote > p') && task?.disabled && task.checked;
+        })()
+        """, "The reader should display the server's HTML with a read-only task.");
+    await browser.Check("""
+        (() => {
+          const quote = el('note').querySelector('blockquote > p');
+          const [first, second] = quote.querySelectorAll('span');
+          const step = second.getBoundingClientRect().top - first.getBoundingClientRect().top;
+          const lineHeight = parseFloat(frame.contentWindow.getComputedStyle(quote).lineHeight);
+          return Math.abs(step - lineHeight) < 1;
+        })()
+        """, "A rendered line break followed by a source newline should move down by one line.");
+    await browser.Evaluate("""
+        Object.defineProperty(frame.contentWindow.navigator, 'clipboard', {
+          value: {writeText: async text => { fixture.copiedNote = text; }}
+        });
+        el('copy-summary').click();
+        """);
+    await browser.WaitFor("fixture.copiedNote === formattedNote", "Copy should preserve the original Markdown.");
     await browser.Evaluate("fixture.rows[0].archived = true; el('refresh').click()");
     await browser.WaitFor("el('threads').querySelectorAll('button').length === 1 && el('reader-body').hidden",
         "Refresh should clear a selection that has just left the active filter.");
@@ -504,6 +527,9 @@ static class HostFixture
           latest_at:'2026-11-23T08:29:00Z', title:olderTitle};
         const inheritedChild = {...rows[1], thread_id:inheritedId, latest_at:'2026-11-21T08:29:00Z',
           title:'/root/inherited_context', inherited:true};
+        const formattedNote = '## Example saved note\n\n> First line\n> Second line\n\n- [x] Checked';
+        const formattedNoteHtml = '<h2>Example saved note</h2><blockquote><p><span>First line</span><br>\n<span>Second line</span></p></blockquote>' +
+          '<ul><li class="task-list-item"><input type="checkbox" checked disabled> Checked</li></ul>';
         const cleanupCandidates = [secondId, '00000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000006'];
         const fixture = { firstId, secondId, inheritedId, ownTitle, olderTitle, rows, cleanupCandidates,
           noteUpdatedAt:new Date(Date.now() - 25 * 3600000).toISOString(),
@@ -567,15 +593,17 @@ static class HostFixture
               case 'handoff_read':
                 fixture.lastRead = args.thread_id;
                 if (!fixture.noteStoreAvailable) {
-                  tool({summary:null, updated_at:null, last_read_at:null, note_available:null});
+                  tool({summary:null, summary_html:null, updated_at:null, last_read_at:null, note_available:null});
                 } else if (args.from_fork === secondId && args.thread_id === inheritedId) {
-                  if (fixture.inheritance === 'available') tool({summary:'Example fork snapshot', updated_at:'2026-11-24T08:29:00Z', last_read_at:null, note_available:true});
+                  if (fixture.inheritance === 'available') tool({summary:'Example fork snapshot',
+                    summary_html:'<p>Example fork snapshot</p>', updated_at:'2026-11-24T08:29:00Z', last_read_at:null, note_available:true});
                   else reply({isError:true, content:[{type:'text', text:'Could not verify the fork history.'}]});
                 } else if (args.thread_id === ownChild.thread_id && fixture.ownChildAvailability !== true) {
-                  tool({summary:null, updated_at:null, last_read_at:null, note_available:fixture.ownChildAvailability});
+                  tool({summary:null, summary_html:null, updated_at:null, last_read_at:null, note_available:fixture.ownChildAvailability});
                 } else if (args.thread_id === secondId) {
-                  tool({summary:null, updated_at:null, last_read_at:null, note_available:false});
-                } else tool({summary:'Example saved note', updated_at:fixture.noteUpdatedAt,
+                  tool({summary:null, summary_html:null, updated_at:null, last_read_at:null, note_available:false});
+                } else tool({summary:args.thread_id === firstId ? formattedNote : 'Example saved note',
+                  summary_html:args.thread_id === firstId ? formattedNoteHtml : '<p>Example saved note</p>', updated_at:fixture.noteUpdatedAt,
                   last_read_at:args.thread_id === ownChild.thread_id ? fixture.lastReadAt : null, note_available:true});
                 break;
               case 'handoff_cleanup':

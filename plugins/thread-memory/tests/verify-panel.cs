@@ -5,6 +5,7 @@ using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.Data.Sqlite;
 using ZstdSharp;
 
@@ -104,7 +105,28 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
         File.WriteAllBytes(fallbackPath + ".zst", compressor.Wrap(File.ReadAllBytes(fallbackPath)).ToArray());
     File.Delete(fallbackPath);
     WriteRollout(home, active);
-    const string summary = "Goal\n保留笔记 🎯\nNext";
+    string summary = """
+        # Goal 🎯
+        ## Current progress
+
+        > 保留笔记
+
+        - Checklist
+          1. [x] Render note
+          2. [ ] Read note
+
+        Use `look <up>`.
+
+        ```text
+        <raw>
+        ```
+
+        <script>alert(1)</script>
+
+        [Local file](E:/Project/note.md)
+        <https://example.invalid/autolink>
+        ![Remote image](https://example.invalid/tracker.png)
+        """.ReplaceLineEndings("\n");
     var activeWrite = await SaveNote(cli, home, active, summary);
     WriteRollout(home, spawned);
     await SaveNote(cli, home, spawned, "Shown under its main thread");
@@ -149,6 +171,38 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
     Check(read.GetProperty("thread_id").GetString() == active && read.GetProperty("summary").GetString() == summary
         && read.GetProperty("updated_at").GetString() == activeWrite.GetProperty("updated_at").GetString(),
         "The panel did not read the current CLI note and timestamp verbatim.");
+    Check(read.TryGetProperty("summary_html", out var rendered) && rendered.ValueKind == JsonValueKind.String,
+        "The note reader did not return rendered Markdown.");
+    string html = rendered.GetString()!;
+    Check(Regex.IsMatch(html, @"<h3>Goal .*?</h3>") && html.Contains("<h4>Current progress</h4>", StringComparison.Ordinal)
+        && Regex.IsMatch(html, @"(?s)<blockquote>\s*<p>保留笔记</p>\s*</blockquote>")
+        && Regex.IsMatch(html, @"(?s)<ul\b[^>]*>\s*<li\b[^>]*>Checklist\s*<ol\b[^>]*>.*?Render note.*?Read note.*?</ol>\s*</li>\s*</ul>"),
+        "The note should have reader-level headings, a quote, and a genuinely nested ordered list.");
+    var boxes = Regex.Matches(html, @"<input\b[^>]*>");
+    Check(boxes.Count == 2 && boxes.All(box => box.Value.Contains("type=\"checkbox\"", StringComparison.Ordinal)
+            && Regex.IsMatch(box.Value, @"\sdisabled[\s=/>]"))
+        && Regex.IsMatch(boxes[0].Value, @"\schecked[\s=/>]") && !Regex.IsMatch(boxes[1].Value, @"\schecked[\s=/>]"),
+        "The task list must retain both saved checkbox states and disable both controls.");
+    Check(html.Contains("<code>look &lt;up&gt;</code>", StringComparison.Ordinal)
+        && Regex.IsMatch(html, @"<pre><code[^>]*>&lt;raw&gt;\r?\n</code></pre>"),
+        "Inline and fenced code must keep literal angle brackets.");
+    Check(!Regex.IsMatch(html, @"<(?:a|img|script)\b", RegexOptions.IgnoreCase)
+        && html.Contains("&lt;script&gt;alert(1)&lt;/script&gt;", StringComparison.Ordinal)
+        && html.Contains("Local file", StringComparison.Ordinal)
+        && html.Contains("E:/Project/note.md", StringComparison.Ordinal)
+        && html.Contains("https://example.invalid/autolink", StringComparison.Ordinal)
+        && html.Contains("Remote image", StringComparison.Ordinal),
+        "Markdown links, images, and inline HTML must remain inert in the panel.");
+
+    string deeplyNested = string.Concat(Enumerable.Repeat("> ", 150)) + "<script>alert(1)</script>";
+    await SaveNote(cli, home, active, deeplyNested);
+    var fallbackRead = await mcp.Tool("handoff_read", new { thread_id = active });
+    string? fallbackHtml = fallbackRead.GetProperty("summary_html").GetString();
+    Check(fallbackRead.GetProperty("summary").GetString() == deeplyNested
+        && fallbackHtml is not null
+        && Regex.Match(fallbackHtml, @"\A<pre>([^<]+)</pre>\s*\z") is { Success: true } plainText
+        && WebUtility.HtmlDecode(plainText.Groups[1].Value) == deeplyNested,
+        "A note that exceeds the Markdown nesting limit must remain readable as escaped plain text.");
     await mcp.Finish();
 }
 

@@ -180,9 +180,14 @@
     #note > h3 { font-size: 1.18em; }
     #note > * + :is(h3, h4, h5, h6) { margin-top: 1.45em; }
     #note > :is(h3, h4, h5, h6) + * { margin-top: .4em; }
-    #note :is(p, pre) { white-space: pre-wrap; }
+    #note :is(pre, .note-plain-text) { white-space: pre-wrap; }
     #note :is(ol, ul) { padding-inline-start: 1.6em; }
     #note li + li { margin-top: .28em; }
+    #note :is(li, blockquote) > * { margin: 0; }
+    #note :is(li, blockquote) > * + * { margin-top: .4em; }
+    #note blockquote { border-inline-start: 2px solid var(--outline); padding-inline-start: .8em; color: var(--muted); }
+    #note li.task-list-item { list-style: none; }
+    #note input[type=checkbox] { margin: 0 .5em 0 0; vertical-align: -.1em; accent-color: var(--focus-ring); }
     #note code, #note-source { font: .9em/1.6 var(--font-mono, ui-monospace, monospace); }
     #note :not(pre) > code {
       background: var(--code-surface);
@@ -785,72 +790,16 @@
 
     let loadedNote = "";
 
-    function appendInlineText(element, text) {
-      const inline = /(?<!`)`([^`]+)`(?!`)|\*\*([^*]+)\*\*/g;
-      let offset = 0;
-      for (const match of text.matchAll(inline)) {
-        element.append(text.slice(offset, match.index));
-        const span = document.createElement(match[1] ? "code" : "strong");
-        span.textContent = match[1] || match[2];
-        element.append(span);
-        offset = match.index + match[0].length;
+    function renderNote(summary, html) {
+      const note = byId("note");
+      if (typeof html === "string") {
+        note.innerHTML = html;
+      } else {
+        const paragraph = document.createElement("p");
+        paragraph.className = "note-plain-text";
+        paragraph.textContent = summary;
+        note.replaceChildren(paragraph);
       }
-      element.append(text.slice(offset));
-    }
-
-    function renderNote(summary) {
-      const content = document.createDocumentFragment();
-      let prose = null;
-      let list = null;
-      let fence = null;
-      for (const line of summary.split(/\r\n?|\n/)) {
-        const marker = line.match(/^[ \t]{0,3}(`{3,}|~{3,})(.*)$/);
-        if (fence) {
-          if (marker && marker[1][0] === fence.marker[0] && marker[1].length >= fence.marker.length && !marker[2].trim()) {
-            fence.code.textContent = fence.lines.join("\n");
-            fence = null;
-          } else {
-            fence.lines.push(line);
-          }
-          continue;
-        }
-
-        const heading = line.match(/^[ \t]{0,3}(#{1,6})[ \t]+(.+)$/);
-        const item = line.match(/^[ \t]{0,3}(?:[-+*]|(\d{1,9})[.)])[ \t]+(.+)$/);
-        if (marker || heading || item || !line.trim()) prose = null;
-        if (!item) list = null;
-        if (marker) {
-          const pre = document.createElement("pre");
-          const code = document.createElement("code");
-          pre.append(code);
-          content.append(pre);
-          fence = {marker: marker[1], code, lines: []};
-        } else if (heading) {
-          const element = document.createElement("h" + Math.min(6, heading[1].length + 2));
-          appendInlineText(element, heading[2].replace(/[ \t]+#+[ \t]*$/, ""));
-          content.append(element);
-        } else if (item) {
-          const tag = item[1] === undefined ? "ul" : "ol";
-          if (list?.localName !== tag) {
-            list = document.createElement(tag);
-            if (tag === "ol") list.start = Number(item[1]);
-            content.append(list);
-          }
-          const child = document.createElement("li");
-          appendInlineText(child, item[2]);
-          list.append(child);
-        } else if (line.trim()) {
-          if (prose) {
-            prose.append("\n");
-          } else {
-            prose = document.createElement("p");
-            content.append(prose);
-          }
-          appendInlineText(prose, line);
-        }
-      }
-      if (fence) fence.code.textContent = fence.lines.join("\n");
-      byId("note").replaceChildren(content);
     }
 
     function hideNoteSource() {
@@ -889,7 +838,7 @@
           const body = byId("reader-body");
           const scroll = body.scrollTop;
           hideNoteSource();
-          renderNote(summary);
+          renderNote(summary, result.summary_html);
           body.scrollTop = scroll;
           loadedNote = summary;
         }

@@ -278,6 +278,7 @@ internal static class PanelThreads
         {
             ["thread_id"] = identifier,
             ["summary"] = summary,
+            ["summary_html"] = string.IsNullOrEmpty(summary) ? null : NoteMarkdown.Render(summary),
             ["updated_at"] = updated,
             ["note_available"] = connection is null ? null : JsonValue.Create(!string.IsNullOrEmpty(summary)),
             ["last_read_at"] = fork is null && connection is not null && !string.IsNullOrEmpty(summary)
