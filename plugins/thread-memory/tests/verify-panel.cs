@@ -21,6 +21,8 @@ try
 {
     SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
     await VerifyPanel(Path.Combine(temporary.Path, "listing"), panel, cli, plugin);
+    await VerifyChildDirectory(Path.Combine(temporary.Path, "children"), panel, cli);
+    await VerifyForkDirectory(Path.Combine(temporary.Path, "fork-children"), panel, cli);
     await VerifyCleanup(Path.Combine(temporary.Path, "cleanup"), panel, cli);
     Console.WriteLine("Thread Memory MCP panel checks passed.");
     return 0;
@@ -45,7 +47,7 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
     await mcp.Notify("notifications/initialized");
 
     var tools = (await mcp.Request("tools/list")).GetProperty("tools").EnumerateArray().ToArray();
-    string[] expected = ["handoff_cleanup", "handoff_list", "handoff_manager", "handoff_read"];
+    string[] expected = ["handoff_children", "handoff_cleanup", "handoff_list", "handoff_manager", "handoff_read"];
     Check(tools.Select(tool => tool.GetProperty("name").GetString()).Order().SequenceEqual(expected),
         "The panel advertises unexpected tools.");
     foreach (var tool in tools)
@@ -87,17 +89,17 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
     WriteRollout(home, active);
     const string summary = "Goal\n保留笔记 🎯\nNext";
     var activeWrite = await SaveNote(cli, home, active, summary);
+    WriteRollout(home, spawned);
+    await SaveNote(cli, home, spawned, "Shown under its main thread");
     WriteRollout(home, archived, archived: true);
     await SaveNote(cli, home, archived, "Archived note");
-    WriteRollout(home, spawned);
-    await SaveNote(cli, home, spawned, "Excluded from the main-thread directory");
 
     var first = await mcp.Tool("handoff_list", new { limit = 2 });
-    Check(first.GetProperty("total").GetInt32() == 3 && ThreadIds(first).SequenceEqual([archived, active]),
+    Check(first.GetProperty("total").GetInt32() == 3 && first.GetProperty("total_pages").GetInt32() == 2
+        && first.GetProperty("page").GetInt32() == 1 && ThreadIds(first).SequenceEqual([archived, active]),
         "The directory must filter auxiliary threads before sorting and paging.");
-    string cursor = first.GetProperty("next_cursor").GetString()!;
-    var last = await mcp.Tool("handoff_list", new { limit = 2, cursor });
-    Check(ThreadIds(last).SequenceEqual([fallback]) && last.GetProperty("next_cursor").ValueKind == JsonValueKind.Null
+    var last = await mcp.Tool("handoff_list", new { limit = 2, page = 2 });
+    Check(ThreadIds(last).SequenceEqual([fallback]) && last.GetProperty("page").GetInt32() == 2
         && last.GetProperty("items")[0].GetProperty("archived").GetBoolean(),
         "The final page must include the archived main thread verified by its compressed rollout header.");
 
@@ -112,15 +114,173 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
         && !byThread.GetProperty("items").EnumerateArray().Any(item => item.TryGetProperty("summary", out _)),
         "The directory must omit Base64 previews and saved note bodies.");
     var archivedOnly = await mcp.Tool("handoff_list", new { query = "Needle", archive_status = "archived" });
-    var activeOnly = await mcp.Tool("handoff_list", new { archive_status = "active" });
-    Check(ThreadIds(archivedOnly).SequenceEqual([archived]) && ThreadIds(activeOnly).SequenceEqual([active]),
+    var activeOnly = await mcp.Tool("handoff_list", new { archive_status = "active", limit = 2, page = int.MaxValue });
+    Check(ThreadIds(archivedOnly).SequenceEqual([archived]) && ThreadIds(activeOnly).SequenceEqual([active])
+        && activeOnly.GetProperty("page").GetInt32() == 1 && activeOnly.GetProperty("total_pages").GetInt32() == 1,
         "The panel did not apply the archive filter before counting and paging.");
+    var empty = await mcp.Tool("handoff_list", new { query = "No matching thread", limit = 2, page = 2 });
+    Check(!ThreadIds(empty).Any() && empty.GetProperty("total").GetInt32() == 0
+        && empty.GetProperty("page").GetInt32() == 1 && empty.GetProperty("total_pages").GetInt32() == 1,
+        "An empty directory must return page one.");
+
+    await SaveNote(cli, home, fallback, "Recently updated archived note");
+    var refreshed = await mcp.Tool("handoff_list", new { limit = 2, page = 2 });
+    Check(ThreadIds(refreshed).SequenceEqual([active]) && refreshed.GetProperty("page").GetInt32() == 2,
+        "Refreshing the same page number must use the current note order.");
 
     var read = await mcp.Tool("handoff_read", new { thread_id = active });
     Check(read.GetProperty("thread_id").GetString() == active && read.GetProperty("summary").GetString() == summary
         && read.GetProperty("updated_at").GetString() == activeWrite.GetProperty("updated_at").GetString(),
         "The panel did not read the current CLI note and timestamp verbatim.");
     await mcp.Finish();
+}
+
+static async Task VerifyChildDirectory(string home, string panel, string cli)
+{
+    Directory.CreateDirectory(home);
+    await using var mcp = new McpClient(panel, home);
+    string main = NewId(), childOnly = NewId(), direct = NewId(), intermediate = NewId(), nested = NewId();
+    string fork = NewId(), attached = NewId();
+    string database = CreateThreadIndex(home);
+    AddThread(database, main, "Main with its own note", null, archived: false, updatedMs: 0);
+    AddThread(database, childOnly, "Archived child-only main", null, archived: true, updatedMs: 0);
+    AddThread(database, direct, "Direct child", "Task preview", archived: false, updatedMs: 0);
+    AddThread(database, intermediate, "Child without a note", null, archived: false, updatedMs: 0);
+    AddThread(database, nested, "", null, archived: true, updatedMs: 0);
+    AddThread(database, fork, "Ordinary fork", null, archived: false, updatedMs: 0);
+    AddThread(database, attached, "Attached thread", null, archived: false, updatedMs: 0);
+    Execute(database, """
+        UPDATE threads SET agent_nickname = 'Nested reviewer' WHERE id = $nested;
+        UPDATE threads SET attached_thread_parent_id = $main WHERE id = $attached;
+        INSERT INTO thread_spawn_edges VALUES ($childOnly, $direct, 'running'), ($childOnly, $intermediate, 'closed'),
+            ($intermediate, $nested, 'closed');
+        """, ("$main", main), ("$childOnly", childOnly), ("$direct", direct), ("$intermediate", intermediate),
+        ("$nested", nested), ("$attached", attached));
+
+    WriteRollout(home, main);
+    await SaveNote(cli, home, main, "Main note");
+    WriteRollout(home, childOnly, archived: true);
+    WriteRollout(home, direct, source: new { subagent = new { thread_spawn = new { parent_thread_id = childOnly } } });
+    var directWrite = await SaveNote(cli, home, direct, "Direct note");
+    WriteRollout(home, intermediate, source: new { subagent = new { thread_spawn = new { parent_thread_id = childOnly } } });
+    WriteRollout(home, fork, forkedFrom: main);
+    await SaveNote(cli, home, fork, "Independent fork note");
+    WriteRollout(home, attached, forkedFrom: main, attached: true);
+    await SaveNote(cli, home, attached, "Exclude attached note");
+    WriteRollout(home, nested, archived: true, source: new { subagent = new { thread_spawn = new { parent_thread_id = intermediate } } });
+    var nestedWrite = await SaveNote(cli, home, nested, "Nested note");
+
+    var groups = await mcp.Tool("handoff_list");
+    Check(ThreadIds(groups).SequenceEqual([childOnly, fork, main]), "Only verified main threads should appear in the directory.");
+    var group = groups.GetProperty("items")[0];
+    Check(group.GetProperty("child_note_count").GetInt32() == 2
+        && group.GetProperty("latest_at").GetString() == nestedWrite.GetProperty("updated_at").GetString()
+        && group.GetProperty("archived").GetBoolean(),
+        "An archived main with only child notes must show the count and newest descendant note time.");
+    var childOnlyMainNote = await mcp.Tool("handoff_read", new { thread_id = childOnly });
+    Check(childOnlyMainNote.GetProperty("summary").ValueKind == JsonValueKind.Null,
+        "A main thread with only child notes must have an empty main note.");
+    var own = groups.GetProperty("items")[2];
+    Check(own.GetProperty("child_note_count").GetInt32() == 0,
+        "A main note must be shown even when it has no child notes.");
+
+    var children = await mcp.Tool("handoff_children", new { thread_id = childOnly, limit = 1 });
+    var nestedRow = children.GetProperty("items")[0];
+    Check(children.GetProperty("total").GetInt32() == 2 && children.GetProperty("total_pages").GetInt32() == 2
+        && ThreadIds(children).SequenceEqual([nested])
+        && nestedRow.GetProperty("parent_thread_id").GetString() == intermediate
+        && nestedRow.GetProperty("title").GetString() == "Nested reviewer" && nestedRow.GetProperty("archived").GetBoolean(),
+        "Child notes must follow nesting through note-less intermediaries and list newest first.");
+    var directPage = await mcp.Tool("handoff_children", new { thread_id = childOnly, limit = 1, page = 3 });
+    var directRow = directPage.GetProperty("items")[0];
+    Check(ThreadIds(directPage).SequenceEqual([direct]) && directPage.GetProperty("page").GetInt32() == 2
+        && directRow.GetProperty("parent_thread_id").GetString() == childOnly && directRow.GetProperty("preview").GetString() == "Task preview"
+        && directRow.GetProperty("latest_at").GetString() == directWrite.GetProperty("updated_at").GetString(),
+        "The child list must page and expose display metadata without the saved note body.");
+    var named = await mcp.Tool("handoff_children", new { thread_id = childOnly, query = "REVIEWER" });
+    Check(ThreadIds(named).SequenceEqual([nested]), "Child search must match agent nicknames.");
+    var noChildren = await mcp.Tool("handoff_children", new { thread_id = main });
+    Check(!ThreadIds(noChildren).Any(), "Ordinary forks and attached sessions are outside the spawned child directory.");
+    var read = await mcp.Tool("handoff_read", new { thread_id = nested });
+    Check(read.GetProperty("summary").GetString() == "Nested note", "The standard note reader must open a nested note.");
+    await mcp.Finish();
+}
+
+static async Task VerifyForkDirectory(string home, string panel, string cli)
+{
+    Directory.CreateDirectory(home);
+    await using var mcp = new McpClient(panel, home);
+    string original = NewId(), firstFork = NewId(), secondFork = NewId();
+    string originalEarly = NewId(), originalLate = NewId(), originallyEmpty = NewId();
+    string forkEarly = NewId(), forkLate = NewId(), own = NewId();
+    string database = CreateThreadIndex(home);
+    foreach (string root in new[] { original, firstFork, secondFork })
+        AddThread(database, root, "Main thread", null, archived: root == original, updatedMs: 0);
+    string originalPath = WriteRollout(home, original, archived: true);
+
+    AddChild(originalEarly, original, archived: true, nickname: "Original reviewer");
+    AddChild(originallyEmpty, original);
+    var beforeFirstFork = await SaveNote(cli, home, originalEarly, "Original note before first fork");
+    string firstCutoff = beforeFirstFork.GetProperty("updated_at").GetString()!;
+    WriteRollout(home, firstFork, forkedFrom: original, timestamp: firstCutoff);
+
+    await SaveNote(cli, home, originalEarly, "Post-fork change belongs to original");
+    await SaveNote(cli, home, originallyEmpty, "Note first saved after the fork");
+    AddChild(originalLate, original);
+    await SaveNote(cli, home, originalLate, "Child created after the first fork");
+
+    AddChild(forkEarly, firstFork);
+    var beforeSecondFork = await SaveNote(cli, home, forkEarly, "First fork note before the second fork");
+    WriteRollout(home, secondFork, forkedFrom: firstFork, timestamp: beforeSecondFork.GetProperty("updated_at").GetString()!);
+    await SaveNote(cli, home, forkEarly, "Post-fork change belongs to the first fork");
+    AddChild(forkLate, firstFork);
+    await SaveNote(cli, home, forkLate, "Child created after the second fork");
+    AddChild(own, secondFork);
+    await SaveNote(cli, home, own, "Own fork note");
+
+    using (var compressor = new Compressor())
+        File.WriteAllBytes(originalPath + ".zst", compressor.Wrap(File.ReadAllBytes(originalPath)).ToArray());
+    File.Delete(originalPath);
+
+    var ownOnly = await mcp.Tool("handoff_children", new { thread_id = secondFork });
+    Check(ownOnly.GetProperty("can_include_inherited").GetBoolean() && ThreadIds(ownOnly).SequenceEqual([own])
+        && !ownOnly.GetProperty("items")[0].GetProperty("inherited").GetBoolean(),
+        "A fork must offer inherited notes while showing only its own subagent notes by default.");
+
+    var inherited = await mcp.Tool("handoff_children", new { thread_id = secondFork, include_inherited = true });
+    Check(ThreadIds(inherited).SequenceEqual([own, forkEarly, originalEarly])
+        && inherited.GetProperty("items").EnumerateArray().Skip(1).All(row => row.GetProperty("inherited").GetBoolean()
+            && row.GetProperty("preview").ValueKind == JsonValueKind.Null),
+        "The inherited view must honor each fork cutoff and omit children without a note at that time.");
+    var archived = inherited.GetProperty("items")[2];
+    Check(archived.GetProperty("archived").GetBoolean() && archived.GetProperty("title").GetString() == "Original reviewer"
+        && archived.GetProperty("latest_at").GetString() == firstCutoff,
+        "An archived ancestor child must retain its historical note time and agent label.");
+
+    var originalSnapshot = await mcp.Tool("handoff_read", new { thread_id = originalEarly, from_fork = secondFork });
+    var forkSnapshot = await mcp.Tool("handoff_read", new { thread_id = forkEarly, from_fork = secondFork });
+    var unavailable = await mcp.Tool("handoff_read", new { thread_id = originalLate, from_fork = secondFork });
+    var current = await mcp.Tool("handoff_read", new { thread_id = originalEarly });
+    Check(originalSnapshot.GetProperty("summary").GetString() == "Original note before first fork"
+        && forkSnapshot.GetProperty("summary").GetString() == "First fork note before the second fork"
+        && unavailable.GetProperty("summary").ValueKind == JsonValueKind.Null
+        && current.GetProperty("summary").GetString() == "Post-fork change belongs to original",
+        "Inherited note reads must use the same ancestry cutoffs as the directory without altering current notes.");
+
+    var unforked = await mcp.Tool("handoff_children", new { thread_id = original, include_inherited = true });
+    Check(!unforked.GetProperty("can_include_inherited").GetBoolean() && unforked.GetProperty("total").GetInt32() == 3,
+        "A non-forked thread has only notes from its own subagents.");
+    await mcp.Finish();
+
+    void AddChild(string child, string parent, bool archived = false, string? nickname = null)
+    {
+        AddThread(database, child, "Live title", "Live task preview", archived, updatedMs: 0);
+        Execute(database, """
+            UPDATE threads SET agent_nickname = $nickname WHERE id = $child;
+            INSERT INTO thread_spawn_edges VALUES ($parent, $child, 'closed');
+            """, ("$nickname", nickname), ("$child", child), ("$parent", parent));
+        WriteRollout(home, child, archived, source: new { subagent = new { thread_spawn = new { parent_thread_id = parent } } });
+    }
 }
 
 static async Task VerifyCleanup(string home, string panel, string cli)
@@ -235,7 +395,7 @@ static string CreateThreadIndex(string home, string backfill = "complete")
     string database = Path.Combine(home, "state_5.sqlite");
     Execute(database, """
         CREATE TABLE threads (id TEXT PRIMARY KEY, rollout_path TEXT, name TEXT, title TEXT, preview TEXT,
-            first_user_message TEXT, source TEXT NOT NULL DEFAULT 'vscode', thread_source TEXT,
+            first_user_message TEXT, source TEXT NOT NULL DEFAULT 'vscode', thread_source TEXT, agent_nickname TEXT, agent_role TEXT,
             archived INTEGER NOT NULL DEFAULT 0, attached_thread_parent_id TEXT, updated_at_ms INTEGER);
         CREATE TABLE backfill_state (id INTEGER PRIMARY KEY, status TEXT);
         INSERT INTO backfill_state VALUES (1, $backfill);

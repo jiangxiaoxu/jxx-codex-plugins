@@ -20,9 +20,8 @@ internal static class Program
     [
         new("handoff_manager", "Thread Memory", "Browse current notes by main thread.", new(), []),
         new("handoff_list", "List main threads with notes",
-            "Search main threads with notes, filter by archive status, and sort by update time.", new()
+            "List main threads with their own notes or saved subagent notes.", Paging(new()
             {
-                ["query"] = new JsonObject { ["type"] = "string", ["maxLength"] = 256 },
                 ["archive_status"] = new JsonObject
                 {
                     ["type"] = "string", ["enum"] = new JsonArray("all", "active", "archived"), ["default"] = "all",
@@ -32,15 +31,27 @@ internal static class Program
                     ["type"] = "string", ["enum"] = new JsonArray("note_updated", "thread_updated"),
                     ["default"] = "note_updated",
                 },
-                ["limit"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 100 },
-                ["cursor"] = new JsonObject { ["type"] = "string", ["minLength"] = 32, ["maxLength"] = 32 },
-            }, []),
+            }), []),
+        new("handoff_children", "List subagent notes", "List spawned descendants with notes under a main thread.",
+            Paging(new()
+            {
+                ["thread_id"] = ThreadId.DeepClone(),
+                ["include_inherited"] = new JsonObject { ["type"] = "boolean", ["default"] = false },
+            }), ["thread_id"]),
         new("handoff_read", "Read current thread note", "Read the thread's current saved note.",
-            new() { ["thread_id"] = ThreadId.DeepClone() }, ["thread_id"]),
+            new() { ["thread_id"] = ThreadId.DeepClone(), ["from_fork"] = ThreadId.DeepClone() }, ["thread_id"]),
         new("handoff_cleanup", "Clean up deleted thread data",
             "Preview deleted local threads and remove their saved notes and indexes on confirmation.",
             new() { ["thread_ids"] = new JsonObject { ["type"] = "array", ["items"] = ThreadId } }, []),
     ];
+
+    private static JsonObject Paging(JsonObject properties)
+    {
+        properties["query"] = new JsonObject { ["type"] = "string", ["maxLength"] = 256 };
+        properties["limit"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 100, ["default"] = 30 };
+        properties["page"] = new JsonObject { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = int.MaxValue, ["default"] = 1 };
+        return properties;
+    }
 
     public static int Main()
     {
@@ -259,6 +270,7 @@ internal static class Program
             var result = name switch
             {
                 "handoff_list" => PanelThreads.List(home, args),
+                "handoff_children" => PanelThreads.ListChildren(home, args),
                 "handoff_read" => PanelThreads.Read(home, args),
                 "handoff_cleanup" => PanelCleanup.Run(home, args),
                 _ => new JsonObject(),

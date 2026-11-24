@@ -24,7 +24,7 @@
     * { box-sizing: border-box; }
     [hidden] { display: none !important; }
     body { margin: 0; }
-    main { max-width: 1280px; margin: auto; padding: clamp(12px, 2.5vw, 26px); }
+    main { display: flex; flex-direction: column; padding: clamp(12px, 2.5vw, 26px); }
     header, .actions, footer { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
     header { justify-content: space-between; margin-bottom: 14px; }
     h1, h2, p { margin: 0; }
@@ -39,26 +39,44 @@
       font: inherit;
     }
     button, select, summary { cursor: var(--cursor-interaction, pointer); }
-    button:enabled:hover, summary:hover { background: var(--panel); }
-    :is(button, input, select, summary, #detail-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button:enabled:not([aria-disabled="true"]):hover, summary:hover { background: var(--panel); }
+    :is(button, input, select, summary, #detail-heading, #subagent-heading, #reader-body, #missing-threads):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     :is(button, select):disabled { opacity: .5; cursor: default; }
     .danger { color: var(--danger); }
     .status { color: var(--muted); overflow-wrap: anywhere; }
     .status:empty { display: none; }
     #status:not(:empty) { margin-bottom: 10px; }
     .status.error { color: var(--danger); }
-    .workspace { display: grid; grid-template-columns: clamp(225px, 30%, 328px) minmax(0, 1fr); gap: 14px; }
+    main > header, #status, .directory-tools, .reader-header, footer { flex-shrink: 0; }
+    .workspace {
+      display: grid;
+      flex: 1 1 auto;
+      min-height: 0;
+      grid-template-columns: clamp(225px, 28%, 416px) minmax(0, 1fr);
+      grid-template-rows: minmax(0, 1fr);
+      gap: 14px;
+    }
     .panel { border: 1px solid var(--line); border-radius: 11px; min-width: 0; }
     .directory, .reader { display: flex; flex-direction: column; min-height: 0; }
     .directory { background: var(--panel); }
     .directory-tools { display: grid; gap: 9px; padding: 12px; border-bottom: 1px solid var(--line); }
     .directory-heading { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
     .directory-filters { display: flex; flex-wrap: wrap; gap: 8px; }
-    .directory-filters select { padding: 6px 8px; font-size: 12px; max-width: 100%; }
-    #search { min-width: 0; width: 100%; }
-    #threads { flex: 1; min-height: 0; list-style: none; padding: 6px; margin: 0; max-height: clamp(200px, 62vh, 760px); overflow: auto; }
-    #threads li + li { margin-top: 3px; }
-    #threads button {
+    .directory-filters select { flex: 1 1 auto; min-width: 0; padding: 6px 8px; font-size: 12px; max-width: 100%; }
+    :is(#search, #subagent-search) { min-width: 0; width: 100%; }
+    .thread-list {
+      flex: 1;
+      min-height: 0;
+      list-style: none;
+      padding: 6px;
+      margin: 0;
+      max-height: clamp(175px, 62vh, 760px);
+      overflow: auto;
+      overscroll-behavior-y: contain;
+      scrollbar-gutter: stable;
+    }
+    .thread-list li + li { margin-top: 3px; }
+    .thread-list button {
       display: grid;
       width: 100%;
       text-align: start;
@@ -67,9 +85,12 @@
       padding: 9px 10px;
       background: transparent;
     }
-    #threads button:enabled:hover { background: var(--page); }
-    #threads button[aria-current="true"] { background: var(--selected); box-shadow: inset 2px 0 var(--accent); }
-    #threads .label {
+    .thread-list button:enabled:hover { background: var(--page); }
+    .thread-list button[aria-current="true"], .thread-list button[aria-current="true"]:hover {
+      background: var(--selected);
+      box-shadow: inset 2px 0 var(--accent);
+    }
+    .thread-list .label {
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 2;
@@ -78,32 +99,66 @@
       font-weight: 600;
     }
     .thread-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 8px; }
-    #threads .preview {
+    .archive-label { border: 1px solid var(--line); border-radius: 4px; padding-inline: 4px; }
+    .thread-list .preview {
       display: -webkit-box;
       -webkit-box-orient: vertical;
       -webkit-line-clamp: 1;
       overflow: hidden;
     }
-    #threads .empty { color: var(--muted); padding: 16px 10px; }
+    .thread-list .empty { color: var(--muted); padding: 16px 10px; }
     .reader-empty { display: grid; place-items: center; flex: 1; min-height: 210px; padding: 20px; text-align: center; color: var(--muted); }
     .reader-header { display: grid; gap: 8px; padding: 15px clamp(14px, 3vw, 26px); border-bottom: 1px solid var(--line); }
     .reader-tools { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
     #detail-heading { font-size: 1.34rem; line-height: 1.34; overflow-wrap: anywhere; }
-    #back-to-threads { display: none; justify-self: start; }
+    #subagent-directory { display: flex; flex: 1; flex-direction: column; min-height: 0; background: var(--panel); }
+    #subagent-heading { overflow-wrap: anywhere; }
+    #include-inherited-control { display: flex; align-items: center; gap: 7px; }
+    #include-inherited { margin: 0; accent-color: var(--accent); }
+    :is(#back-to-threads, #subagent-back-directory) { display: none; }
     #thread-id summary { width: fit-content; border-radius: 3px; }
     .detail { flex: 1; min-height: 0; padding: 16px clamp(14px, 3vw, 26px); max-height: clamp(240px, 65vh, 900px); overflow: auto; }
     #detail-status { flex: 1 1 12em; }
     #note {
-      max-width: 76ch;
-      white-space: pre-wrap;
+      max-width: clamp(76ch, 70vw, 110ch);
       overflow-wrap: anywhere;
       font-size: 15px;
       line-height: 1.7;
     }
+    #note > * { margin: 0; }
+    #note > * + * { margin-top: .8em; }
+    #note > :is(h3, h4, h5, h6) {
+      font-size: 1em;
+      font-weight: 650;
+      line-height: 1.45;
+    }
+    #note > h3 { font-size: 1.18em; }
+    #note > * + :is(h3, h4, h5, h6) { margin-top: 1.45em; }
+    #note > :is(h3, h4, h5, h6) + * { margin-top: .4em; }
+    #note :is(p, pre) { white-space: pre-wrap; }
+    #note :is(ol, ul) { padding-inline-start: 1.6em; }
+    #note li + li { margin-top: .28em; }
+    #note code, #note-source { font: .9em/1.6 var(--font-mono, ui-monospace, monospace); }
+    #note :not(pre) > code {
+      background: var(--panel);
+      border-radius: 4px;
+      padding: .1em .24em;
+    }
+    #note pre, #note-source {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      color: var(--ink);
+      padding: .7em .85em;
+    }
+    #note pre { tab-size: 4; }
+    #raw-note { max-width: 76ch; }
+    #note-source { display: block; margin-top: .6em; min-height: 9em; resize: vertical; width: 100%; }
+    #note-source:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .thread { display: block; font: 12px/1.5 var(--font-mono, ui-monospace, monospace); overflow-wrap: anywhere; }
     .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
     footer { padding: 9px 14px; border-top: 1px solid var(--line); }
-    #page { margin-inline: auto; }
+    :is(#page, #subagent-page) { margin-inline: auto; }
     dialog { width: min(520px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 18px; color: var(--ink); background: var(--page); }
     dialog::backdrop { background: rgb(0 0 0 / 45%); }
     dialog p { margin-top: 8px; }
@@ -113,25 +168,44 @@
     dialog .actions { justify-content: flex-end; }
     .management-section { border-top: 1px solid var(--line); padding: 12px 0; }
     .management-section > .actions { justify-content: flex-start; margin-top: 7px; }
-    :root[data-display="fullscreen"] main { display: flex; flex-direction: column; height: 100dvh; }
-    :root[data-display="fullscreen"] .workspace { flex: 1; min-height: 0; }
-    :root[data-display="fullscreen"] :is(#threads, .detail) { max-height: none; }
+    :root[data-display="fullscreen"] main { height: 100dvh; }
+    :root[data-display="fullscreen"] :is(.thread-list, .detail) { max-height: none; }
+    @media (min-height: 480px) {
+      main { max-height: 100dvh; }
+      :is(.thread-list, .detail) { max-height: none; }
+    }
+    main[data-reader-view="children"] #reader,
+    main[data-reader-view="child"] #subagent-directory { display: none; }
+    @media (min-width: 701px) {
+      #reader-navigation:not(:has(#back-to-subagents:not([hidden]))),
+      #subagent-directory .actions:not(:has(#subagent-back-main:not([hidden]))) { display: none; }
+    }
     @media (max-width: 700px) {
       .workspace { grid-template-columns: 1fr; }
-      main[data-view="directory"] .reader, main[data-view="note"] .directory { display: none; }
-      #back-to-threads { display: inline-block; }
-      #threads button, #back-to-threads { min-height: 42px; }
-      #threads { max-height: clamp(200px, 69vh, 760px); }
+      main[data-view="directory"] :is(#reader, #subagent-directory),
+      main[data-view="note"] #directory { display: none; }
+      :is(#back-to-threads, #subagent-back-directory) { display: inline-block; }
+      .thread-list button, :is(#back-to-threads, #subagent-back-directory, #back-to-subagents) { min-height: 42px; }
+      main > header { margin-bottom: 10px; }
+      main > header button { padding-inline: 8px; }
+    }
+    @media (min-width: 1280px) {
+      main:is([data-reader-view="children"], [data-reader-view="child"]) .workspace {
+        grid-template-columns: clamp(230px, 23%, 360px) clamp(235px, 22%, 380px) minmax(0, 1fr);
+      }
+      main[data-reader-view="children"] #reader,
+      main[data-reader-view="child"] #subagent-directory { display: flex; }
+      #reader-navigation { display: none; }
     }
   </style>
 </head>
 <body>
-  <main data-view="directory">
+  <main data-view="directory" data-reader-view="empty">
     <header>
       <h1>Thread Memory</h1>
       <div class="actions">
-        <button id="refresh" type="button" disabled>Refresh</button>
-        <button id="manage" type="button" disabled>Manage</button>
+        <button id="refresh" type="button" title="Refresh the directory and selected note" disabled>Refresh</button>
+        <button id="manage" type="button" disabled>Manage data</button>
       </div>
     </header>
     <p id="status" class="status" role="status">Connecting to Codex...</p>
@@ -146,33 +220,65 @@
           <div class="directory-filters">
             <select id="archive-status" aria-label="Filter by archive status" disabled>
               <option value="all">All</option>
-              <option value="active">Active</option>
+              <option value="active">Unarchived</option>
               <option value="archived">Archived</option>
             </select>
             <select id="sort-by" aria-label="Sort threads" disabled>
-              <option value="note_updated">Note updated</option>
-              <option value="thread_updated">Thread updated</option>
+              <option value="note_updated">Latest note update</option>
+              <option value="thread_updated">Latest thread update</option>
             </select>
           </div>
         </div>
-        <ul id="threads"></ul>
+        <ul id="threads" class="thread-list"></ul>
         <footer id="pagination" hidden>
-          <button id="previous" type="button" disabled>Previous</button>
+          <button id="previous" type="button" aria-label="Previous main-thread page" disabled>Previous</button>
           <span id="page" class="meta"></span>
-          <button id="next" type="button" disabled>Next</button>
+          <button id="next" type="button" aria-label="Next main-thread page" disabled>Next</button>
         </footer>
       </nav>
-      <section id="reader" class="panel reader" aria-label="Current thread note">
+      <nav id="subagent-directory" class="panel" aria-labelledby="subagent-heading" hidden>
+        <div class="directory-tools">
+          <div class="actions">
+            <button id="subagent-back-directory" type="button">Back to main threads</button>
+            <button id="subagent-back-main" type="button" hidden>View main note</button>
+          </div>
+          <p id="subagent-parent" class="meta"></p>
+          <div class="directory-heading">
+            <h2 id="subagent-heading" tabindex="-1">Subagent notes</h2>
+            <p id="subagent-count" class="meta" role="status"></p>
+          </div>
+          <input id="subagent-search" type="search" maxlength="200" aria-label="Search subagent notes" placeholder="Search title or thread ID">
+          <label id="include-inherited-control" class="meta" title="Show notes saved by subagents of the source thread when this thread was forked." hidden>
+            <input id="include-inherited" type="checkbox">Include inherited subagent notes
+          </label>
+          <p id="subagent-status" class="status error" role="status" hidden></p>
+        </div>
+        <ul id="subagent-threads" class="thread-list"></ul>
+        <footer id="subagent-pagination" hidden>
+          <button id="subagent-previous" type="button" aria-label="Previous subagent page" disabled>Previous</button>
+          <span id="subagent-page" class="meta"></span>
+          <button id="subagent-next" type="button" aria-label="Next subagent page" disabled>Next</button>
+        </footer>
+      </nav>
+      <section id="reader" class="panel reader" aria-label="Thread notes">
         <p id="reader-empty" class="reader-empty">Choose a main thread to read its note.</p>
         <div id="reader-header" class="reader-header" hidden>
-          <button id="back-to-threads" type="button">Back to threads</button>
+          <div id="reader-navigation" class="actions">
+            <button id="back-to-threads" type="button">Back to main threads</button>
+            <button id="back-to-subagents" type="button" hidden>Back to subagent list</button>
+          </div>
           <h2 id="detail-heading" tabindex="-1"></h2>
+          <p id="note-parent" class="meta" hidden></p>
           <div class="reader-tools">
             <div class="thread-meta meta">
               <span id="note-date"></span>
               <span id="note-archived" hidden>Archived</span>
+              <span id="note-inherited" hidden>Inherited</span>
             </div>
-            <button id="copy-summary" type="button" hidden>Copy note</button>
+            <div class="actions">
+              <button id="show-subagents" type="button" hidden>Browse subagent notes</button>
+              <button id="copy-summary" type="button" title="Copy the original note text" hidden>Copy note</button>
+            </div>
           </div>
           <p id="copy-status" class="status meta" role="status"></p>
           <details id="thread-id" class="meta">
@@ -185,6 +291,10 @@
           </div>
         </div>
         <div id="reader-body" class="detail" tabindex="0" aria-label="Note text" hidden>
+          <details id="raw-note" hidden>
+            <summary>Original note text</summary>
+            <textarea id="note-source" aria-label="Original note text" readonly spellcheck="false"></textarea>
+          </details>
           <article id="note"></article>
         </div>
       </section>
@@ -192,7 +302,7 @@
   </main>
   <dialog id="management-dialog" aria-labelledby="management-heading">
     <header>
-      <h2 id="management-heading">Manage thread memory</h2>
+      <h2 id="management-heading">Manage saved data</h2>
       <button id="close-manager" type="button" autofocus>Close</button>
     </header>
     <section class="management-section" aria-labelledby="cleanup-label">
@@ -200,7 +310,7 @@
       <p class="meta">Remove saved data for deleted threads and their subagents. Archived threads are kept.</p>
       <p id="cleanup-status" class="status" role="status"></p>
       <div class="actions">
-        <button id="check-cleanup" type="button" disabled>Find deleted threads</button>
+        <button id="check-cleanup" type="button" disabled>Find data for deleted threads</button>
       </div>
     </section>
   </dialog>
@@ -210,7 +320,7 @@
     <pre id="missing-threads" class="thread" role="region" tabindex="0" aria-label="Cleanup candidate thread IDs"></pre>
     <div class="actions">
       <button id="cancel-cleanup" type="button" autofocus>Cancel</button>
-      <button id="delete-cleanup" class="danger" type="button">Delete stored data</button>
+      <button id="delete-cleanup" class="danger" type="button">Delete saved data</button>
     </div>
   </dialog>
   <script>
@@ -227,13 +337,30 @@
     let connected = false;
     let busy = false;
     let listLoading = false;
+    let listStale = false;
     let listRequest = 0;
     let searchTimer;
-    let pageIndex = 0;
-    let cursors = [null];
+    let page = 1;
+    let totalPages = 1;
+    let renderedRows;
+    let directoryScrollTop = 0;
+    let panelVisible = false;
+    let refreshPending = false;
+    let refreshing = false;
+    let activeMain = null;
     let activeThread = null;
+    let view = "empty";
     let noteRequest = 0;
     let noteLoading = false;
+    let childPage = 1;
+    let childTotalPages = 1;
+    let childLoading = false;
+    let childStale = false;
+    let childRefreshNeeded = false;
+    let childRequest = 0;
+    let childSearchTimer;
+    let renderedChildren;
+    let childScrollTop = 0;
     let missingThreads = [];
 
     function send(fields) {
@@ -294,18 +421,29 @@
     }
 
     function updateControls() {
-      byId("refresh").disabled = !connected || busy || listLoading || noteLoading;
+      byId("refresh").disabled = !connected;
+      byId("refresh").setAttribute("aria-disabled", String(busy || listLoading || childLoading || noteLoading || refreshing));
       byId("manage").disabled = !connected;
       byId("check-cleanup").disabled = !connected || busy;
       byId("search").disabled = !connected;
       byId("archive-status").disabled = !connected;
       byId("sort-by").disabled = !connected;
-      const paginationBlocked = busy || listLoading;
-      byId("previous").disabled = paginationBlocked || pageIndex === 0;
-      byId("next").disabled = paginationBlocked || !cursors[pageIndex + 1];
+      const paginationBlocked = busy || listLoading || listStale;
+      byId("previous").disabled = page === 1;
+      byId("next").disabled = page >= totalPages;
+      byId("previous").setAttribute("aria-disabled", String(paginationBlocked || page === 1));
+      byId("next").setAttribute("aria-disabled", String(paginationBlocked || page >= totalPages));
       byId("retry-note").disabled = noteLoading;
+      byId("threads").inert = listStale;
       byId("threads").setAttribute("aria-busy", String(listLoading));
+      byId("subagent-threads").inert = childStale || childRefreshNeeded;
+      byId("subagent-threads").setAttribute("aria-busy", String(childLoading));
+      byId("subagent-previous").disabled = childPage === 1;
+      byId("subagent-next").disabled = childPage >= childTotalPages;
+      byId("subagent-previous").setAttribute("aria-disabled", String(childLoading || childStale || childRefreshNeeded || childPage === 1));
+      byId("subagent-next").setAttribute("aria-disabled", String(childLoading || childStale || childRefreshNeeded || childPage >= childTotalPages));
       byId("note").setAttribute("aria-busy", String(noteLoading));
+      flushPendingRefresh();
     }
 
     function formatDate(value) {
@@ -322,7 +460,7 @@
       return preview && preview !== row.title?.trim() ? preview : "";
     }
 
-    function renderRows(rows, filtered, sortBy) {
+    function threadItems(rows, {sortBy, selected, open, empty}) {
       const items = rows.map((row) => {
         const label = document.createElement("span");
         label.className = "label";
@@ -337,13 +475,28 @@
         meta.textContent = [
           !row.title?.trim() && row.thread_id.slice(0, 13),
           displayedDate,
-          row.archived && "Archived",
         ].filter(Boolean).join(" | ");
+        if (row.archived) {
+          const archive = document.createElement("span");
+          archive.className = "archive-label";
+          archive.textContent = "Archived";
+          if (meta.textContent) meta.append(" ");
+          meta.append(archive);
+        }
+        if (row.inherited) {
+          if (meta.textContent) meta.append(" | ");
+          meta.append("Inherited");
+        }
+        if (row.child_note_count) {
+          const count = row.child_note_count;
+          if (meta.textContent) meta.append(" | ");
+          meta.append(count + (count === 1 ? " subagent note" : " subagent notes"));
+        }
         const button = document.createElement("button");
         button.type = "button";
         button.dataset.thread = row.thread_id;
-        button.setAttribute("aria-current", String(activeThread?.thread_id === row.thread_id));
-        button.addEventListener("click", () => openThread(row));
+        button.setAttribute("aria-current", String(selected === row.thread_id));
+        button.addEventListener("click", () => open(row));
         button.append(label);
         const description = threadPreview(row);
         if (description) {
@@ -360,41 +513,169 @@
       if (!items.length) {
         const item = document.createElement("li");
         item.className = "empty";
-        item.textContent = filtered ? "No matching main threads." : "No main-thread notes saved yet.";
+        item.textContent = empty;
         items.push(item);
       }
-      byId("threads").replaceChildren(...items);
-      byId("threads").scrollTop = 0;
-      byId("pagination").hidden = pageIndex === 0 && !cursors[1];
-      byId("page").textContent = "Page " + (pageIndex + 1);
+      return items;
+    }
+
+    function renderRows(rows, filtered, sortBy, preservePosition) {
+      byId("pagination").hidden = totalPages < 2;
+      byId("page").textContent = "Page " + page + " of " + totalPages;
+      const threads = byId("threads");
+      const nextRows = JSON.stringify([rows, filtered, sortBy]);
+      if (nextRows === renderedRows && preservePosition) return;
+      const focusedId = threads.contains(document.activeElement) ? document.activeElement.dataset.thread : null;
+      const directoryHidden = compactLayout.matches && main.dataset.view === "note";
+      const scroll = preservePosition ? (directoryHidden ? directoryScrollTop : threads.scrollTop) : 0;
+      threads.replaceChildren(...threadItems(rows, {
+        sortBy, selected: activeMain?.thread_id, open: openThread,
+        empty: filtered ? "No matching main threads." : "No thread notes saved yet.",
+      }));
+      renderedRows = nextRows;
+      directoryScrollTop = scroll;
+      threads.scrollTop = scroll;
+      if (focusedId) {
+        const focused = Array.from(threads.querySelectorAll("button")).find((button) => button.dataset.thread === focusedId);
+        (focused || byId("search")).focus({preventScroll: true});
+      }
     }
 
     function updateThreadHeading(row) {
       byId("detail-heading").textContent = threadTitle(row);
       byId("detail-key").textContent = row.thread_id;
       byId("note-archived").hidden = !row.archived;
+      byId("note-inherited").hidden = !row.inherited;
     }
 
     function openThread(row) {
-      activeThread = row;
+      if (listStale) return;
+      const sameMain = activeMain?.thread_id === row.thread_id;
+      directoryScrollTop = byId("threads").scrollTop;
+      activeMain = row;
       main.dataset.view = "note";
       for (const button of byId("threads").querySelectorAll("button")) {
         button.setAttribute("aria-current", String(button.dataset.thread === row.thread_id));
       }
+      if (!sameMain) {
+        resetChildren();
+        activeThread = null;
+        ++noteRequest;
+        noteLoading = false;
+      }
+      showNote(row, false, compactLayout.matches);
+    }
+
+    function updateReaderNavigation() {
+      const count = activeMain?.child_note_count ?? 0;
+      const parentTitle = activeMain ? threadTitle(activeMain) : "";
+      const isChildNote = activeThread && activeThread.thread_id !== activeMain?.thread_id;
+      const relationship = activeThread?.inherited ? "Fork snapshot for " : "Subagent of ";
+      byId("show-subagents").textContent = count > 0 ? "Browse subagent notes (" + count + ")" : "Browse subagent notes";
+      byId("show-subagents").hidden = view !== "main";
+      byId("back-to-subagents").hidden = view !== "child";
+      byId("back-to-threads").hidden = view === "child";
+      byId("note-parent").textContent = isChildNote ? relationship + parentTitle : "";
+      byId("note-parent").hidden = !isChildNote;
+      byId("subagent-parent").textContent = parentTitle;
+      byId("subagent-back-main").hidden = !activeMain;
+    }
+
+    function showNote(row, isChild, moveFocus = false) {
+      const children = byId("subagent-threads");
+      if (!isChild && children.getClientRects().length) childScrollTop = children.scrollTop;
+      const sameThread = activeThread?.thread_id === row.thread_id &&
+        Boolean(activeThread.inherited) === Boolean(row.inherited);
+      activeThread = row;
+      view = isChild ? "child" : "main";
+      main.dataset.readerView = view;
       updateThreadHeading(row);
+      updateReaderNavigation();
       byId("reader-empty").hidden = true;
       byId("reader-header").hidden = false;
       byId("reader-body").hidden = false;
-      byId("thread-id").open = false;
-      if (compactLayout.matches) byId("detail-heading").focus({preventScroll: true});
-      loadNote();
+      byId("subagent-directory").hidden = !isChild;
+      if (!sameThread) byId("thread-id").open = false;
+      if (moveFocus) byId("detail-heading").focus({preventScroll: true});
+      loadNote(sameThread);
+    }
+
+    function showChildren(moveFocus = true) {
+      if (!activeMain) return;
+      const threads = byId("subagent-threads");
+      if (threads.getClientRects().length) childScrollTop = threads.scrollTop;
+      view = "children";
+      main.dataset.readerView = view;
+      updateReaderNavigation();
+      byId("reader-empty").hidden = Boolean(activeThread);
+      byId("reader-empty").textContent = "Choose a subagent to read its note.";
+      byId("reader-header").hidden = !activeThread;
+      byId("reader-body").hidden = !activeThread;
+      byId("subagent-directory").hidden = false;
+      threads.scrollTop = childScrollTop;
+      if (moveFocus) {
+        const selected = childStale || childRefreshNeeded ? null : threads.querySelector('[aria-current="true"]');
+        (selected || byId("subagent-heading")).focus({preventScroll: true});
+      }
+      if ((renderedChildren === undefined || childRefreshNeeded) && !childLoading) void loadChildren(childPage);
+    }
+
+    function openChild(row) {
+      if (childStale || childRefreshNeeded) return;
+      const threads = byId("subagent-threads");
+      childScrollTop = threads.scrollTop;
+      for (const button of threads.querySelectorAll("button")) {
+        button.setAttribute("aria-current", String(button.dataset.thread === row.thread_id));
+      }
+      showNote(row, true, true);
+    }
+
+    function resetChildren() {
+      clearTimeout(childSearchTimer);
+      ++childRequest;
+      childPage = 1;
+      childTotalPages = 1;
+      childLoading = false;
+      childStale = false;
+      childRefreshNeeded = false;
+      renderedChildren = undefined;
+      childScrollTop = 0;
+      byId("subagent-search").value = "";
+      byId("include-inherited").checked = false;
+      byId("include-inherited-control").hidden = true;
+      byId("subagent-status").hidden = true;
+      byId("subagent-count").textContent = "";
+      byId("subagent-pagination").hidden = true;
+      byId("subagent-threads").replaceChildren();
     }
 
     function showDirectory() {
       main.dataset.view = "directory";
-      const selected = byId("threads").querySelector('[aria-current="true"]');
-      selected?.scrollIntoView({block: "nearest"});
+      const threads = byId("threads");
+      threads.scrollTop = directoryScrollTop;
+      const selected = listStale ? null : threads.querySelector('[aria-current="true"]');
+      selected?.scrollIntoView({block: "nearest", container: "nearest"});
       (selected || byId("search")).focus({preventScroll: true});
+    }
+
+    function clearThread() {
+      const moveFocus = byId("reader").contains(document.activeElement) ||
+        byId("subagent-directory").contains(document.activeElement);
+      activeMain = null;
+      activeThread = null;
+      ++noteRequest;
+      noteLoading = false;
+      view = "empty";
+      main.dataset.readerView = view;
+      resetChildren();
+      byId("threads").querySelector('[aria-current="true"]')?.setAttribute("aria-current", "false");
+      main.dataset.view = "directory";
+      byId("reader-empty").hidden = false;
+      byId("reader-empty").textContent = "Choose a main thread to read its note.";
+      byId("reader-header").hidden = true;
+      byId("reader-body").hidden = true;
+      byId("subagent-directory").hidden = true;
+      if (moveFocus) byId("search").focus({preventScroll: true});
     }
 
     function setNoteStatus(message, error = false) {
@@ -404,30 +685,120 @@
       byId("note-feedback").hidden = !message;
     }
 
+    let loadedNote = "";
+
+    function appendInlineText(element, text) {
+      const inline = /(?<!`)`([^`]+)`(?!`)|\*\*([^*]+)\*\*/g;
+      let offset = 0;
+      for (const match of text.matchAll(inline)) {
+        element.append(text.slice(offset, match.index));
+        const span = document.createElement(match[1] ? "code" : "strong");
+        span.textContent = match[1] || match[2];
+        element.append(span);
+        offset = match.index + match[0].length;
+      }
+      element.append(text.slice(offset));
+    }
+
+    function renderNote(summary) {
+      const content = document.createDocumentFragment();
+      let prose = null;
+      let list = null;
+      let fence = null;
+      for (const line of summary.split(/\r\n?|\n/)) {
+        const marker = line.match(/^[ \t]{0,3}(`{3,}|~{3,})(.*)$/);
+        if (fence) {
+          if (marker && marker[1][0] === fence.marker[0] && marker[1].length >= fence.marker.length && !marker[2].trim()) {
+            fence.code.textContent = fence.lines.join("\n");
+            fence = null;
+          } else {
+            fence.lines.push(line);
+          }
+          continue;
+        }
+
+        const heading = line.match(/^[ \t]{0,3}(#{1,6})[ \t]+(.+)$/);
+        const item = line.match(/^[ \t]{0,3}(?:[-+*]|(\d{1,9})[.)])[ \t]+(.+)$/);
+        if (marker || heading || item || !line.trim()) prose = null;
+        if (!item) list = null;
+        if (marker) {
+          const pre = document.createElement("pre");
+          const code = document.createElement("code");
+          pre.append(code);
+          content.append(pre);
+          fence = {marker: marker[1], code, lines: []};
+        } else if (heading) {
+          const element = document.createElement("h" + Math.min(6, heading[1].length + 2));
+          appendInlineText(element, heading[2].replace(/[ \t]+#+[ \t]*$/, ""));
+          content.append(element);
+        } else if (item) {
+          const tag = item[1] === undefined ? "ul" : "ol";
+          if (list?.localName !== tag) {
+            list = document.createElement(tag);
+            if (tag === "ol") list.start = Number(item[1]);
+            content.append(list);
+          }
+          const child = document.createElement("li");
+          appendInlineText(child, item[2]);
+          list.append(child);
+        } else if (line.trim()) {
+          if (prose) {
+            prose.append("\n");
+          } else {
+            prose = document.createElement("p");
+            content.append(prose);
+          }
+          appendInlineText(prose, line);
+        }
+      }
+      if (fence) fence.code.textContent = fence.lines.join("\n");
+      byId("note").replaceChildren(content);
+    }
+
+    function hideNoteSource() {
+      byId("raw-note").hidden = true;
+      byId("raw-note").open = false;
+      byId("note-source").value = "";
+      byId("copy-status").textContent = "";
+    }
+
     async function loadNote(preservePosition = false) {
       if (!activeThread) return;
-      const threadId = activeThread.thread_id;
+      const args = {thread_id: activeThread.thread_id};
+      if (activeThread.inherited) args.from_fork = activeMain.thread_id;
       const reading = ++noteRequest;
       if (!preservePosition) {
         byId("reader-body").scrollTop = 0;
         byId("note").textContent = "";
         byId("copy-summary").hidden = true;
         byId("note-date").textContent = "";
+        loadedNote = "";
+        hideNoteSource();
       }
-      byId("copy-status").textContent = "";
       noteLoading = true;
       updateControls();
-      setNoteStatus(preservePosition ? "Refreshing note..." : "Loading note...");
+      if (!preservePosition) setNoteStatus("Loading note...");
       try {
-        const result = await callTool("handoff_read", {thread_id: threadId});
+        const result = await callTool("handoff_read", args);
         if (reading !== noteRequest) return;
-        byId("note").textContent = result.summary ?? "";
-        byId("copy-summary").hidden = !result.summary;
+        const summary = result.summary ?? "";
+        if (summary !== loadedNote) {
+          const body = byId("reader-body");
+          const scroll = body.scrollTop;
+          hideNoteSource();
+          renderNote(summary);
+          body.scrollTop = scroll;
+          loadedNote = summary;
+        }
+        byId("copy-summary").hidden = !summary;
         const savedAt = formatDate(result.updated_at);
-        byId("note-date").textContent = result.summary && savedAt ? "Last updated " + savedAt : "";
-        setNoteStatus(result.summary ? "" : "This thread has no saved note.");
+        byId("note-date").textContent = summary && savedAt ? "Last updated " + savedAt : "";
+        setNoteStatus(summary ? "" : "This thread has no saved note.");
       } catch (error) {
-        if (reading === noteRequest) setNoteStatus(error.message, true);
+        if (reading === noteRequest) {
+          const prefix = loadedNote ? "Refresh failed. Showing the last loaded note. " : "";
+          setNoteStatus(prefix + error.message, true);
+        }
       } finally {
         if (reading === noteRequest) {
           noteLoading = false;
@@ -437,24 +808,27 @@
     }
 
     async function copySummary() {
-      const note = byId("note");
-      const summary = note.textContent;
+      const summary = loadedNote;
+      const threadId = activeThread?.thread_id;
       try {
         await navigator.clipboard.writeText(summary);
-        if (note.textContent === summary) byId("copy-status").textContent = "Copied.";
+        if (activeThread?.thread_id === threadId && loadedNote === summary) {
+          hideNoteSource();
+          byId("copy-status").textContent = "Copied.";
+        }
       } catch {
-        if (note.textContent !== summary) return;
-        const range = document.createRange();
-        range.selectNodeContents(note);
-        byId("reader-body").focus({preventScroll: true});
-        const selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
+        if (activeThread?.thread_id !== threadId || loadedNote !== summary) return;
+        byId("raw-note").hidden = false;
+        byId("raw-note").open = true;
+        const source = byId("note-source");
+        source.value = summary;
+        source.focus();
+        source.select();
         byId("copy-status").textContent = "Clipboard access unavailable. Use your copy shortcut to copy the selected text.";
       }
     }
 
-    async function loadPage(index) {
+    async function loadPage(targetPage) {
       clearTimeout(searchTimer);
       if (!connected) return;
       const revision = ++listRequest;
@@ -463,36 +837,34 @@
       const sortBy = byId("sort-by").value;
       listLoading = true;
       updateControls();
-      byId("results-count").textContent = "Loading threads...";
+      if (listStale || renderedRows === undefined) byId("results-count").textContent = "Loading threads...";
       try {
-        const cursor = cursors[index];
-        const args = {limit: pageSize, archive_status: archiveStatus, sort_by: sortBy};
-        if (cursor) args.cursor = cursor;
+        const args = {page: targetPage, limit: pageSize, archive_status: archiveStatus, sort_by: sortBy};
         if (query) args.query = query;
         const result = await callTool("handoff_list", args);
         if (listRequest !== revision) return;
-        pageIndex = index;
-        cursors.splice(index + 1, cursors.length, result.next_cursor);
+        const preservePosition = !listStale && page === result.page;
+        page = result.page;
+        totalPages = result.total_pages;
+        listStale = false;
         const rows = result.items;
-        const retained = rows.find((row) => row.thread_id === activeThread?.thread_id);
+        const retained = rows.find((row) => row.thread_id === activeMain?.thread_id);
         if (retained) {
-          activeThread = retained;
-          updateThreadHeading(retained);
-        } else if (activeThread && archiveStatus !== "all" && activeThread.archived !== (archiveStatus === "archived")) {
-          activeThread = null;
-          ++noteRequest;
-          noteLoading = false;
-          main.dataset.view = "directory";
-          byId("reader-empty").hidden = false;
-          byId("reader-header").hidden = true;
-          byId("reader-body").hidden = true;
+          activeMain = retained;
+          if (activeThread?.thread_id === retained.thread_id) {
+            activeThread = retained;
+            updateThreadHeading(retained);
+          }
+          updateReaderNavigation();
+        } else if (activeMain && archiveStatus !== "all" && activeMain.archived !== (archiveStatus === "archived")) {
+          clearThread();
         }
-        renderRows(rows, Boolean(query) || archiveStatus !== "all", sortBy);
+        renderRows(rows, Boolean(query) || archiveStatus !== "all", sortBy, preservePosition);
         byId("results-count").textContent = result.total ? result.total + (result.total === 1 ? " thread" : " threads") : "";
         setStatus("");
       } catch (error) {
         if (listRequest !== revision) return;
-        byId("results-count").textContent = "";
+        if (listStale || renderedRows === undefined) byId("results-count").textContent = "";
         setStatus(error.message, true);
       } finally {
         if (listRequest === revision) {
@@ -505,37 +877,157 @@
     function reloadDirectory(delay = 0) {
       ++listRequest;
       clearTimeout(searchTimer);
-      pageIndex = 0;
-      cursors = [null];
-      byId("threads").replaceChildren();
-      byId("pagination").hidden = true;
+      page = 1;
+      totalPages = 1;
+      listStale = true;
       listLoading = true;
       updateControls();
       byId("results-count").textContent = "Loading threads...";
-      searchTimer = setTimeout(() => loadPage(0), delay);
+      searchTimer = setTimeout(() => loadPage(1), delay);
     }
 
-    async function refresh(index = 0) {
+    async function loadChildren(targetPage) {
+      clearTimeout(childSearchTimer);
+      if (!activeMain) return;
+      const revision = ++childRequest;
+      const query = byId("subagent-search").value.trim();
+      const args = {thread_id: activeMain.thread_id, page: targetPage, limit: pageSize};
+      if (query) args.query = query;
+      if (byId("include-inherited").checked) args.include_inherited = true;
+      childLoading = true;
+      updateControls();
+      if (childStale || renderedChildren === undefined) byId("subagent-count").textContent = "Loading subagents...";
+      try {
+        const result = await callTool("handoff_children", args);
+        if (revision !== childRequest) return;
+        byId("include-inherited-control").hidden = result.can_include_inherited !== true;
+        if (result.can_include_inherited !== true && byId("include-inherited").checked) {
+          byId("include-inherited").checked = false;
+          dismissInheritedNote();
+        }
+        const preserve = !childStale && childPage === result.page;
+        childPage = result.page;
+        childTotalPages = result.total_pages;
+        childStale = false;
+        childRefreshNeeded = false;
+        const threads = byId("subagent-threads");
+        const rows = result.items;
+        const key = JSON.stringify([rows, Boolean(query)]);
+        const retained = rows.find((row) => row.thread_id === activeThread?.thread_id &&
+          Boolean(row.inherited) === Boolean(activeThread.inherited));
+        if (retained) {
+          activeThread = retained;
+          updateThreadHeading(retained);
+        }
+        if (!preserve || key !== renderedChildren) {
+          const focusedId = threads.contains(document.activeElement) ? document.activeElement.dataset.thread : null;
+          const scroll = preserve ? (threads.getClientRects().length ? threads.scrollTop : childScrollTop) : 0;
+          threads.replaceChildren(...threadItems(rows, {
+            sortBy: "note_updated", selected: activeThread?.thread_id, open: openChild,
+            empty: query ? "No matching subagents." : "No subagent notes saved yet.",
+          }));
+          renderedChildren = key;
+          childScrollTop = scroll;
+          threads.scrollTop = scroll;
+          if (focusedId) {
+            const focused = Array.from(threads.querySelectorAll("button")).find((button) => button.dataset.thread === focusedId);
+            (focused || byId("subagent-search")).focus({preventScroll: true});
+          }
+        }
+        byId("subagent-count").textContent = result.total + (result.total === 1 ? " subagent" : " subagents");
+        byId("subagent-pagination").hidden = childTotalPages < 2;
+        byId("subagent-page").textContent = "Page " + childPage + " of " + childTotalPages;
+        byId("subagent-status").hidden = true;
+      } catch (error) {
+        if (revision !== childRequest) return;
+        if (childStale || renderedChildren === undefined) byId("subagent-count").textContent = "";
+        byId("subagent-status").textContent = error.message;
+        byId("subagent-status").hidden = false;
+      } finally {
+        if (revision === childRequest) {
+          childLoading = false;
+          updateControls();
+        }
+      }
+    }
+
+    function searchChildren(delay = 200) {
+      ++childRequest;
+      clearTimeout(childSearchTimer);
+      childPage = 1;
+      childTotalPages = 1;
+      childStale = true;
+      childLoading = true;
+      updateControls();
+      byId("subagent-count").textContent = "Loading subagents...";
+      childSearchTimer = setTimeout(() => loadChildren(1), delay);
+    }
+
+    function dismissInheritedNote() {
+      if (!activeThread?.inherited) return;
+      activeThread = null;
+      ++noteRequest;
+      noteLoading = false;
+      showChildren(false);
+    }
+
+    async function refresh() {
+      refreshing = true;
+      const selectedMain = activeMain?.thread_id;
       const selected = activeThread?.thread_id;
-      await loadPage(index);
-      if (selected && activeThread?.thread_id === selected && !noteLoading) await loadNote(true);
+      const reading = noteRequest;
+      try {
+        const listing = loadPage(page);
+        const revision = listRequest;
+        await listing;
+        if (revision === listRequest && selectedMain && activeMain?.thread_id === selectedMain) {
+          if (view === "main" && renderedChildren !== undefined) childRefreshNeeded = true;
+          await Promise.all([
+            !childLoading && (view === "children" || view === "child") ? loadChildren(childPage) : null,
+            selected && activeThread?.thread_id === selected && reading === noteRequest ? loadNote(true) : null,
+          ]);
+        }
+      } finally {
+        refreshing = false;
+        updateControls();
+      }
+    }
+
+    function flushPendingRefresh() {
+      if (!refreshPending || !panelVisible || !connected || busy || listLoading || childLoading || noteLoading || refreshing) return;
+      refreshPending = false;
+      void refresh();
     }
 
     function observePanelVisibility() {
-      let wasVisible = false;
+      const tracksVisibility = "isVisible" in IntersectionObserverEntry.prototype;
+      let frameVisible = false;
       let shown = false;
-      // Codex can hide the retained iframe without changing its document visibility.
+      let activationTimer;
+      const queueActivation = () => {
+        if (activationTimer !== undefined) return;
+        activationTimer = setTimeout(() => {
+          activationTimer = undefined;
+          if (!panelVisible) return;
+          refreshPending = true;
+          flushPendingRefresh();
+        }, 120);
+      };
+      const syncVisibility = () => {
+        const visible = frameVisible && document.visibilityState === "visible";
+        if (visible && !panelVisible && shown) queueActivation();
+        panelVisible = visible;
+        shown ||= visible;
+        flushPendingRefresh();
+      };
+      // A retained Codex frame may be hidden with opacity while it still intersects the viewport.
       new IntersectionObserver((entries) => {
-        for (const {isIntersecting} of entries) {
-          const reopened = isIntersecting && !wasVisible && shown;
-          wasVisible = isIntersecting;
-          shown ||= isIntersecting;
-          if (reopened && !busy) {
-            if (!listLoading) refresh(pageIndex);
-            else if (!noteLoading) loadNote(true);
-          }
-        }
-      }).observe(main);
+        const entry = entries.at(-1);
+        frameVisible = entry.isIntersecting &&
+          (!tracksVisibility || entry.isVisible || document.querySelector("dialog[open]") !== null);
+        syncVisibility();
+      }, tracksVisibility ? {trackVisibility: true, delay: 100} : {}).observe(document.documentElement);
+      document.addEventListener("visibilitychange", syncVisibility);
     }
 
     async function previewCleanup() {
@@ -594,7 +1086,15 @@
         }
         if (result.index_warning) message += " " + result.index_warning;
         setCleanupStatus(message, Boolean(result.index_warning));
-        await refresh();
+        if (count && result.thread_ids?.includes(activeMain?.thread_id)) {
+          clearThread();
+        } else if (count && result.thread_ids?.includes(activeThread?.thread_id)) {
+          activeThread = null;
+          ++noteRequest;
+          noteLoading = false;
+          showChildren(false);
+        }
+        refreshPending = true;
       } catch (error) {
         setCleanupStatus(error.message, true);
       } finally {
@@ -603,13 +1103,34 @@
       }
     }
 
-    byId("refresh").addEventListener("click", () => refresh());
-    byId("previous").addEventListener("click", () => loadPage(pageIndex - 1));
-    byId("next").addEventListener("click", () => loadPage(pageIndex + 1));
+    byId("refresh").addEventListener("click", () => {
+      if (byId("refresh").getAttribute("aria-disabled") !== "true") void refresh();
+    });
+    byId("previous").addEventListener("click", () => {
+      if (byId("previous").getAttribute("aria-disabled") !== "true") void loadPage(page - 1);
+    });
+    byId("next").addEventListener("click", () => {
+      if (byId("next").getAttribute("aria-disabled") !== "true") void loadPage(page + 1);
+    });
     byId("search").addEventListener("input", () => reloadDirectory(200));
     byId("archive-status").addEventListener("change", () => reloadDirectory());
     byId("sort-by").addEventListener("change", () => reloadDirectory());
     byId("back-to-threads").addEventListener("click", showDirectory);
+    byId("subagent-back-directory").addEventListener("click", showDirectory);
+    byId("subagent-back-main").addEventListener("click", () => showNote(activeMain, false, true));
+    byId("show-subagents").addEventListener("click", () => showChildren());
+    byId("back-to-subagents").addEventListener("click", () => showChildren());
+    byId("subagent-search").addEventListener("input", () => searchChildren());
+    byId("include-inherited").addEventListener("change", ({currentTarget}) => {
+      searchChildren(0);
+      if (!currentTarget.checked) dismissInheritedNote();
+    });
+    byId("subagent-previous").addEventListener("click", () => {
+      if (byId("subagent-previous").getAttribute("aria-disabled") !== "true") void loadChildren(childPage - 1);
+    });
+    byId("subagent-next").addEventListener("click", () => {
+      if (byId("subagent-next").getAttribute("aria-disabled") !== "true") void loadChildren(childPage + 1);
+    });
     byId("retry-note").addEventListener("click", () => loadNote(true));
     byId("copy-summary").addEventListener("click", copySummary);
     byId("manage").addEventListener("click", () => byId("management-dialog").showModal());
@@ -648,7 +1169,7 @@
           }
         }).observe(main);
         observePanelVisibility();
-        await loadPage(0);
+        await loadPage(1);
       } catch (error) {
         setStatus(error.message, true);
       }

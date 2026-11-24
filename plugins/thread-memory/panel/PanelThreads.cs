@@ -1,5 +1,3 @@
-using System.Buffers.Binary;
-using System.Buffers.Text;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -14,12 +12,13 @@ internal static class PanelThreads
     private static readonly string[] IdentityColumns =
         ["source", "thread_source", "agent_role", "agent_nickname", "attached_thread_parent_id", "archived", "updated_at_ms", "updated_at"];
     private static readonly string[] TitleColumns = ["name", "title"];
+    private static readonly string[] ChildTitleColumns = [.. TitleColumns, "agent_nickname", "agent_role"];
     private static readonly string[] PreviewColumns = ["preview", "first_user_message"];
 
     private const string NoteJoins = """
         LEFT JOIN memory_revisions AS memory ON memory.revision = (
             SELECT revision FROM memory_revisions
-            WHERE thread_id = threads.thread_id AND summary <> ''
+            WHERE thread_id = threads.thread_id
             ORDER BY effective_us DESC, revision DESC LIMIT 1
         )
         LEFT JOIN handoffs AS handoff ON memory.revision IS NULL
@@ -34,20 +33,29 @@ internal static class PanelThreads
             )
         """;
 
-    private sealed record ListedNote(string ThreadId, string UpdatedAt, long SortAt);
+    private sealed record ListedNote(string ThreadId, string UpdatedAt, long SortAt, bool Inherited = false);
+    private sealed record SpawnLink(string ParentId, bool Indexed, bool Attached);
 
-    internal static JsonObject List(string home, JsonElement args)
+    private static (int Limit, int Page, string Query) ListArguments(JsonElement args)
     {
         int limit = 30;
         if (args.TryGetProperty("limit", out var limitArg)
             && (limitArg.ValueKind != JsonValueKind.Number || !limitArg.TryGetInt32(out limit) || limit is < 1 or > 100))
             throw new ArgumentException("Limit must be an integer between 1 and 100.");
-        var anchor = args.TryGetProperty("cursor", out var cursorArg) ? DecodeCursor(cursorArg) : ((long SortAt, string ThreadId)?)null;
+        int pageNumber = 1;
+        if (args.TryGetProperty("page", out var pageArg)
+            && (pageArg.ValueKind != JsonValueKind.Number || !pageArg.TryGetInt32(out pageNumber) || pageNumber < 1))
+            throw new ArgumentException("Page must be a positive integer.");
         var queryArg = SessionFiles.Property(args, "query");
         if (queryArg.ValueKind != JsonValueKind.Undefined
             && (queryArg.ValueKind != JsonValueKind.String || queryArg.GetString()!.EnumerateRunes().Count() > 256))
             throw new ArgumentException("Expected a handoff search query of at most 256 characters.");
-        string query = Normalize(SessionFiles.String(args, "query"));
+        return (limit, pageNumber, Normalize(SessionFiles.String(args, "query")));
+    }
+
+    internal static JsonObject List(string home, JsonElement args)
+    {
+        var (limit, pageNumber, query) = ListArguments(args);
         string? archiveStatus = args.TryGetProperty("archive_status", out _) ? SessionFiles.String(args, "archive_status") : "all";
         if (archiveStatus is not ("all" or "active" or "archived"))
             throw new ArgumentException("Archive status must be all, active, or archived.");
@@ -56,7 +64,22 @@ internal static class PanelThreads
             throw new ArgumentException("Sort by must be note_updated or thread_updated.");
 
         var notes = ReadNoteTimes(new HookStore(home));
-        var ids = notes.Select(note => note.ThreadId).ToHashSet(StringComparer.Ordinal);
+        Dictionary<string, SpawnLink> links = notes.Count == 0 ? [] : ReadSpawnLinks(home);
+        Dictionary<string, (ListedNote Latest, int ChildCount)> groups = new(StringComparer.Ordinal);
+        foreach (var note in notes)
+        {
+            string id = note.ThreadId;
+            links.TryGetValue(id, out var child);
+            if (child is { Indexed: false } || RootOf(id, links) is not { } root)
+                continue;
+            int childCount = child is null ? 0 : 1;
+            if (groups.TryGetValue(root, out var group))
+                groups[root] = (group.Latest.SortAt >= note.SortAt ? group.Latest : note,
+                    group.ChildCount + childCount);
+            else
+                groups[root] = (note, childCount);
+        }
+        var ids = groups.Keys.ToHashSet(StringComparer.Ordinal);
         var indexed = ThreadMetadata(home, ids, IdentityColumns, withSpawnEdge: true);
         var archives = MainThreadArchives(home, ids, indexed);
         if (archiveStatus != "all")
@@ -68,42 +91,106 @@ internal static class PanelThreads
         var titles = query.Length == 0
             ? new Dictionary<string, string>(StringComparer.Ordinal)
             : ThreadTitles(home, archives.Keys, ThreadMetadata(home, archives.Keys, TitleColumns));
-        var ordered = notes.Where(note => archives.ContainsKey(note.ThreadId)
-            && (query.Length == 0 || note.ThreadId.Contains(query, StringComparison.OrdinalIgnoreCase)
-                || (titles.GetValueOrDefault(note.ThreadId)?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)))
-            .Select(note => sort == "thread_updated" && ThreadUpdatedAt(indexed.GetValueOrDefault(note.ThreadId)) is { } updated
-                ? note with { SortAt = Microseconds(updated) }
-                : note)
-            .OrderByDescending(note => note.SortAt).ThenBy(note => note.ThreadId, StringComparer.Ordinal).ToArray();
-        var afterAnchor = anchor is { } position
-            ? ordered.SkipWhile(note => note.SortAt > position.SortAt || note.SortAt == position.SortAt
-                && string.CompareOrdinal(note.ThreadId, position.ThreadId) <= 0)
-            : ordered;
-        var page = afterAnchor.Take(limit + 1).ToArray();
-        var pageIds = page.Take(limit).Select(note => note.ThreadId).ToArray();
-        var details = ThreadMetadata(home, pageIds, query.Length == 0 ? [.. PreviewColumns, .. TitleColumns] : PreviewColumns);
-        if (query.Length == 0)
-            titles = ThreadTitles(home, pageIds, details);
-        JsonArray items = [];
-        foreach (var note in page.Take(limit))
+        var ordered = groups.Keys.Where(id => archives.ContainsKey(id) && Matches(query, id, titles))
+            .OrderByDescending(id => sort == "thread_updated" && ThreadUpdatedAt(indexed.GetValueOrDefault(id)) is { } updated
+                ? Microseconds(updated) : groups[id].Latest.SortAt)
+            .ThenBy(id => id, StringComparer.Ordinal).ToArray();
+        return Page(ordered, pageNumber, limit, page =>
         {
-            string id = note.ThreadId;
-            string? title = titles.GetValueOrDefault(id);
-            items.Add((JsonNode)new JsonObject
+            var details = ThreadMetadata(home, page, query.Length == 0 ? [.. PreviewColumns, .. TitleColumns] : PreviewColumns);
+            if (query.Length == 0)
+                titles = ThreadTitles(home, page, details);
+            JsonArray items = [];
+            foreach (string id in page)
             {
-                ["thread_id"] = id,
-                ["latest_at"] = note.UpdatedAt,
-                ["title"] = title is null ? null : Prefix(title, 160),
-                ["preview"] = Preview(details.GetValueOrDefault(id)),
-                ["archived"] = archives[id],
-                ["thread_updated_at"] = ThreadUpdatedAt(indexed.GetValueOrDefault(id))?
-                    .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
-            });
+                var group = groups[id];
+                items.Add((JsonNode)new JsonObject
+                {
+                    ["thread_id"] = id,
+                    ["latest_at"] = group.Latest.UpdatedAt,
+                    ["title"] = titles.GetValueOrDefault(id) is { } title ? Prefix(title, 160) : null,
+                    ["preview"] = Preview(details.GetValueOrDefault(id)),
+                    ["archived"] = archives[id],
+                    ["thread_updated_at"] = ThreadUpdatedAt(indexed.GetValueOrDefault(id))?
+                        .ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture),
+                    ["child_note_count"] = group.ChildCount,
+                });
+            }
+            return items;
+        });
+    }
+
+    internal static JsonObject ListChildren(string home, JsonElement args)
+    {
+        string root = PanelFiles.ThreadId(SessionFiles.Property(args, "thread_id"));
+        var (limit, pageNumber, query) = ListArguments(args);
+        var include = SessionFiles.Property(args, "include_inherited");
+        if (include.ValueKind is not (JsonValueKind.Undefined or JsonValueKind.True or JsonValueKind.False))
+            throw new ArgumentException("Include inherited must be a boolean.");
+        var links = ReadSpawnLinks(home);
+        // Only expose a spawn subtree from an independently verified main thread.
+        bool main = !links.ContainsKey(root)
+            && MainThreadArchives(home, [root], ThreadMetadata(home, [root], IdentityColumns)).ContainsKey(root);
+        Dictionary<string, long> ancestorCutoffs = main ? ForkCutoffs(home, root, links) : [];
+        List<ListedNote> notes = [];
+        if (main && links.Count > 0)
+        {
+            var store = new HookStore(home);
+            notes.AddRange(ReadNoteTimes(store).Where(note =>
+                links.TryGetValue(note.ThreadId, out var link) && link.Indexed && RootOf(note.ThreadId, links) == root));
+            if (include.ValueKind == JsonValueKind.True && ancestorCutoffs.Count > 0 && store.OpenRead() is { } connection)
+            {
+                using (connection)
+                {
+                    foreach (var (id, link) in links)
+                        if (HistoricalChild(connection, id, link, links, ancestorCutoffs) is { } historical)
+                            notes.Add(new ListedNote(id, NoteTimestamp(historical.UpdatedUs), historical.UpdatedUs, Inherited: true));
+                }
+            }
         }
+        Dictionary<string, string> titles = query.Length == 0 ? [] : ChildTitles(home, notes);
+        var ordered = notes.Where(note => Matches(query, note.ThreadId, titles))
+            .OrderByDescending(note => note.SortAt).ThenBy(note => note.ThreadId, StringComparer.Ordinal).ToArray();
+        var response = Page(ordered, pageNumber, limit, page =>
+        {
+            var ids = page.Select(note => note.ThreadId).ToArray();
+            var details = ThreadMetadata(home, ids, [.. PreviewColumns, "archived"]);
+            if (query.Length == 0)
+                titles = ChildTitles(home, page);
+            JsonArray items = [];
+            foreach (var note in page)
+            {
+                string id = note.ThreadId;
+                items.Add((JsonNode)new JsonObject
+                {
+                    ["thread_id"] = id,
+                    ["parent_thread_id"] = links[id].ParentId,
+                    ["latest_at"] = note.UpdatedAt,
+                    ["title"] = titles.GetValueOrDefault(id) is { } title ? Prefix(title, 160) : null,
+                    ["preview"] = note.Inherited ? null : Preview(details.GetValueOrDefault(id)),
+                    ["archived"] = details.GetValueOrDefault(id)?.GetValueOrDefault("archived") is 1L,
+                    ["inherited"] = note.Inherited,
+                });
+            }
+            return items;
+        });
+        response["can_include_inherited"] = ancestorCutoffs.Count > 0;
+        return response;
+    }
+
+    private static bool Matches(string query, string id, Dictionary<string, string> titles) => query.Length == 0
+        || id.Contains(query, StringComparison.OrdinalIgnoreCase)
+        || (titles.GetValueOrDefault(id)?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false);
+
+    private static JsonObject Page<T>(T[] ordered, int pageNumber, int limit, Func<T[], JsonArray> project)
+    {
+        int totalPages = ordered.Length == 0 ? 1 : (ordered.Length - 1) / limit + 1;
+        pageNumber = Math.Min(pageNumber, totalPages);
         return new JsonObject
         {
-            ["items"] = items,
-            ["next_cursor"] = page.Length > limit ? EncodeCursor(page[limit - 1]) : null,
+            ["items"] = project(ordered.Skip((pageNumber - 1) * limit).Take(limit).ToArray()),
+            ["page"] = pageNumber,
+            ["total_pages"] = totalPages,
             ["total"] = ordered.Length,
         };
     }
@@ -111,15 +198,27 @@ internal static class PanelThreads
     internal static JsonObject Read(string home, JsonElement args)
     {
         string identifier = PanelFiles.ThreadId(SessionFiles.Property(args, "thread_id"));
+        var forkArg = SessionFiles.Property(args, "from_fork");
+        string? fork = forkArg.ValueKind == JsonValueKind.Undefined ? null : PanelFiles.ThreadId(forkArg);
         string? summary = null;
         string? updated = null;
         using var connection = new HookStore(home).OpenRead();
-        if (connection is not null)
+        if (connection is not null && fork is not null)
+        {
+            var links = ReadSpawnLinks(home);
+            if (links.TryGetValue(identifier, out var link)
+                && HistoricalChild(connection, identifier, link, links, ForkCutoffs(home, fork, links)) is { } historical)
+            {
+                summary = historical.Summary;
+                updated = NoteTimestamp(historical.UpdatedUs);
+            }
+        }
+        else if (connection is not null)
         {
             using var command = connection.CreateCommand();
             command.CommandText = """
                 WITH threads AS (SELECT $id AS thread_id)
-                SELECT COALESCE(memory.summary, handoff.summary), memory.updated_us, handoff.saved_at
+                SELECT COALESCE(NULLIF(memory.summary, ''), handoff.summary), memory.updated_us, handoff.saved_at
                 FROM threads
                 """ + "\n" + NoteJoins;
             command.Parameters.AddWithValue("$id", identifier);
@@ -142,7 +241,7 @@ internal static class PanelThreads
         command.CommandText = """
             WITH threads AS (SELECT thread_id FROM memory_revisions UNION SELECT thread_id FROM handoffs)
             SELECT threads.thread_id, memory.updated_us, handoff.saved_at FROM threads
-            """ + "\n" + NoteJoins + "\nWHERE memory.revision IS NOT NULL OR handoff.window IS NOT NULL";
+            """ + "\n" + NoteJoins + "\nWHERE memory.summary <> '' OR handoff.window IS NOT NULL";
         using var reader = command.ExecuteReader();
         List<ListedNote> notes = [];
         while (reader.Read())
@@ -162,6 +261,108 @@ internal static class PanelThreads
             }
         }
         return notes;
+    }
+
+    private static Dictionary<string, SpawnLink> ReadSpawnLinks(string home)
+    {
+        Dictionary<string, SpawnLink> links = new(StringComparer.Ordinal);
+        try
+        {
+            if (SessionFiles.ActiveStateDatabase(home) is not { } database || !File.Exists(database))
+                return links;
+            using var connection = PanelFiles.OpenDatabase(database, SqliteOpenMode.ReadOnly);
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('thread_spawn_edges') WHERE name IN ('parent_thread_id', 'child_thread_id')";
+            if (command.ExecuteScalar() is not 2L)
+                return links;
+            command.CommandText = "SELECT 1 FROM pragma_table_info('threads') WHERE name = 'attached_thread_parent_id'";
+            var attached = command.ExecuteScalar() is 1L
+                ? "NULLIF(threads.attached_thread_parent_id, '') IS NOT NULL" : "0";
+            command.CommandText = $"""
+                SELECT edge.child_thread_id, edge.parent_thread_id, threads.id IS NOT NULL, {attached}
+                FROM thread_spawn_edges AS edge LEFT JOIN threads ON threads.id = edge.child_thread_id
+                """;
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+                links[reader.GetString(0)] = new SpawnLink(reader.GetString(1), reader.GetBoolean(2), reader.GetBoolean(3));
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException
+            or NotSupportedException or TomlException or SqliteException or InvalidDataException)
+        {
+            links.Clear();
+        }
+        return links;
+    }
+
+    private static string? RootOf(string id, Dictionary<string, SpawnLink> links)
+    {
+        if (!links.TryGetValue(id, out var link))
+            return id;
+        HashSet<string> visited = new(StringComparer.Ordinal);
+        do
+        {
+            if (link.Attached || !visited.Add(id))
+                return null;
+            id = link.ParentId;
+        }
+        while (links.TryGetValue(id, out link));
+        return id;
+    }
+
+    private static ThreadMemory.Note? HistoricalChild(SqliteConnection connection, string id, SpawnLink link,
+        Dictionary<string, SpawnLink> links, Dictionary<string, long> ancestorCutoffs)
+    {
+        if (!link.Indexed || RootOf(id, links) is not { } root || !ancestorCutoffs.TryGetValue(root, out long cutoff))
+            return null;
+        // A saved revision at this cutoff also establishes that the child already existed.
+        var saved = ThreadMemory.ReadSavedAt(connection, id, cutoff);
+        return string.IsNullOrEmpty(saved?.Summary) ? null : saved;
+    }
+
+    private static Dictionary<string, long> ForkCutoffs(string home, string root, Dictionary<string, SpawnLink> links)
+    {
+        Dictionary<string, long> cutoffs = new(StringComparer.Ordinal);
+        var header = ReadMainHeader(home, root, links);
+        long cutoff = long.MaxValue;
+        while (SessionFiles.String(header, "forked_from_id") is { Length: 36 } parentText
+            && Guid.TryParseExact(parentText, "D", out var parentId))
+        {
+            string parent = parentId.ToString("D");
+            if (parent == root || cutoffs.ContainsKey(parent))
+                return [];
+            var parentHeader = ReadMainHeader(home, parent, links);
+            if (parentHeader.ValueKind == JsonValueKind.Undefined)
+                break;
+            try
+            {
+                cutoff = Math.Min(cutoff, ThreadMemory.TimestampUs(SessionFiles.String(header, "timestamp")));
+            }
+            catch (InvalidDataException)
+            {
+                break;
+            }
+            cutoffs[parent] = cutoff;
+            header = parentHeader;
+        }
+        return cutoffs;
+    }
+
+    private static JsonElement ReadMainHeader(string home, string id, Dictionary<string, SpawnLink> links)
+    {
+        if (links.ContainsKey(id))
+            return default;
+        try
+        {
+            if (SessionFiles.FindRollout(home, id) is not { } path)
+                return default;
+            var header = SessionFiles.ReadHeader(path);
+            return SessionFiles.String(header, "id") == id && IsMainHeader(header) ? header : default;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException
+            or ArgumentException or InvalidOperationException or JsonException)
+        {
+            return default;
+        }
     }
 
     private static Dictionary<string, Dictionary<string, object?>> ThreadMetadata(string home, IEnumerable<string> ids,
@@ -260,14 +461,7 @@ internal static class PanelThreads
                         && (session.ValueKind != JsonValueKind.String || session.GetString() is not { Length: 36 } id
                             || !Guid.TryParseExact(id, "D", out var sessionId) || sessionId.ToString("D") != owner))
                         continue;
-                    if (SessionFiles.Property(header, "attached_thread").ValueKind is not (JsonValueKind.Undefined or JsonValueKind.False)
-                        || NonNullProperty(header, "parent_thread_id") || NonNullProperty(header, "subagent_history_start_ordinal")
-                        || !string.IsNullOrEmpty(SessionFiles.String(header, "agent_role"))
-                        || !string.IsNullOrEmpty(SessionFiles.String(header, "agent_nickname")))
-                        continue;
-                    var source = SessionFiles.Property(header, "source");
-                    if (IsMainSource(source.ValueKind == JsonValueKind.Object ? source.GetRawText() : SessionFiles.String(header, "source"),
-                        SessionFiles.String(header, "thread_source")) is not true)
+                    if (!IsMainHeader(header))
                         continue;
                     string relative = Path.GetRelativePath(Path.Combine(home, "archived_sessions"), rollout.Path);
                     bool archived = !Path.IsPathRooted(relative) && relative != ".."
@@ -288,6 +482,18 @@ internal static class PanelThreads
             // Already verified rows remain usable if a session directory cannot be read.
         }
         return main;
+    }
+
+    private static bool IsMainHeader(JsonElement header)
+    {
+        if (SessionFiles.Property(header, "attached_thread").ValueKind is not (JsonValueKind.Undefined or JsonValueKind.False)
+            || ThreadMemory.IsSubagent(header) || NonNullProperty(header, "parent_thread_id")
+            || !string.IsNullOrEmpty(SessionFiles.String(header, "agent_role"))
+            || !string.IsNullOrEmpty(SessionFiles.String(header, "agent_nickname")))
+            return false;
+        var source = SessionFiles.Property(header, "source");
+        return IsMainSource(source.ValueKind == JsonValueKind.Object ? source.GetRawText() : SessionFiles.String(header, "source"),
+            SessionFiles.String(header, "thread_source")) is true;
     }
 
     private static bool? IsMainSource(string? source, string? threadSource)
@@ -370,6 +576,23 @@ internal static class PanelThreads
         return titles;
     }
 
+    private static Dictionary<string, string> ChildTitles(string home, IReadOnlyList<ListedNote> notes)
+    {
+        var metadata = ThreadMetadata(home, notes.Select(note => note.ThreadId), ChildTitleColumns);
+        var titles = ThreadTitles(home, notes.Where(note => !note.Inherited).Select(note => note.ThreadId), metadata);
+        foreach (var note in notes)
+        {
+            string id = note.ThreadId;
+            if (titles.ContainsKey(id) || !metadata.TryGetValue(id, out var row))
+                continue;
+            string nickname = DisplayText(row.GetValueOrDefault("agent_nickname") as string);
+            string role = DisplayText(row.GetValueOrDefault("agent_role") as string);
+            if (nickname.Length > 0 || role.Length > 0)
+                titles[id] = nickname.Length > 0 ? nickname : role;
+        }
+        return titles;
+    }
+
     private static string? Preview(Dictionary<string, object?>? row)
     {
         foreach (string column in PreviewColumns)
@@ -415,24 +638,4 @@ internal static class PanelThreads
         .ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'", CultureInfo.InvariantCulture);
 
     private static long Microseconds(DateTimeOffset timestamp) => (timestamp.UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks) / 10;
-
-    private static (long SortAt, string ThreadId) DecodeCursor(JsonElement argument)
-    {
-        Span<byte> bytes = stackalloc byte[24];
-        if (argument.ValueKind != JsonValueKind.String || argument.GetString() is not { Length: 32 } cursor
-            || !Base64Url.TryDecodeFromChars(cursor, bytes, out int written) || written != bytes.Length)
-            throw new ArgumentException("Invalid thread list cursor. Start with the first page.");
-        long rank = BinaryPrimitives.ReadInt64BigEndian(bytes);
-        if (rank == long.MinValue)
-            throw new ArgumentException("Invalid thread list cursor. Start with the first page.");
-        return (-rank, new Guid(bytes[8..], bigEndian: true).ToString("D"));
-    }
-
-    private static string EncodeCursor(ListedNote last)
-    {
-        Span<byte> bytes = stackalloc byte[24];
-        BinaryPrimitives.WriteInt64BigEndian(bytes, -last.SortAt);
-        Guid.ParseExact(last.ThreadId, "D").TryWriteBytes(bytes[8..], bigEndian: true, out _);
-        return Base64Url.EncodeToString(bytes);
-    }
 }

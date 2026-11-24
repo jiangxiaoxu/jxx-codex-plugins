@@ -269,6 +269,9 @@ internal static class ThreadMemory
         }
     }
 
+    internal static Note? ReadSavedAt(SqliteConnection connection, string threadId, long cutoffUs) =>
+        ReadNote(connection, threadId, cutoffUs) ?? ReadLegacy(connection, threadId, cutoffUs);
+
     private static Note? ReadNote(SqliteConnection connection, string threadId, long? cutoffUs = null, SqliteTransaction? transaction = null)
     {
         using var command = connection.CreateCommand();
