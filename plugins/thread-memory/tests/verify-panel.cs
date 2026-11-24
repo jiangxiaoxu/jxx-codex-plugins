@@ -81,6 +81,14 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
         archived: true, updatedMs: 1_767_225_600_000);
     AddThread(database, spawned, "Needle child", null, archived: false, updatedMs: 1_799_020_800_124);
     Execute(database, "INSERT INTO thread_spawn_edges VALUES ($parent, $child, 'closed')", ("$parent", active), ("$child", spawned));
+    var missingStore = await mcp.Tool("handoff_list", new { selected_thread_id = active });
+    var missingChildStore = await mcp.Tool("handoff_children", new { thread_id = active });
+    var unreadableNote = await mcp.Tool("handoff_read", new { thread_id = spawned });
+    Check(!missingStore.GetProperty("note_store_available").GetBoolean()
+        && !missingChildStore.GetProperty("note_store_available").GetBoolean()
+        && missingStore.GetProperty("selected_available").ValueKind == JsonValueKind.Null
+        && unreadableNote.GetProperty("note_available").ValueKind == JsonValueKind.Null,
+        "The missing note store cannot confirm that a selection, directory row, or note was removed.");
 
     string fallbackPath = WriteRollout(home, fallback, archived: true);
     await SaveNote(cli, home, fallback, "Archived note without an index row");
@@ -151,11 +159,13 @@ static async Task VerifySelectionAndIndexAvailability(string home, string panel,
 
     var before = await mcp.Tool("handoff_list", new { selected_thread_id = selected, sort_by = "thread_updated", limit = 1 });
     Check(ThreadIds(before).SequenceEqual([selected]) && !before.GetProperty("selected_archived").GetBoolean()
+        && before.GetProperty("selected_available").GetBoolean()
         && before.GetProperty("spawn_index_available").GetBoolean()
         && before.GetProperty("items")[0].GetProperty("child_note_count").GetInt32() == 0,
         "A verified selection must show its current archive status and a confirmed empty spawn count.");
     var empty = await mcp.Tool("handoff_children", new { thread_id = selected });
-    Check(empty.GetProperty("spawn_index_available").GetBoolean() && empty.GetProperty("total").GetInt32() == 0,
+    Check(empty.GetProperty("spawn_index_available").GetBoolean() && empty.GetProperty("note_store_available").GetBoolean()
+        && empty.GetProperty("total").GetInt32() == 0,
         "A usable empty spawn index must report a verified empty child directory.");
     Execute(database, "UPDATE backfill_state SET status = 'running' WHERE id = 1");
     var backfilling = await mcp.Tool("handoff_children", new { thread_id = selected });
@@ -174,8 +184,9 @@ static async Task VerifySelectionAndIndexAvailability(string home, string panel,
         query = "Keep in directory",
         limit = 1,
     });
-    Check(ThreadIds(refreshed).SequenceEqual([keeper]) && refreshed.GetProperty("selected_archived").GetBoolean(),
-        "Refreshing must report the selection's updated status even when filters exclude its row.");
+    Check(ThreadIds(refreshed).SequenceEqual([keeper]) && refreshed.GetProperty("selected_archived").GetBoolean()
+        && refreshed.GetProperty("selected_available").GetBoolean(),
+        "Refreshing must preserve a valid selection and report its updated status even when filters exclude its row.");
     var unverified = await mcp.Tool("handoff_list", new { selected_thread_id = NewId() });
     Check(unverified.GetProperty("selected_archived").ValueKind == JsonValueKind.Null,
         "An unverified selection must not be treated as an active thread.");
@@ -189,6 +200,9 @@ static async Task VerifySelectionAndIndexAvailability(string home, string panel,
     var unknownChildren = await mcp.Tool("handoff_children", new { thread_id = selected });
     Check(!unknownChildren.GetProperty("spawn_index_available").GetBoolean() && !ThreadIds(unknownChildren).Any(),
         "An unavailable spawn index must explicitly report the child directory as unavailable.");
+    var uncertain = await mcp.Tool("handoff_list", new { selected_thread_id = NewId() });
+    Check(uncertain.GetProperty("selected_available").ValueKind == JsonValueKind.Null,
+        "An unavailable spawn index cannot confirm that a missing group was removed.");
     await mcp.Finish();
 }
 
@@ -261,7 +275,8 @@ static async Task VerifyChildDirectory(string home, string panel, string cli)
     var noChildren = await mcp.Tool("handoff_children", new { thread_id = main });
     Check(!ThreadIds(noChildren).Any(), "Ordinary forks and attached sessions are outside the spawned child directory.");
     var read = await mcp.Tool("handoff_read", new { thread_id = nested });
-    Check(read.GetProperty("summary").GetString() == "Nested note", "The standard note reader must open a nested note.");
+    Check(read.GetProperty("summary").GetString() == "Nested note" && read.GetProperty("note_available").GetBoolean(),
+        "The standard note reader must open a nested note.");
     await mcp.Finish();
 }
 
@@ -468,8 +483,12 @@ static async Task VerifyCleanup(string home, string panel, string cli)
     foreach (string id in new[] { parent, deletedChild })
     {
         var note = await mcp.Tool("handoff_read", new { thread_id = id });
-        Check(note.GetProperty("summary").ValueKind == JsonValueKind.Null, "Cleanup did not remove a deleted thread note.");
+        Check(note.GetProperty("summary").ValueKind == JsonValueKind.Null && !note.GetProperty("note_available").GetBoolean(),
+            "Cleanup did not remove a deleted thread note.");
     }
+    var removedSelection = await mcp.Tool("handoff_list", new { selected_thread_id = parent });
+    Check(!removedSelection.GetProperty("selected_available").GetBoolean(),
+        "Refreshing must confirm that the cleaned-up main thread has no remaining note group.");
     var forkNote = await mcp.Tool("handoff_read", new { thread_id = fork });
     Check(forkNote.GetProperty("summary").GetString() == snapshot
         && forkNote.GetProperty("updated_at").GetString() == snapshotWrite.GetProperty("updated_at").GetString(),

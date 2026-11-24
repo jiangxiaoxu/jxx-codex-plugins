@@ -105,6 +105,7 @@ static async Task VerifyUi(DevTools browser)
 
     await VerifyNavigationLayout(browser);
     await VerifyModalVisibility(browser);
+    await VerifySelectionOnRefresh(browser);
     await VerifyInheritance(browser);
     await VerifyCleanup(browser);
 }
@@ -122,6 +123,15 @@ static async Task VerifyNavigationLayout(DevTools browser)
         ['directory', 'note-directory', 'reader'].every(id => effectiveBackground(el(id)) === 'rgb(24, 24, 24)') &&
         rootPinned() && childNotePaths().join() === [fixture.ownTitle, fixture.olderTitle].join()
         """, "The directories should share the reader's dark surface, with /root first and agent paths in update order.");
+    await browser.Check("""
+        (() => {
+          const title = el('notes-heading');
+          const style = frame.contentWindow.getComputedStyle(title);
+          return title.textContent === fixture.rows[1].title && title.title === title.textContent &&
+            title.scrollWidth > title.clientWidth && style.whiteSpace === 'nowrap' &&
+            style.textOverflow === 'ellipsis' && style.overflowX === 'hidden';
+        })()
+        """, "A long thread title should take one line and keep its full text available.");
     await browser.Evaluate("el('subagent-threads').querySelector('button').click()");
     await browser.WaitFor("""
         visible('note-directory') && visible('reader') && rootPinned() &&
@@ -143,6 +153,16 @@ static async Task VerifyNavigationLayout(DevTools browser)
         """);
     await browser.WaitFor("frame.contentDocument.documentElement.dataset.display === 'fullscreen' && el('subagent-page').textContent === 'Page 1 of 2'",
         "The full note directory should open in fullscreen.");
+    await browser.Check("""
+        (() => {
+          const notes = el('subagent-threads');
+          notes.scrollTop = 120;
+          const before = notes.scrollTop;
+          el('threads').querySelector('button').click();
+          return before > 0 && notes.scrollTop === before;
+        })()
+        """, "Clicking the already selected main thread should keep the note directory's scroll position.");
+    await browser.Evaluate("el('subagent-threads').scrollTop = 0");
     await browser.Command("Emulation.setDeviceMetricsOverride", new { width = 480, height = 320, deviceScaleFactor = 1, mobile = false });
     await browser.WaitFor("visible('back-to-threads') && !visible('directory') && visible('note-directory') && visible('reader')",
         "A narrow panel should keep the note directory and the reader together, with a way back to main threads.");
@@ -189,6 +209,40 @@ static async Task VerifyModalVisibility(DevTools browser)
     await Task.Delay(320);
     await browser.Check("fixture.lists.length === fixture.beforeModal + 1",
         "Returning should refresh once, and closing Manage should not refresh again.");
+}
+
+static async Task VerifySelectionOnRefresh(DevTools browser)
+{
+    await browser.Evaluate("el('subagent-threads').querySelector('button').click()");
+    await browser.WaitFor("el('detail-heading').textContent === fixture.ownTitle && el('note').textContent.includes('Example saved note')",
+        "The selected child note should be ready for the refresh test.");
+    await browser.Evaluate("fixture.ownChildAvailability = null; el('refresh').click()");
+    await browser.WaitFor("fixture.lastRead === ownChild.thread_id && el('refresh').getAttribute('aria-disabled') === 'false'",
+        "The selected child should be rechecked during refresh.");
+    await browser.Check("""
+        el('detail-heading').textContent === fixture.ownTitle && el('note').textContent.includes('Example saved note') &&
+        el('detail-status').textContent.includes('Showing the last loaded note')
+        """, "An inconclusive note read should keep the selected child and its last loaded text.");
+    await browser.Evaluate("fixture.ownChildAvailability = false; el('refresh').click()");
+    await browser.WaitFor("""
+        el('detail-heading').textContent === '/root' && el('detail-status').textContent.includes('no saved note') &&
+        !childNotePaths().includes(fixture.ownTitle) && el('refresh').getAttribute('aria-disabled') === 'false'
+        """, "A successful read of a vanished child note should fall back to /root.");
+
+    await browser.Evaluate("fixture.ownChildAvailability = true; fixture.hiddenMainAvailability = null; el('refresh').click()");
+    await browser.WaitFor("el('threads').querySelectorAll('button').length === 0 && el('refresh').getAttribute('aria-disabled') === 'false'",
+        "The selected main thread should be absent from the visible list during an inconclusive refresh.");
+    await browser.Check("""
+        visible('note-directory') && visible('reader-body') && el('detail-heading').textContent === '/root' &&
+        fixture.lists.at(-1).selected_thread_id === fixture.secondId
+        """, "A refresh without definitive main thread availability should keep the selected thread.");
+
+    await browser.Evaluate("fixture.hiddenMainAvailability = false; el('refresh').click()");
+    await browser.WaitFor("!visible('note-directory') && !visible('reader-body') && el('refresh').getAttribute('aria-disabled') === 'false'",
+        "Only a definitive missing result should clear a disappeared main thread.");
+    await browser.Evaluate("fixture.hiddenMainAvailability = undefined; el('refresh').click()");
+    await browser.WaitFor("el('threads').querySelectorAll('button').length === 1 && el('refresh').getAttribute('aria-disabled') === 'false'",
+        "Restored thread results should be visible again.");
 }
 
 static async Task VerifyInheritance(DevTools browser)
@@ -257,6 +311,25 @@ static async Task VerifyInheritance(DevTools browser)
         fixture.requestedChildPage === 3 && el('subagent-status').hidden &&
         el('subagent-page').textContent === 'Page 3 of 3'
         """, "Recovery should request the preserved page and clear the warning.");
+
+    await browser.Evaluate("fixture.noteStoreAvailable = false; el('refresh').click()");
+    await browser.WaitFor("""
+        visible('status') && visible('subagent-status') && visible('note-feedback') &&
+        el('refresh').getAttribute('aria-disabled') === 'false'
+        """, "The thread and note directories should report temporarily unavailable storage.");
+    await browser.Check("""
+        el('threads').querySelector('button')?.dataset.thread === fixture.secondId && el('archive-status').value === 'active' &&
+        el('subagent-page').textContent === 'Page 3 of 3' && el('include-inherited').checked &&
+        el('subagent-threads').querySelector('button')?.dataset.thread === fixture.inheritedId &&
+        el('note').textContent.includes('Example fork snapshot')
+        """, "An unavailable note store should retain the loaded directories, filters, child page and note text.");
+    await browser.Evaluate("fixture.noteStoreAvailable = true; el('refresh').click()");
+    await browser.WaitFor("""
+        !visible('status') && !visible('subagent-status') && !visible('note-feedback') &&
+        el('refresh').getAttribute('aria-disabled') === 'false' && fixture.requestedChildPage === 3 &&
+        el('threads').querySelector('button')?.dataset.thread === fixture.secondId &&
+        el('subagent-threads').querySelector('button')?.dataset.thread === fixture.inheritedId
+        """, "A successful refresh should reload the retained page and clear the storage warnings.");
 }
 
 static async Task VerifyCleanup(DevTools browser)
@@ -414,7 +487,8 @@ static class HostFixture
         const firstId = '00000000-0000-4000-8000-000000000001';
         const secondId = '00000000-0000-4000-8000-000000000002';
         const rows = [firstId, secondId].map((thread_id, i) => ({
-          thread_id, title: 'Thread ' + (i + 1), archived:false, latest_at:'2026-11-24T08:29:00Z'
+          thread_id, title: i === 0 ? 'Thread 1' : 'Thread 2 with a long title '.repeat(8).trim(),
+          archived:false, latest_at:'2026-11-24T08:29:00Z'
         }));
         const inheritedId = '00000000-0000-4000-8000-000000000003';
         const ownTitle = '/root/principal_language';
@@ -426,7 +500,8 @@ static class HostFixture
           title:'/root/inherited_context', inherited:true};
         const cleanupCandidates = [secondId, '00000000-0000-4000-8000-000000000005', '00000000-0000-4000-8000-000000000006'];
         const fixture = { firstId, secondId, inheritedId, ownTitle, olderTitle, rows, cleanupCandidates,
-          initializations:0, lists:[], previews:[], inheritance:'available', extraChildren:0 };
+          initializations:0, lists:[], previews:[], inheritance:'available', extraChildren:0,
+          ownChildAvailability:true, noteStoreAvailable:true };
         const send = fields => frame.contentWindow.postMessage({jsonrpc:'2.0', ...fields}, '*');
         function postBarrier() { send({id:'test-barrier', method:'ping'}); }
         addEventListener('message', ({source, data}) => {
@@ -446,35 +521,53 @@ static class HostFixture
             switch (params.name) {
               case 'handoff_list': {
                 fixture.lists.push(args);
-                const items = rows.filter(row => args.archive_status === 'all' || row.archived === (args.archive_status === 'archived'));
+                if (!fixture.noteStoreAvailable) {
+                  tool({items:[], total:0, page:1, total_pages:1, selected_available:null, note_store_available:false});
+                  break;
+                }
+                const hideSelected = fixture.hiddenMainAvailability !== undefined;
+                const items = rows.filter(row => (!hideSelected || row.thread_id !== args.selected_thread_id) &&
+                  (args.archive_status === 'all' || row.archived === (args.archive_status === 'archived')));
                 const selected = rows.find(row => row.thread_id === args.selected_thread_id);
-                tool({items, total:items.length, page:1, total_pages:1, selected_archived:selected?.archived});
+                tool({items, total:items.length, page:1, total_pages:1,
+                  selected_available:hideSelected ? fixture.hiddenMainAvailability : args.selected_thread_id ? Boolean(selected) : null,
+                  selected_archived:hideSelected ? null : selected?.archived, note_store_available:true});
                 break;
               }
               case 'handoff_children': {
                 fixture.requestedChildPage = args.page;
                 fixture.childQuery = args.query;
+                if (!fixture.noteStoreAvailable) {
+                  tool({items:[], total:0, page:1, total_pages:1, spawn_index_available:true,
+                    can_include_inherited:true, inheritance_status:'available', note_store_available:false});
+                  break;
+                }
                 const candidates = [ownChild, olderChild, ...Array.from({length:fixture.extraChildren}, (_, i) => ({
                   ...ownChild, thread_id:'00000000-0000-4000-8000-' + String(i + 100).padStart(12, '0'),
                   latest_at:'2026-11-22T08:29:00Z', title:'/root/archived_' + (i + 1), archived:true
                 }))];
                 if (args.include_inherited && fixture.inheritance === 'available') candidates.push(inheritedChild);
-                const matches = candidates.filter(row => !args.query ||
-                  [row.title, row.thread_id].some(value => value.toLowerCase().includes(args.query.toLowerCase())));
+                const matches = candidates.filter(row => (fixture.ownChildAvailability !== false || row !== ownChild) &&
+                  (!args.query || [row.title, row.thread_id].some(value => value.toLowerCase().includes(args.query.toLowerCase()))));
                 const total_pages = Math.max(1, Math.ceil(matches.length / args.limit));
                 const page = Math.min(args.page, total_pages);
                 const items = matches.slice((page - 1) * args.limit, page * args.limit);
-                tool({items, total:matches.length, page, total_pages, spawn_index_available:true,
+                tool({items, total:matches.length, page, total_pages, spawn_index_available:true, note_store_available:true,
                   can_include_inherited:fixture.inheritance !== 'unavailable', inheritance_status:fixture.inheritance});
                 break;
               }
               case 'handoff_read':
-                if (args.from_fork === secondId && args.thread_id === inheritedId) {
-                  if (fixture.inheritance === 'available') tool({summary:'Example fork snapshot', updated_at:'2026-11-24T08:29:00Z'});
+                fixture.lastRead = args.thread_id;
+                if (!fixture.noteStoreAvailable) {
+                  tool({summary:null, updated_at:null, note_available:null});
+                } else if (args.from_fork === secondId && args.thread_id === inheritedId) {
+                  if (fixture.inheritance === 'available') tool({summary:'Example fork snapshot', updated_at:'2026-11-24T08:29:00Z', note_available:true});
                   else reply({isError:true, content:[{type:'text', text:'Could not verify the fork history.'}]});
+                } else if (args.thread_id === ownChild.thread_id && fixture.ownChildAvailability !== true) {
+                  tool({summary:null, updated_at:null, note_available:fixture.ownChildAvailability});
                 } else if (args.thread_id === secondId) {
-                  tool({summary:null, updated_at:null});
-                } else tool({summary:'Example saved note', updated_at:'2026-11-24T08:29:00Z'});
+                  tool({summary:null, updated_at:null, note_available:false});
+                } else tool({summary:'Example saved note', updated_at:'2026-11-24T08:29:00Z', note_available:true});
                 break;
               case 'handoff_cleanup':
                 if (args.thread_ids) fixture.deletion = {ids:args.thread_ids, finish:tool};

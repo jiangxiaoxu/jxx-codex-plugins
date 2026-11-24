@@ -128,7 +128,7 @@
     .reader-header { display: grid; gap: 8px; padding: 12px var(--reader-gutter); border-bottom: 1px solid var(--line); }
     .reader-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
     #detail-heading { font-size: 1.13rem; line-height: 1.38; overflow-wrap: anywhere; }
-    #notes-heading { overflow-wrap: anywhere; }
+    #notes-heading { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #include-inherited-control { display: flex; align-items: center; gap: 7px; }
     #include-inherited { margin: 0; accent-color: var(--focus-ring); }
     #back-to-threads { display: none; justify-self: start; }
@@ -370,6 +370,7 @@
     const cleanupTimeout = 125000;
     const pageSize = 25;
     const dateFormat = new Intl.DateTimeFormat(undefined, {dateStyle: "medium", timeStyle: "short"});
+    const noteStoreUnavailable = "The note store is unavailable. Refresh to try again.";
     const spawnIndexUnavailable = "The Codex subagent index is unavailable. Refresh to try again.";
     const inheritanceUnavailable = "Could not verify the fork history. Refresh to try again.";
     let requestId = 0;
@@ -606,9 +607,17 @@
       byId("note-parent").hidden = !row.inherited;
     }
 
+    function updateNotesHeading() {
+      const heading = byId("notes-heading");
+      const title = threadTitle(activeMain);
+      heading.textContent = title;
+      heading.title = title;
+    }
+
     function openThread(row) {
       if (listStale) return;
       const sameMain = activeMain?.thread_id === row.thread_id;
+      const returningToNotes = compactLayout.matches && main.dataset.view === "directory";
       directoryScrollTop = byId("threads").scrollTop;
       activeMain = row;
       main.dataset.view = "note";
@@ -621,9 +630,9 @@
         ++noteRequest;
         noteLoading = false;
       }
-      byId("notes-heading").textContent = threadTitle(row);
+      updateNotesHeading();
       byId("note-directory").hidden = false;
-      byId("subagent-threads").scrollTop = childScrollTop;
+      if (sameMain && returningToNotes) byId("subagent-threads").scrollTop = childScrollTop;
       showNote(row);
       if (compactLayout.matches) byId("notes-heading").focus({preventScroll: true});
       if ((renderedChildren === undefined || childRefreshNeeded) && !childLoading) void loadChildren(childPage);
@@ -800,6 +809,11 @@
       try {
         const result = await callTool("handoff_read", args);
         if (reading !== noteRequest) return;
+        if (result.note_available === null) throw new Error(noteStoreUnavailable);
+        if (result.note_available === false && activeThread.thread_id !== activeMain.thread_id) {
+          showNote(activeMain);
+          return;
+        }
         const summary = result.summary ?? "";
         if (summary !== loadedNote) {
           const body = byId("reader-body");
@@ -864,14 +878,20 @@
         if (selectedId) args.selected_thread_id = selectedId;
         const result = await callTool("handoff_list", args);
         if (listRequest !== revision) return;
+        if (result.note_store_available === false && (activeMain || byId("threads").querySelector("button"))) {
+          throw new Error(noteStoreUnavailable);
+        }
         const preservePosition = !listStale && page === result.page;
         page = result.page;
         totalPages = result.total_pages;
         listStale = false;
         const rows = result.items;
         const retained = rows.find((row) => row.thread_id === activeMain?.thread_id);
-        const selectedArchived = retained?.archived ?? (selectedId === activeMain?.thread_id ? result.selected_archived : null);
-        if (activeMain && typeof selectedArchived === "boolean") {
+        const sameSelection = selectedId === activeMain?.thread_id;
+        const selectedArchived = retained?.archived ?? (sameSelection ? result.selected_archived : null);
+        if (activeMain && sameSelection && result.selected_available === false) {
+          clearThread();
+        } else if (activeMain && typeof selectedArchived === "boolean") {
           if (archiveStatus !== "all" && selectedArchived !== (archiveStatus === "archived")) {
             clearThread();
           } else {
@@ -880,7 +900,7 @@
               activeThread = activeMain;
               updateThreadHeading(activeThread);
             }
-            byId("notes-heading").textContent = threadTitle(activeMain);
+            updateNotesHeading();
           }
         }
         const indexAvailable = result.spawn_index_available !== false;
@@ -928,6 +948,10 @@
         if (result.spawn_index_available === false) {
           childRefreshNeeded = true;
           throw new Error(spawnIndexUnavailable);
+        }
+        if (result.note_store_available === false && renderedChildren !== undefined) {
+          childRefreshNeeded = true;
+          throw new Error(noteStoreUnavailable);
         }
         const inheritanceUnknown = result.inheritance_status === "unavailable";
         const inheritancePartial = result.inheritance_status === "partial";

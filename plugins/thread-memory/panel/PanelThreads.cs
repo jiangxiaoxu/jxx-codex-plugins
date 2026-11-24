@@ -66,7 +66,7 @@ internal static class PanelThreads
         var notes = ReadNoteTimes(new HookStore(home));
         var links = ReadSpawnLinks(home);
         Dictionary<string, (ListedNote Latest, int ChildCount)> groups = new(StringComparer.Ordinal);
-        foreach (var note in notes)
+        foreach (var note in notes ?? [])
         {
             string id = note.ThreadId;
             var child = links?.GetValueOrDefault(id);
@@ -86,6 +86,14 @@ internal static class PanelThreads
         var indexed = ThreadMetadata(home, ids, IdentityColumns, withSpawnEdge: true);
         var archives = MainThreadArchives(home, ids, indexed);
         bool? selectedArchived = selected is not null && archives.TryGetValue(selected, out bool selectedValue) ? selectedValue : null;
+        bool? selectedAvailable = null;
+        if (selected is not null && notes is not null)
+        {
+            if (groups.ContainsKey(selected))
+                selectedAvailable = selectedArchived.HasValue ? true : null;
+            else if (links is not null)
+                selectedAvailable = false;
+        }
         bool? archiveFilter = archiveStatus == "all" ? null : archiveStatus == "archived";
         var matchingIds = groups.Keys.Where(id => archives.TryGetValue(id, out bool archived)
             && (archiveFilter is null || archived == archiveFilter)).ToArray();
@@ -120,7 +128,9 @@ internal static class PanelThreads
             return items;
         });
         response["selected_archived"] = selectedArchived;
+        response["selected_available"] = selectedAvailable;
         response["spawn_index_available"] = links is not null;
+        response["note_store_available"] = notes is not null;
         return response;
     }
 
@@ -146,10 +156,13 @@ internal static class PanelThreads
         bool includeInherited = include.ValueKind == JsonValueKind.True;
         var (ancestorCutoffs, inheritanceStatus) = main ? ForkCutoffs(home, root, links, directOnly: !includeInherited) : ([], "unavailable");
         List<ListedNote> notes = [];
+        bool noteStoreAvailable = true;
         if (main && links.Count > 0)
         {
             var store = new HookStore(home);
-            notes.AddRange(ReadNoteTimes(store).Where(note =>
+            var ownNotes = ReadNoteTimes(store);
+            noteStoreAvailable = ownNotes is not null;
+            notes.AddRange((ownNotes ?? []).Where(note =>
                 links.TryGetValue(note.ThreadId, out var link) && link.Indexed && RootOf(note.ThreadId, links) == root));
             if (includeInherited && ancestorCutoffs.Count > 0 && store.OpenRead() is { } connection)
             {
@@ -195,6 +208,7 @@ internal static class PanelThreads
         });
         response["can_include_inherited"] = ancestorCutoffs.Count > 0;
         response["spawn_index_available"] = true;
+        response["note_store_available"] = noteStoreAvailable;
         response["inheritance_status"] = inheritanceStatus;
         return response;
     }
@@ -260,14 +274,20 @@ internal static class PanelThreads
                 updated = row.IsDBNull(1) ? row.GetString(2) : NoteTimestamp(row.GetInt64(1));
             }
         }
-        return new JsonObject { ["thread_id"] = identifier, ["summary"] = summary, ["updated_at"] = updated };
+        return new JsonObject
+        {
+            ["thread_id"] = identifier,
+            ["summary"] = summary,
+            ["updated_at"] = updated,
+            ["note_available"] = connection is null ? null : JsonValue.Create(!string.IsNullOrEmpty(summary)),
+        };
     }
 
-    private static List<ListedNote> ReadNoteTimes(HookStore store)
+    private static List<ListedNote>? ReadNoteTimes(HookStore store)
     {
         using var connection = store.OpenRead();
         if (connection is null)
-            return [];
+            return null;
         using var command = connection.CreateCommand();
         command.CommandText = """
             WITH threads AS (SELECT thread_id FROM memory_revisions UNION SELECT thread_id FROM handoffs)
