@@ -206,6 +206,19 @@ class NativeRolloutCLITest(unittest.TestCase):
         self.assertEqual(json.loads(misplaced.stderr)["error"]["code"], "invalid_arguments")
         self.assertNotIn(image_data.encode(), misplaced.stdout + misplaced.stderr)
 
+        data_url = f"data:image/png;base64,{image_data}"
+        for command in (
+            ("export-image", "--id", image_id, "--rollout", data_url),
+            ("export-image", "--id", image_id, "--output-dir", data_url),
+            ("attachments", "--segment", data_url),
+            ("attachments", data_url),
+        ):
+            with self.subTest(command=command[0], argument=command[-2]):
+                misplaced = self.run_cli(*command)
+                self.assertEqual(misplaced.returncode, 2)
+                self.assertEqual(json.loads(misplaced.stderr)["error"]["code"], "invalid_arguments")
+                self.assertNotIn(image_data.encode(), misplaced.stdout + misplaced.stderr)
+
     def test_original_image_export_returns_bytes_and_local_path_without_thumbnail(self):
         inline = b'<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"/>'
         local_path = self.home / "original.png"
