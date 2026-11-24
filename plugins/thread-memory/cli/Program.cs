@@ -12,9 +12,13 @@ namespace ThreadMemoryCli;
 internal static partial class Program
 {
     internal const int MaxNoteBytes = 25 * 1024;
+    internal const int NoteNoticeThresholdKiB = 10;
+    private const int RecommendedNoteSizeKiB = 15;
     private const int MaxPatchBytes = 128 * 1024;
     private const int StdOutputHandle = -11;
     private const string Truncation = "\n\n[Summary truncated]";
+    private static readonly string NoteSizeNotice = FormattableString.Invariant(
+        $"Usually keep notes under {NoteNoticeThresholdKiB} KiB. The recommended maximum is {RecommendedNoteSizeKiB} KiB.");
     private static readonly UTF8Encoding Utf8 = new(false, true);
 
     public static int Main(string[] args)
@@ -199,6 +203,7 @@ internal static partial class Program
         {
             int status = WriteResult(writer =>
             {
+                WriteNoteSize(writer, Utf8.GetByteCount(current?.Summary ?? ""));
                 writer.WriteString("thread_id", threadId);
                 writer.WriteString("summary", current?.Summary);
                 writer.WriteString("updated_at", current?.Summary is not null ? Timestamp(current.UpdatedUs) : null);
@@ -217,9 +222,10 @@ internal static partial class Program
             summary = MemoryPatch.Apply(current.Summary, patch);
             if (string.IsNullOrWhiteSpace(summary))
                 throw new ArgumentException("patch would leave an empty note");
-            if (Utf8.GetByteCount(summary) > MaxNoteBytes)
-                throw new ArgumentException($"patched note would exceed {MaxNoteBytes} UTF-8 bytes");
         }
+        int bytes = Utf8.GetByteCount(summary!);
+        if (patch is not null && bytes > MaxNoteBytes)
+            throw new ArgumentException($"patched note would exceed {MaxNoteBytes} UTF-8 bytes");
 
         var saved = ThreadMemory.SaveForCli(store, threadId, summary!, current?.Revision ?? 0)
             ?? throw new ArgumentException(action == "patch"
@@ -227,15 +233,22 @@ internal static partial class Program
                 : "thread note changed before saving. Read the thread note again.");
         return WriteResult(writer =>
         {
+            WriteNoteSize(writer, bytes);
             writer.WriteBoolean("saved", true);
             writer.WriteString("thread_id", threadId);
             writer.WriteString("updated_at", Timestamp(saved.UpdatedUs));
-            writer.WriteNumber("bytes", Utf8.GetByteCount(summary!));
             if (inheritance is not null)
                 writer.WriteString("inheritance_unavailable", inheritance);
             if (action == "write")
                 writer.WriteBoolean("truncated", truncated);
         });
+    }
+
+    private static void WriteNoteSize(Utf8JsonWriter writer, int bytes)
+    {
+        writer.WriteNumber("bytes", bytes);
+        if (bytes > NoteNoticeThresholdKiB * 1024)
+            writer.WriteString("notice", NoteSizeNotice);
     }
 
     private static JsonElement ReadNoteHeader(string path)

@@ -7,6 +7,12 @@ description: Maintain a persistent Markdown note for the current Codex thread as
 
 In PowerShell, set `$cli = Join-Path '<directory containing this SKILL.md>' '../../bin/Thread-Memory.exe'` using the actual skill directory. Run commands as `& $cli <command>`. Commands default to your own thread via `CODEX_THREAD_ID`. Pass `--thread UUID` to select another thread.
 
+Use UTF-8 for native command I/O in each PowerShell session.
+
+```powershell
+$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+```
+
 ## Maintain the Markdown note
 
 Keep a concise Markdown document for the current work. Use short paragraphs and list items, and put distinct points on separate lines. Keep file paths and code intact. Use absolute paths in links to local files.
@@ -15,17 +21,21 @@ Update relevant sections in place, consolidate repeated information, and remove 
 
 The note stays with the thread across compaction. A main-thread fork gets its own copy as of its creation time. Subagents start with an empty note, including when they inherit chat history.
 
-Use `memory read` to get the complete Markdown in `.summary` and its UTC timestamp in `.updated_at`. A null `.summary` means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details. For a routine edit, filter the decoded Markdown by line when you only need the relevant passage.
+Each memory command returns the current saved size in `.bytes` and includes `.notice` when the size exceeds 10 KiB. Usually keep notes under 10 KiB, with a recommended maximum of 15 KiB. The save limit is 25 KiB (25,600 UTF-8 bytes).
+
+Use `memory read` to get the complete Markdown in `.summary` and its UTC timestamp in `.updated_at`. A null `.summary` means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details. For a routine edit, select `.summary` alone when filtering the decoded Markdown by line.
 
 ```powershell
-$OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 $json = & $cli memory read
 $readExit = $LASTEXITCODE
 if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
-$json | jq -r '.summary // empty'
+$result = $json | ConvertFrom-Json
+'Note size: {0:0.#} KiB ({1} UTF-8 bytes)' -f ($result.bytes / 1KB), $result.bytes
+if ($result.PSObject.Properties['notice']) { $result.notice }
+$result.summary
 ```
 
-Use `memory write` to create a note or deliberately replace it. Send the full Markdown on stdin, using the UTF-8 settings above. The 25 KiB limit (25,600 UTF-8 bytes) is a ceiling. If the receipt reports `truncated: true`, shorten the original Markdown and save it again.
+Use `memory write` to create a note or deliberately replace it. Send the full Markdown on stdin, using the UTF-8 settings above. If the receipt reports `truncated: true`, shorten the original Markdown and save it again.
 
 ```powershell
 $note = @'
@@ -35,6 +45,9 @@ $note = @'
 $json = $note | & $cli memory write
 $writeExit = $LASTEXITCODE
 if ($writeExit -ne 0) { throw "memory write failed ($writeExit)" }
+$result = $json | ConvertFrom-Json
+'Note size: {0:0.#} KiB ({1} UTF-8 bytes)' -f ($result.bytes / 1KB), $result.bytes
+if ($result.PSObject.Properties['notice']) { $result.notice }
 $json | jq '{saved, truncated}'
 ```
 
@@ -52,6 +65,9 @@ $patch = @'
 $json = $patch | & $cli memory patch
 $patchExit = $LASTEXITCODE
 if ($patchExit -ne 0) { throw "memory patch failed ($patchExit)" }
+$result = $json | ConvertFrom-Json
+'Note size: {0:0.#} KiB ({1} UTF-8 bytes)' -f ($result.bytes / 1KB), $result.bytes
+if ($result.PSObject.Properties['notice']) { $result.notice }
 $json | jq '{saved, updated_at}'
 ```
 

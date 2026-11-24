@@ -20,6 +20,7 @@ if (!File.Exists(cli))
 
 const string PatchHeader = "--- a/note\n+++ b/note\n";
 const int Limit = 25_600;
+const int NoticeThreshold = 10 * 1024;
 string sandbox = Directory.CreateTempSubdirectory("thread-memory-note-").FullName;
 string scenario = "UTF-8 notes, CLI thread selection, and lazy fork isolation";
 
@@ -74,6 +75,18 @@ async Task VerifyBounds(string home)
     const string Marker = "\n\n[Summary truncated]";
     const string Heading = "Goal\n";
     const string Multibyte = "\u754c";
+
+    string noticeBody = new string('x', NoticeThreshold - Encoding.UTF8.GetByteCount(Heading));
+    string atThreshold = Heading + noticeBody;
+    JsonElement threshold = await Query(home, thread, ["write"], stdin: atThreshold);
+    AssertWrite(threshold, thread, atThreshold, truncated: false);
+    AssertRead(await Query(home, thread, ["read"]), thread, atThreshold, threshold.GetProperty("updated_at").GetString());
+
+    JsonElement aboveThreshold = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Goals\n");
+    string aboveThresholdNote = "Goals\n" + noticeBody;
+    AssertWrite(aboveThreshold, thread, aboveThresholdNote);
+    AssertRead(await Query(home, thread, ["read"]), thread, aboveThresholdNote, aboveThreshold.GetProperty("updated_at").GetString());
+
     string body = new string('x', Limit - Encoding.UTF8.GetByteCount(Heading + Multibyte)) + Multibyte;
     string atLimit = Heading + body;
     JsonElement boundary = await Query(home, thread, ["write"], stdin: atLimit + "\r\n");
@@ -129,19 +142,36 @@ static string MakeRollout(string home, string? parent = null, string timestamp =
     return id;
 }
 
-static void AssertRead(JsonElement result, string thread, string? summary, string? updated) => Require(
-    result.GetProperty("thread_id").GetString() == thread &&
-    result.GetProperty("summary").GetString() == summary && result.GetProperty("updated_at").GetString() == updated,
-    "The selected thread's saved text or timestamp differed from the expected snapshot.");
+static void AssertRead(JsonElement result, string thread, string? summary, string? updated)
+{
+    AssertSize(result, summary);
+    Require(result.GetProperty("thread_id").GetString() == thread &&
+        result.GetProperty("summary").GetString() == summary && result.GetProperty("updated_at").GetString() == updated,
+        "The selected thread's saved text or timestamp differed from the expected snapshot.");
+}
 
 static void AssertWrite(JsonElement result, string thread, string expected, bool? truncated = null)
 {
+    AssertSize(result, expected);
     Require(result.GetProperty("saved").GetBoolean() && result.GetProperty("thread_id").GetString() == thread &&
-        result.GetProperty("bytes").GetInt32() == Encoding.UTF8.GetByteCount(expected) &&
         result.GetProperty("updated_at").GetDateTimeOffset().Offset == TimeSpan.Zero,
-        "The write receipt did not report the saved text's byte count, thread, and UTC timestamp.");
+        "The write receipt did not report the saved note's thread and UTC timestamp.");
     if (truncated is bool value)
         Require(result.GetProperty("truncated").GetBoolean() == value, "The write receipt had the wrong truncation state.");
+}
+
+static void AssertSize(JsonElement result, string? summary)
+{
+    var fields = result.EnumerateObject();
+    int expectedBytes = summary is null ? 0 : Encoding.UTF8.GetByteCount(summary);
+    Require(fields.MoveNext() && fields.Current.NameEquals("bytes") && fields.Current.Value.GetInt32() == expectedBytes,
+        "The result must start with the saved Markdown's UTF-8 byte count.");
+    if (expectedBytes > NoticeThreshold)
+        Require(fields.MoveNext() && fields.Current.NameEquals("notice") &&
+            fields.Current.Value.GetString() == "Usually keep notes under 10 KiB. The recommended maximum is 15 KiB.",
+            "The second field must give the expected size recommendation above 10 KiB.");
+    else
+        Require(!result.TryGetProperty("notice", out _), "There must be no size recommendation at or below 10 KiB.");
 }
 
 async Task<JsonElement> Query(string home, string thread, string[] arguments, string? stdin = null)

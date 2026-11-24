@@ -225,6 +225,9 @@ internal sealed class CliOptions
 
             {description}
 
+            The JSON bytes field reports the saved Markdown's UTF-8 size.
+            Notes over {Program.NoteNoticeThresholdKiB} KiB also include a size notice.
+
             Options:
               --thread UUID      Select a thread (default: CODEX_THREAD_ID).
               --codex-home PATH  Use a different Codex home.
