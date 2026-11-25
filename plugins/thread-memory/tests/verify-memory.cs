@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -50,10 +49,10 @@ async Task VerifyFork(string home)
 
     const string Original = "Goal\n\u76ee\u6807 \U0001f3af\nNext";
     string first = await Query(home, parent, ["write"], stdin: $"\uFEFF{Original}\r\n");
-    string savedAt = AssertSaved(first, Original);
+    AssertSaved(first, Original);
     AssertRead(await Query(home, parent, ["read"]), Original);
 
-    string child = MakeRollout(home, parent, savedAt);
+    string child = MakeRollout(home, parent, DateTime.UtcNow.ToString("O"));
     const string NewerParent = "Goal\nParent after fork\nNext";
     AssertSaved(await Query(home, parent, ["write"], stdin: NewerParent), NewerParent);
     AssertRead(await Query(home, parent, ["--thread", child, "read"]), Original);
@@ -142,7 +141,7 @@ static string MakeRollout(string home, string? parent = null, string timestamp =
 static void AssertRead(string result, string expected) =>
     Require(result == expected, "The read did not return exactly the selected thread's saved Markdown.");
 
-static string AssertSaved(string result, string expected, bool truncated = false)
+static void AssertSaved(string result, string expected, bool truncated = false)
 {
     using var lines = new StringReader(result);
     int expectedBytes = Encoding.UTF8.GetByteCount(expected);
@@ -151,17 +150,9 @@ static string AssertSaved(string result, string expected, bool truncated = false
     if (expectedBytes > NoticeThreshold)
         Require(lines.ReadLine() == "Keep notes concise and under 15 KiB. The recommended maximum is 20 KiB.",
             "The second line must give the expected size recommendation above 15 KiB.");
-    const string UpdatedPrefix = "Updated: ";
-    string update = lines.ReadLine() ?? "";
-    Require(update.StartsWith(UpdatedPrefix, StringComparison.Ordinal), "The receipt did not report the update time.");
-    string timestamp = update[UpdatedPrefix.Length..];
-    Require(DateTimeOffset.TryParseExact(timestamp, "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture,
-        DateTimeStyles.AssumeUniversal, out _),
-        "The receipt did not report a UTC timestamp.");
     if (truncated)
         Require(lines.ReadLine() == "The note was truncated to the save limit.", "The receipt did not report truncation.");
     Require(lines.ReadLine() is null, "The receipt contains unexpected lines.");
-    return timestamp;
 }
 
 async Task<string> Query(string home, string thread, string[] arguments, string? stdin = null)

@@ -1,6 +1,7 @@
 #:property PublishAot=false
 
 using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -127,7 +128,8 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
         <https://example.invalid/autolink>
         ![Remote image](https://example.invalid/tracker.png)
         """.ReplaceLineEndings("\n");
-    string activeUpdatedAt = await SaveNote(cli, home, active, summary);
+    await SaveNote(cli, home, active, summary);
+    string activeUpdatedAt = NoteUpdatedAt(home, active);
     WriteRollout(home, spawned);
     await SaveNote(cli, home, spawned, "Shown under its main thread");
     WriteRollout(home, archived, archived: true);
@@ -295,14 +297,16 @@ static async Task VerifyChildDirectory(string home, string panel, string cli)
     await SaveNote(cli, home, main, "Main note");
     WriteRollout(home, childOnly, archived: true);
     WriteRollout(home, direct, source: new { subagent = new { thread_spawn = new { parent_thread_id = childOnly } } });
-    string directUpdatedAt = await SaveNote(cli, home, direct, "Direct note");
+    await SaveNote(cli, home, direct, "Direct note");
+    string directUpdatedAt = NoteUpdatedAt(home, direct);
     WriteRollout(home, intermediate, source: new { subagent = new { thread_spawn = new { parent_thread_id = childOnly } } });
     WriteRollout(home, fork, forkedFrom: main);
     await SaveNote(cli, home, fork, "Independent fork note");
     WriteRollout(home, attached, forkedFrom: main, attached: true);
     await SaveNote(cli, home, attached, "Exclude attached note");
     WriteRollout(home, nested, archived: true, source: new { subagent = new { thread_spawn = new { parent_thread_id = intermediate } } });
-    string nestedUpdatedAt = await SaveNote(cli, home, nested, "Nested note");
+    await SaveNote(cli, home, nested, "Nested note");
+    string nestedUpdatedAt = NoteUpdatedAt(home, nested);
 
     var groups = await mcp.Tool("handoff_list");
     Check(ThreadIds(groups).SequenceEqual([childOnly, fork, main]), "Only verified main threads should appear in the directory.");
@@ -356,7 +360,8 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
 
     AddChild(originalEarly, original, archived: true, path: "/root/original_reviewer");
     AddChild(originallyEmpty, original);
-    string firstCutoff = await SaveNote(cli, home, originalEarly, "Original note before first fork");
+    await SaveNote(cli, home, originalEarly, "Original note before first fork");
+    string firstCutoff = NoteUpdatedAt(home, originalEarly);
     string firstForkPath = WriteRollout(home, firstFork, forkedFrom: original, timestamp: firstCutoff);
 
     await SaveNote(cli, home, originalEarly, "Post-fork change belongs to original");
@@ -365,10 +370,11 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
     await SaveNote(cli, home, originalLate, "Child created after the first fork");
 
     AddChild(forkEarly, firstFork);
-    string secondCutoff = await SaveNote(cli, home, forkEarly, "First fork note before the second fork");
+    await SaveNote(cli, home, forkEarly, "First fork note before the second fork");
+    string secondCutoff = NoteUpdatedAt(home, forkEarly);
     string secondForkPath = WriteRollout(home, secondFork, forkedFrom: firstFork,
         timestamp: secondCutoff);
-    Execute(Path.Combine(home, "state", "plugins", "thread-memory", "handoff.sqlite3"), """
+    Execute(MemoryDatabase(home), """
         INSERT INTO memory_revisions (thread_id, summary, updated_us, effective_us)
         SELECT thread_id, NULL, updated_us + 1, effective_us + 1 FROM memory_revisions
         WHERE thread_id = $id ORDER BY effective_us DESC, revision DESC LIMIT 1
@@ -501,7 +507,8 @@ static async Task VerifyCleanup(string home, string panel, string cli)
     string archivePath = WriteRollout(home, archived, archived: true);
     string indexedPath = WriteRollout(home, searchOnly, withMessage: true);
     const string snapshot = "Save this version for the archived fork";
-    string snapshotUpdatedAt = await SaveNote(cli, home, parent, snapshot);
+    await SaveNote(cli, home, parent, snapshot);
+    string snapshotUpdatedAt = NoteUpdatedAt(home, parent);
     string forkPath = WriteRollout(home, fork, archived: true, forkedFrom: parent, timestamp: snapshotUpdatedAt);
     await SaveNote(cli, home, parent, "Parent note updated after the fork");
     await SaveNote(cli, home, deletedChild, "Deleted subagent's note");
@@ -579,7 +586,7 @@ static async Task VerifyCleanup(string home, string panel, string cli)
     const string lateReadNote = "Note retrieved before cleanup";
     await SaveNote(cli, home, lateRead, lateReadNote);
     File.Delete(lateReadRollout);
-    var memoryPath = Path.Combine(home, "state", "plugins", "thread-memory", "handoff.sqlite3");
+    string memoryPath = MemoryDatabase(home);
     using (var state = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = memoryPath, Pooling = false }.ToString()))
     {
         state.Open();
@@ -684,15 +691,26 @@ static IEnumerable<string?> CleanupIds(JsonElement result)
     return result.GetProperty("thread_ids").EnumerateArray().Select(item => item.GetString());
 }
 
-static async Task<string> SaveNote(string cli, string home, string id, string note)
+static Task SaveNote(string cli, string home, string id, string note) =>
+    RunCli(cli, home, id, note, "memory", "write");
+
+static string MemoryDatabase(string home) =>
+    Path.Combine(home, "state", "plugins", "thread-memory", "handoff.sqlite3");
+
+static string NoteUpdatedAt(string home, string id)
 {
-    const string prefix = "Updated: ";
-    string result = await RunCli(cli, home, id, note, "memory", "write");
-    using var lines = new StringReader(result);
-    while (lines.ReadLine() is { } line)
-        if (line.StartsWith(prefix, StringComparison.Ordinal))
-            return line[prefix.Length..];
-    throw new InvalidOperationException("The save receipt omitted the note update time.");
+    using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+    {
+        DataSource = MemoryDatabase(home), Mode = SqliteOpenMode.ReadOnly, Pooling = false,
+    }.ToString());
+    connection.Open();
+    using var command = connection.CreateCommand();
+    command.CommandText = "SELECT updated_us FROM memory_revisions WHERE thread_id = $id ORDER BY revision DESC LIMIT 1";
+    command.Parameters.AddWithValue("$id", id);
+    if (command.ExecuteScalar() is not long updatedUs)
+        throw new InvalidOperationException("The note update time was not persisted.");
+    return DateTime.UnixEpoch.AddTicks(checked(updatedUs * 10))
+        .ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'", CultureInfo.InvariantCulture);
 }
 
 static async Task<string> RunCli(string cli, string home, string? id, string? input, params string[] arguments)
