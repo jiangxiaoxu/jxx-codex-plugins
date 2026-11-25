@@ -28,7 +28,7 @@ if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
 $noteLines
 ```
 
-Pipe the full Markdown to `memory write` to create or update a note. For a routine edit, use a snippet that occurs exactly once.
+Edit the Markdown as needed and pipe the full note to `memory write`. The following example replaces a snippet that occurs exactly once.
 
 ```powershell
 $note = (& $cli memory read) -join "`n"
