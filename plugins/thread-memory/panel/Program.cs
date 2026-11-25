@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -197,24 +196,8 @@ internal static class Program
         if (String(args, "uri") != ResourceUri)
             throw new ArgumentException("Unknown UI resource.");
         var resource = Resource();
-        var html = File.ReadAllText(Path.Combine(Assets, "handoffs.html"), Utf8);
-        var version = ReadPluginVersion();
-        resource["text"] = string.IsNullOrWhiteSpace(version) ? html : html.Replace("<!-- plugin-version -->",
-            $" <span id=\"plugin-version\" class=\"meta\">v{WebUtility.HtmlEncode(version)}</span>", StringComparison.Ordinal);
+        resource["text"] = File.ReadAllText(Path.Combine(Assets, "handoffs.html"), Utf8);
         return new JsonObject { ["contents"] = new JsonArray(resource) };
-    }
-
-    private static string? ReadPluginVersion()
-    {
-        try
-        {
-            using var manifest = JsonDocument.Parse(File.ReadAllBytes(Path.Combine(PluginDirectory, ".codex-plugin", "plugin.json")));
-            return manifest.RootElement.ValueKind == JsonValueKind.Object ? String(manifest.RootElement, "version") : null;
-        }
-        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException)
-        {
-            return null;
-        }
     }
 
     private static JsonArray ToolDescriptors()

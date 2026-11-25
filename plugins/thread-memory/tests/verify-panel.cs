@@ -43,12 +43,33 @@ static string PluginDirectory([CallerFilePath] string path = "") =>
 static async Task VerifyPanel(string home, string panel, string cli, string plugin)
 {
     Directory.CreateDirectory(home);
-    await using var mcp = new McpClient(panel, home);
+    string assets = Path.Combine(plugin, "skills", "thread-memory", "assets");
+    string stagedPlugin = Path.Combine(home, "panel-package");
+    string stagedBin = Directory.CreateDirectory(Path.Combine(stagedPlugin, "bin")).FullName;
+    string stagedAssets = Directory.CreateDirectory(Path.Combine(stagedPlugin, "skills", "thread-memory", "assets")).FullName;
+    string stagedPanel = Path.Combine(stagedBin, Path.GetFileName(panel));
+    File.Copy(panel, stagedPanel);
+    File.Copy(Path.Combine(assets, "handoffs.html"), Path.Combine(stagedAssets, "handoffs.html"));
+    File.Copy(Path.Combine(assets, "thread-memory-entrypoint.png"), Path.Combine(stagedAssets, "thread-memory-entrypoint.png"));
+
+    await using var mcp = new McpClient(stagedPanel, home);
     var initialize = await mcp.Request("initialize", new { protocolVersion = "2025-11-25" });
     Check(initialize.GetProperty("protocolVersion").GetString() == "2025-11-25"
         && initialize.GetProperty("capabilities").TryGetProperty("tools", out _)
         && initialize.GetProperty("capabilities").TryGetProperty("resources", out _), "MCP initialization returned invalid capabilities.");
     await mcp.Notify("notifications/initialized");
+
+    const string uri = "ui://thread-memory/notes";
+    var resource = (await mcp.Request("resources/read", new { uri })).GetProperty("contents")[0];
+    string? resourceHtml = resource.GetProperty("text").GetString();
+    using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(plugin, ".codex-plugin", "plugin.json")));
+    string? version = manifest.RootElement.GetProperty("version").GetString();
+    string versionBadge = $" <span id=\"plugin-version\" class=\"meta\">v{WebUtility.HtmlEncode(version)}</span>";
+    string packagedHtml = File.ReadAllText(Path.Combine(assets, "handoffs.html"));
+    Check(resource.GetProperty("mimeType").GetString() == "text/html;profile=mcp-app"
+        && resourceHtml?.Contains($"<h1>Thread Memory{versionBadge}</h1>", StringComparison.Ordinal) == true
+        && resourceHtml == packagedHtml,
+        "The first MCP resource read must serve the packaged version in the heading even without a runtime manifest.");
 
     var tools = (await mcp.Request("tools/list")).GetProperty("tools").EnumerateArray().ToArray();
     string[] expected = ["handoff_children", "handoff_cleanup", "handoff_list", "handoff_manager", "handoff_read"];
@@ -58,7 +79,6 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
         Check(tool.GetProperty("_meta").GetProperty("ui").GetProperty("visibility").EnumerateArray()
             .Select(value => value.GetString()).SequenceEqual(["app"]), "Panel tools must be app-only.");
 
-    const string uri = "ui://thread-memory/notes";
     var entrypoint = tools.Single(tool => tool.GetProperty("name").GetString() == "handoff_manager");
     var metadata = entrypoint.GetProperty("_meta");
     Check(metadata.GetProperty("ui").GetProperty("resourceUri").GetString() == uri
@@ -69,19 +89,7 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
     string iconSource = icon.GetProperty("src").GetString()!;
     Check(iconSource.StartsWith(dataPrefix, StringComparison.Ordinal) && icon.GetProperty("mimeType").GetString() == "image/png"
         && Convert.FromBase64String(iconSource[dataPrefix.Length..]).SequenceEqual(File.ReadAllBytes(Path.Combine(
-            plugin, "skills", "thread-memory", "assets", "thread-memory-entrypoint.png"))), "The sidebar icon has incorrect bytes or MIME type.");
-
-    var resource = (await mcp.Request("resources/read", new { uri })).GetProperty("contents")[0];
-    string? resourceHtml = resource.GetProperty("text").GetString();
-    using var manifest = JsonDocument.Parse(File.ReadAllText(Path.Combine(
-        Path.GetDirectoryName(panel)!, "..", ".codex-plugin", "plugin.json")));
-    string? version = manifest.RootElement.GetProperty("version").GetString();
-    string versionBadge = $" <span id=\"plugin-version\" class=\"meta\">v{WebUtility.HtmlEncode(version)}</span>";
-    string template = File.ReadAllText(Path.Combine(plugin, "skills", "thread-memory", "assets", "handoffs.html"));
-    Check(resource.GetProperty("mimeType").GetString() == "text/html;profile=mcp-app"
-        && resourceHtml?.Contains($"<h1>Thread Memory{versionBadge}</h1>", StringComparison.Ordinal) == true
-        && resourceHtml == template.Replace("<!-- plugin-version -->", versionBadge, StringComparison.Ordinal),
-        "The MCP resource did not return the packaged panel HTML with the manifest version in the heading.");
+            assets, "thread-memory-entrypoint.png"))), "The sidebar icon has incorrect bytes or MIME type.");
     await mcp.Tool("handoff_manager");
 
     string active = NewId(), archived = NewId(), fallback = NewId(), spawned = NewId();

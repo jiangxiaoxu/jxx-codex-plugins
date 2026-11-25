@@ -69,7 +69,7 @@ Forked main threads show their own subagent notes by default. Enable **Include i
 
 The local stdio server's `handoff_manager` tool opens `ui://thread-memory/notes` as a global MCP Apps entrypoint. The plugin list uses `assets/thread-memory-icon.png`. The sidebar uses `skills/thread-memory/assets/thread-memory-entrypoint.png`. [Server implementation](../plugins/thread-memory/panel/Program.cs) · [Shared Codex MCP Apps guide](codex-mcp-apps.md)
 
-The panel follows the Codex Desktop theme, including live theme and accent changes. It uses the browser's color scheme when the host omits its theme. The version beside the title comes from the installed plugin manifest.
+The panel follows the Codex Desktop theme, including live theme and accent changes. It uses the browser's color scheme when the host omits its theme. The packaged panel HTML includes the version beside the title on first load.
 
 The note reader shows relative times for the last update and the selected thread's last read of its own saved note. Hover over either label for its full UTC timestamp. A successful CLI `memory read` counts when it returns saved text and its target matches `CODEX_THREAD_ID`. Cross-thread reads, edits, and panel previews leave the read timestamp unchanged. The timestamp survives compaction and belongs to the thread that read the note. Forked threads start with no read timestamp and historical subagent snapshots hide the label.
 
@@ -378,6 +378,8 @@ Zstandard archives are read sequentially. A scan that reaches a truncated frame 
 ### Build and validate
 
 From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include the three EXEs and `THIRD-PARTY-NOTICES.txt` in the plugin package.
+
+When preparing a release, update the title badge in `plugins/thread-memory/skills/thread-memory/assets/handoffs.html` to match the version in `plugins/thread-memory/.codex-plugin/plugin.json`. The MCP panel check verifies that the first resource read serves that badge with the packaged HTML.
 
 ```powershell
 $plugin = 'plugins/thread-memory'
