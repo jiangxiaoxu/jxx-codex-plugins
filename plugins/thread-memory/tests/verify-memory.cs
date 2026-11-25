@@ -50,19 +50,19 @@ async Task VerifyFork(string home)
 
     const string Original = "Goal\n\u76ee\u6807 \U0001f3af\nNext";
     string first = await Query(home, parent, ["write"], stdin: $"\uFEFF{Original}\r\n");
-    string savedAt = AssertSaved(first, parent, Original);
+    string savedAt = AssertSaved(first, Original);
     AssertRead(await Query(home, parent, ["read"]), Original);
 
     string child = MakeRollout(home, parent, savedAt);
     const string NewerParent = "Goal\nParent after fork\nNext";
-    AssertSaved(await Query(home, parent, ["write"], stdin: NewerParent), parent, NewerParent);
+    AssertSaved(await Query(home, parent, ["write"], stdin: NewerParent), NewerParent);
     AssertRead(await Query(home, parent, ["--thread", child, "read"]), Original);
 
     const string ChildLine = "\u5b50\u7ebf\u7a0b \U0001f680";
     const string ChildNote = $"Goal\n{ChildLine}\nReview";
     const string Diff = PatchHeader + $"@@ -2 +2 @@\n-\u76ee\u6807 \U0001f3af\n+{ChildLine}\n@@ -3 +3 @@\n-Next\n+Review\n";
     string patch = await Query(home, parent, ["patch", "--thread", child], stdin: Diff.ReplaceLineEndings("\r\n"));
-    AssertSaved(patch, child, ChildNote);
+    AssertSaved(patch, ChildNote);
     AssertRead(await Query(home, child, ["read"]), ChildNote);
     AssertRead(await Query(home, parent, ["read"]), NewerParent);
 }
@@ -76,28 +76,28 @@ async Task VerifyBounds(string home)
 
     string noticeBody = new string('x', NoticeThreshold - Encoding.UTF8.GetByteCount(Heading));
     string atThreshold = Heading + noticeBody;
-    AssertSaved(await Query(home, thread, ["write"], stdin: atThreshold), thread, atThreshold);
+    AssertSaved(await Query(home, thread, ["write"], stdin: atThreshold), atThreshold);
     AssertRead(await Query(home, thread, ["read"]), atThreshold);
 
     string aboveThreshold = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Goals\n");
     string aboveThresholdNote = "Goals\n" + noticeBody;
-    AssertSaved(aboveThreshold, thread, aboveThresholdNote);
+    AssertSaved(aboveThreshold, aboveThresholdNote);
     AssertRead(await Query(home, thread, ["read"]), aboveThresholdNote);
 
     string body = new string('x', Limit - Encoding.UTF8.GetByteCount(Heading + Multibyte)) + Multibyte;
     string atLimit = Heading + body;
-    AssertSaved(await Query(home, thread, ["write"], stdin: atLimit + "\r\n"), thread, atLimit);
+    AssertSaved(await Query(home, thread, ["write"], stdin: atLimit + "\r\n"), atLimit);
     AssertRead(await Query(home, thread, ["read"]), atLimit);
 
     string patched = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Next\n");
     string patchedAtLimit = "Next\n" + body;
-    AssertSaved(patched, thread, patchedAtLimit);
+    AssertSaved(patched, patchedAtLimit);
     AssertRead(await Query(home, thread, ["read"]), patchedAtLimit);
 
     string prefix = Heading + new string('x', Limit - Encoding.UTF8.GetByteCount(Heading + Marker) - 1);
     string saved = prefix + Marker;
     string written = await Query(home, thread, ["write"], stdin: prefix + Multibyte + new string('x', 70_000));
-    AssertSaved(written, thread, saved, truncated: true);
+    AssertSaved(written, saved, truncated: true);
     Require(Encoding.UTF8.GetByteCount(saved) == Limit - 1, "The fixture did not cross the limit inside a UTF-8 character.");
     AssertRead(await Query(home, thread, ["read"]), saved);
 
@@ -142,17 +142,15 @@ static string MakeRollout(string home, string? parent = null, string timestamp =
 static void AssertRead(string result, string expected) =>
     Require(result == expected, "The read did not return exactly the selected thread's saved Markdown.");
 
-static string AssertSaved(string result, string thread, string expected, bool truncated = false)
+static string AssertSaved(string result, string expected, bool truncated = false)
 {
     using var lines = new StringReader(result);
     int expectedBytes = Encoding.UTF8.GetByteCount(expected);
-    Require(lines.ReadLine() == FormattableString.Invariant($"Saved {expectedBytes:N0} UTF-8 bytes."),
-        "The receipt must start with the saved Markdown's UTF-8 byte count.");
+    Require(lines.ReadLine() == FormattableString.Invariant($"Note saved. Total size: {expectedBytes:N0} UTF-8 bytes."),
+        "The receipt must start with the complete saved Markdown's UTF-8 byte count.");
     if (expectedBytes > NoticeThreshold)
         Require(lines.ReadLine() == "Keep notes concise and under 15 KiB. The recommended maximum is 20 KiB.",
             "The second line must give the expected size recommendation above 15 KiB.");
-    Require(lines.ReadLine() == $"Thread: {thread}", "The receipt did not report the expected thread.");
-
     const string UpdatedPrefix = "Updated: ";
     string update = lines.ReadLine() ?? "";
     Require(update.StartsWith(UpdatedPrefix, StringComparison.Ordinal), "The receipt did not report the update time.");

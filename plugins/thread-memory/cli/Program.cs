@@ -230,10 +230,9 @@ internal static partial class Program
                 ? "thread note changed while applying the patch; read it again"
                 : "thread note changed before saving. Read the thread note again.");
         var receipt = new StringBuilder();
-        receipt.Append(FormattableString.Invariant($"Saved {bytes:N0} UTF-8 bytes.\n"));
+        receipt.Append(FormattableString.Invariant($"Note saved. Total size: {bytes:N0} UTF-8 bytes.\n"));
         if (bytes > NoteNoticeThresholdKiB * 1024)
             receipt.Append(NoteSizeNotice).Append('\n');
-        receipt.Append("Thread: ").Append(threadId).Append('\n');
         receipt.Append("Updated: ").Append(Timestamp(saved.UpdatedUs)).Append('\n');
         if (truncated)
             receipt.Append("The note was truncated to the save limit.\n");

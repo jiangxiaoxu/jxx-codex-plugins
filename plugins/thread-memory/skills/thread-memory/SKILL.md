@@ -62,7 +62,7 @@ if ($patchExit -ne 0) { throw "memory patch failed ($patchExit)" }
 $receipt
 ```
 
-The write and patch receipts start with the saved UTF-8 byte count and include size guidance above 15 KiB. Memory command errors print `Failed [code]: message` on stderr and exit nonzero. Use `memory read` as the source for note edits and keep receipts separate from the Markdown. Use the same workflow when a hook prompts an update. If the user asks you to save before manual compaction, confirm the note was saved in full before they run `/compact`.
+The write and patch receipts show the total saved note size in UTF-8 bytes and include size guidance above 15 KiB. Memory command errors print `Failed [code]: message` on stderr and exit nonzero. Use `memory read` as the source for note edits and keep receipts separate from the Markdown. Use the same workflow when a hook prompts an update. If the user asks you to save before manual compaction, confirm the note was saved in full before they run `/compact`.
 
 ## Look up rollout history
 
