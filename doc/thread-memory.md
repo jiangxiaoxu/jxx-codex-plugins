@@ -369,7 +369,9 @@ JSON output renders isolated UTF-16 surrogate escapes from old records as U+FFFD
 
 The Windows x64 Native AOT hook, CLI, and MCP panel use the system `winsqlite3` library and run without a separately installed .NET runtime or Python. The panel serves its packaged HTML to Codex over MCP stdio and uses the same note database and rollout index as the CLI. The CLI includes Zstandard decoding for `.jsonl.zst` and the image thumbnail implementation. It accepts a `session_meta` record up to 32 MiB before the line ending. The hook accepts up to 4 MiB.
 
-To run the Skill's note examples from the repository root, set `$cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path` and use its UTF-8 setup.
+To run the Skill's note examples from the repository root in PowerShell 7, set `$cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path`.
+
+PowerShell 7 normally uses UTF-8 for native commands. In Windows PowerShell 5.1 or a session with custom encoding, check `$OutputEncoding.CodePage` for text sent to native stdin and `[Console]::OutputEncoding.CodePage` for captured native stdout. If either direction you use is set to a code page other than UTF-8 (`65001`), set that direction to `[Text.UTF8Encoding]::new($false)` before calling the CLI.
 
 Zstandard archives are read sequentially. A scan that reaches a truncated frame reports the affected archive as `invalid_rollout`.
 

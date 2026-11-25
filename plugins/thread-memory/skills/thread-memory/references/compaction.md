@@ -2,7 +2,7 @@
 
 ## Read part of a thread note
 
-Use the [Skill's PowerShell setup and patch workflow](../SKILL.md#maintain-the-markdown-note). For a targeted edit, filter the Markdown to the lines you need. This example shows lines 10 through 20.
+Use `$cli` from the [Skill](../SKILL.md). This example reads lines 10 through 20 of the note.
 
 ```powershell
 $noteLines = @(& $cli memory read)
@@ -11,7 +11,26 @@ if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
 $noteLines | Select-Object -Skip 9 -First 11
 ```
 
-Hunk locations and original lines must match. A mismatch, empty result, or result over 25,600 UTF-8 bytes leaves the stored note unchanged.
+## Patch a thread note
+
+Use `memory patch` to apply a unified diff to the current note. Read the note first and match the hunk line numbers and context to the saved Markdown. Generate diffs that repeat long lines inside PowerShell from the Markdown you just read. If the note changed and the patch no longer applies, reread the note and rebuild the diff.
+
+```powershell
+$patch = @'
+--- a/note.md
++++ b/note.md
+@@ -1,2 +1,2 @@
+ ## Progress
+-- [ ] Verify the panel
++- [x] Verify the panel
+'@
+$receipt = $patch | & $cli memory patch
+$patchExit = $LASTEXITCODE
+if ($patchExit -ne 0) { throw "memory patch failed ($patchExit)" }
+$receipt
+```
+
+A mismatch, empty result, or result over 25,600 UTF-8 bytes leaves the stored note unchanged.
 
 ## Find the checkpoint
 
