@@ -1,19 +1,17 @@
 # Compaction and usage
 
-## Edit a thread note
+## Read part of a thread note
 
-`memory read` returns the complete `.summary` when a note exists. Filter it in the shell. Use `memory patch` with a UTF-8 unified diff on stdin to edit the current thread note.
+Use the [Skill's PowerShell setup and patch workflow](../SKILL.md#maintain-the-markdown-note). For a targeted edit, filter the decoded Markdown to the lines you need. This example shows lines 10 through 20.
 
 ```powershell
-& $cli memory read | jq -er '.summary // ""' | Select-Object -Skip 9 -First 11
-
-@'
---- a/memory
-+++ b/memory
-@@ -3 +3 @@
--Next: Draft the test.
-+Next: Run the test.
-'@ | & $cli memory patch
+$json = & $cli memory read
+$readExit = $LASTEXITCODE
+if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
+$result = $json | ConvertFrom-Json
+'Note size: {0:0.#} KiB ({1} UTF-8 bytes)' -f ($result.bytes / 1KB), $result.bytes
+if ($result.PSObject.Properties['notice']) { $result.notice }
+$result.summary -split '\r?\n' | Select-Object -Skip 9 -First 11
 ```
 
 Hunk locations and original lines must match. A mismatch, empty result, or result over 25,600 UTF-8 bytes leaves the stored note unchanged.

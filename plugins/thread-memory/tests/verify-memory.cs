@@ -20,7 +20,7 @@ if (!File.Exists(cli))
 
 const string PatchHeader = "--- a/note\n+++ b/note\n";
 const int Limit = 25_600;
-const int NoticeThreshold = 10 * 1024;
+const int NoticeThreshold = 15 * 1024;
 string sandbox = Directory.CreateTempSubdirectory("thread-memory-note-").FullName;
 string scenario = "UTF-8 notes, CLI thread selection, and lazy fork isolation";
 
@@ -168,10 +168,10 @@ static void AssertSize(JsonElement result, string? summary)
         "The result must start with the saved Markdown's UTF-8 byte count.");
     if (expectedBytes > NoticeThreshold)
         Require(fields.MoveNext() && fields.Current.NameEquals("notice") &&
-            fields.Current.Value.GetString() == "Usually keep notes under 10 KiB. The recommended maximum is 15 KiB.",
-            "The second field must give the expected size recommendation above 10 KiB.");
+            fields.Current.Value.GetString() == "Keep notes concise and under 15 KiB. The recommended maximum is 20 KiB.",
+            "The second field must give the expected size recommendation above 15 KiB.");
     else
-        Require(!result.TryGetProperty("notice", out _), "There must be no size recommendation at or below 10 KiB.");
+        Require(!result.TryGetProperty("notice", out _), "There must be no size recommendation at or below 15 KiB.");
 }
 
 async Task<JsonElement> Query(string home, string thread, string[] arguments, string? stdin = null)

@@ -34,7 +34,7 @@ After verifying a reminder window, the hook can keep a read checkpoint per rollo
 
 Ask Codex to maintain a thread note, save progress before manual `/compact`, or read the note after compaction. Update relevant sections in place, consolidate duplicates, and remove obsolete details so the note describes the current work. Commands default to `CODEX_THREAD_ID`, the root or subagent's own thread. `memory write` creates or replaces the entire note with UTF-8 text from stdin. Notes over 25 KiB (25,600 UTF-8 bytes) are shortened at a complete UTF-8 character, end in `[Summary truncated]`, and return `truncated: true`. `memory patch` applies a unified diff from stdin for a targeted edit, and rejects mismatches or output beyond the limit before saving.
 
-`memory read` returns the original Markdown as `summary` and its UTC `updated_at` timestamp. For a known thread without a saved note, both fields are null. All three commands put `bytes` first in the JSON response. It measures the current saved Markdown in UTF-8, including any truncation marker after a write, and is zero for a thread without a saved note. When the size exceeds 10 KiB, the response also includes a `notice` with the size guidance. The Skill examples show the size and optional notice before the note or save receipt. Use `memory --help` for an overview or each subcommand's `--help` for details.
+`memory read` returns the original Markdown as `summary` and its UTC `updated_at` timestamp. For a known thread without a saved note, both fields are null. All three commands put `bytes` first in the JSON response. It measures the current saved Markdown in UTF-8, including any truncation marker after a write, and is zero for a thread without a saved note. When the size exceeds 15 KiB, the response includes a `notice` advising concise notes under 15 KiB and a recommended maximum of 20 KiB. The [Skill's PowerShell examples](../plugins/thread-memory/skills/thread-memory/SKILL.md#maintain-the-markdown-note) show the size and optional notice before the note or save receipt. Use `memory --help` for an overview or each subcommand's `--help` for details.
 
 Main-thread forks use the creation timestamp in the new thread's original verified rollout header to choose the parent's version. The first `SessionStart(fork)` or first memory access copies that version, including an empty result if the parent had no note at that time. Further reads and edits use the new thread's revisions, and a later main-thread fork can inherit them. If a verified fork's inheritance is unavailable, an explicit `memory write` can start its own note and returns `inheritance_unavailable` in the receipt. The note store and fork logic use local SQLite and rollout headers.
 
@@ -369,12 +369,7 @@ JSON output renders isolated UTF-16 surrogate escapes from old records as U+FFFD
 
 The Windows x64 Native AOT hook, CLI, and MCP panel use the system `winsqlite3` library and run without a separately installed .NET runtime or Python. The panel serves its packaged HTML to Codex over MCP stdio and uses the same note database and rollout index as the CLI. The CLI includes Zstandard decoding for `.jsonl.zst` and the image thumbnail implementation. It accepts a `session_meta` record up to 32 MiB before the line ending. The hook accepts up to 4 MiB.
 
-```powershell
-$cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path
-& $cli memory read | jq -r '.summary // empty'
-$note | & $cli memory write
-$diff | & $cli memory patch
-```
+To run the Skill's note examples from the repository root, set `$cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path` and use its UTF-8 setup.
 
 Zstandard archives are read sequentially. A scan that reaches a truncated frame reports the affected archive as `invalid_rollout`.
 

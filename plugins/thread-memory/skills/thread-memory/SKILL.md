@@ -21,7 +21,7 @@ Update relevant sections in place, consolidate repeated information, and remove 
 
 The note stays with the thread across compaction. A main-thread fork gets its own copy as of its creation time. Subagents start with an empty note, including when they inherit chat history.
 
-Each memory command returns the current saved size in `.bytes` and includes `.notice` when the size exceeds 10 KiB. Usually keep notes under 10 KiB, with a recommended maximum of 15 KiB. The save limit is 25 KiB (25,600 UTF-8 bytes).
+Each memory command returns the current saved size in `.bytes` and includes `.notice` when the size exceeds 15 KiB. Keep notes concise and usually under 15 KiB, with a recommended maximum of 20 KiB. The save limit is 25 KiB (25,600 UTF-8 bytes).
 
 Use `memory read` to get the complete Markdown in `.summary` and its UTC timestamp in `.updated_at`. A null `.summary` means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details. For a routine edit, select `.summary` alone when filtering the decoded Markdown by line.
 
@@ -48,7 +48,7 @@ if ($writeExit -ne 0) { throw "memory write failed ($writeExit)" }
 $result = $json | ConvertFrom-Json
 'Note size: {0:0.#} KiB ({1} UTF-8 bytes)' -f ($result.bytes / 1KB), $result.bytes
 if ($result.PSObject.Properties['notice']) { $result.notice }
-$json | jq '{saved, truncated}'
+$result | Select-Object saved, truncated | ConvertTo-Json -Compress
 ```
 
 Use `memory patch` for a targeted edit. Read the current note, then send a unified diff on stdin. Match the line numbers and context to the actual note. Generate diffs that repeat long lines inside PowerShell using the Markdown you just read. If the patch is stale or does not match, reread and rebuild the diff. Patches must leave the result within the same byte limit.
@@ -68,7 +68,7 @@ if ($patchExit -ne 0) { throw "memory patch failed ($patchExit)" }
 $result = $json | ConvertFrom-Json
 'Note size: {0:0.#} KiB ({1} UTF-8 bytes)' -f ($result.bytes / 1KB), $result.bytes
 if ($result.PSObject.Properties['notice']) { $result.notice }
-$json | jq '{saved, updated_at}'
+$result | Select-Object saved, updated_at | ConvertTo-Json -Compress
 ```
 
 Use the same workflow when a hook prompts an update. If the user asks you to save before manual compaction, confirm the note was saved in full before they run `/compact`.
