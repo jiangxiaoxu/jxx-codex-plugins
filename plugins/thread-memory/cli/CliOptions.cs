@@ -184,13 +184,10 @@ internal sealed class CliOptions
     internal string Usage()
     {
         if (Command.Length == 0)
-            return "Usage: Thread-Memory COMMAND [OPTIONS]\n\nCommands: " + string.Join(", ", Commands.Keys) +
-                "\nUse Thread-Memory COMMAND --help for options. Queries use --thread UUID or --rollout PATH.";
+            return CliHelp.Overview(Commands.Keys);
         if (Command == "memory")
             return MemoryUsage();
-        string positional = Command == "search" ? " PATTERN" : "";
-        return $"Usage: Thread-Memory {Command}{positional} [OPTIONS]\n\n" +
-            $"{Commands[Command]}\n\nUse - with --ref, --id, or --cursor to read its selector from stdin.";
+        return CliHelp.ForCommand(Command, Commands[Command].Split(' '));
     }
 
     private string MemoryUsage()
@@ -220,6 +217,12 @@ internal sealed class CliOptions
                 Use Thread-Memory memory ACTION --help for details.
                 """,
         };
+        string example = action switch
+        {
+            "write" => "'## Current goal' | Thread-Memory memory write",
+            "patch" => "Get-Content -Raw -Encoding utf8 note.patch | Thread-Memory memory patch",
+            _ => "Thread-Memory memory read",
+        };
         return $"""
             Usage: Thread-Memory memory {action} [OPTIONS]
 
@@ -229,9 +232,12 @@ internal sealed class CliOptions
             Command errors print the reason to stderr and exit nonzero.
             A closed output pipe exits quietly with code 141.
 
+            Example: {example}
+
             Options:
               --thread UUID      Select a thread (default: CODEX_THREAD_ID).
               --codex-home PATH  Use a different Codex home.
+              --help, -h         Show this help.
             """;
     }
 

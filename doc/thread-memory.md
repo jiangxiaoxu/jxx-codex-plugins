@@ -112,7 +112,7 @@ Pass cursor strings through unchanged. Start a fresh query to get refs, IDs, and
 
 For rollout queries, `--output NEW_PATH` writes the result to a new file and returns a JSON receipt with `output` and `bytes`. Paged results also include `next_cursor` in the receipt, including `null` on the final page. File output uses the same page limits. Request each needed page with its own output path. For a readable chat excerpt, explicitly select `transcript --format markdown` with the relevant filters and add `--output NEW_PATH` to save it.
 
-Pass `--thread UUID` for a local thread or `--rollout PATH` for an explicit input file. With neither flag, the CLI uses `CODEX_THREAD_ID`, which identifies the subagent in a subagent shell. To inspect the root from that shell, pass `--thread $env:CODEX_SESSION_ID` in PowerShell. Use `--codex-home PATH` for a specific Codex home. The CLI follows recorded `history_base` links. Repeat `--previous PATH` to locate ancestors referenced by those links when they are outside the Codex home. Run `<command> --help` for command-specific options.
+Pass `--thread UUID` for a local thread or `--rollout PATH` for an explicit input file. With neither flag, the CLI uses `CODEX_THREAD_ID`, which identifies the subagent in a subagent shell. To inspect the root from that shell, pass `--thread $env:CODEX_SESSION_ID` in PowerShell. Use `--codex-home PATH` for a specific Codex home. The CLI follows recorded `history_base` links. Repeat `--previous PATH` to locate ancestors referenced by those links when they are outside the Codex home. Run `Thread-Memory --help` for the command list or `Thread-Memory COMMAND --help` for the command's inputs, output, and example usage.
 
 ## PowerShell and jq pipelines
 
