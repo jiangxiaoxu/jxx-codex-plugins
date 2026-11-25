@@ -15,7 +15,9 @@ $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 ## Maintain the Markdown note
 
-Keep a concise Markdown note of the current state. Record the active goal, open requests, key decisions and constraints, verified progress, and next steps. For details you may need to recover from the rollout, keep a distinctive search phrase, a record reference, or a tool or attachment ID.
+Keep a concise Markdown note of the current state. Record the active goal, open requests, key decisions and constraints, verified progress, and next steps.
+
+For details you may need to recover from a rollout, save distinctive search phrases. For clues from other threads, group them by source and list each source thread UUID once. Add tool or attachment IDs when useful.
 
 Update relevant sections in place, consolidate duplicates, and remove obsolete details. Avoid a running log. Use short paragraphs and list items. Keep file paths and code intact, and use absolute paths in local file links.
 
@@ -67,6 +69,8 @@ The write and patch receipts show the total saved note size in UTF-8 bytes and i
 ## Look up rollout history
 
 Pass `--rollout PATH` to query a known rollout file. From a subagent, use `--thread $env:CODEX_SESSION_ID` to query the main thread's rollout. In PowerShell reference examples, set `$source` to `@()` for your thread, `@('--thread', $thread)` for another thread, or `@('--rollout', $path)` for a file.
+
+After a fork, search for the saved phrase in the current thread first. If it is missing, use `search "phrase" --thread UUID` with the recorded source UUID. If the source UUID is missing, use `lineage` and check `fork_chain` from the nearest parent outward. If a saved ID no longer resolves, use the phrase to locate the record and get a fresh ID as needed.
 
 Start with the command that answers the question. Open a reference only if you need its details.
 
