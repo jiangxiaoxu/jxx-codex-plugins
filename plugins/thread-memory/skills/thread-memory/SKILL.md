@@ -72,6 +72,8 @@ Pass `--rollout PATH` to query a known rollout file. From a subagent, use `--thr
 
 After a fork, search for the saved phrase in the current thread first. If there is no match, run `lineage` and use `search "phrase" --thread UUID` on the ancestors in `fork_chain`, starting with the nearest parent. If a saved ID no longer resolves, use the phrase to locate the record and get a fresh ID as needed.
 
+When inheritance matters, verify the record with `search "phrase" --origin inherited` in the current thread. Treat matches found only in an ancestor as references.
+
 Start with the command that answers the question. Open a reference only if you need its details.
 
 | Need | Start here |
