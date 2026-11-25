@@ -148,8 +148,9 @@ static void AssertSaved(string result, string expected, bool truncated = false)
     Require(lines.ReadLine() == FormattableString.Invariant($"Note saved. Total size: {expectedBytes:N0} UTF-8 bytes."),
         "The receipt must start with the complete saved Markdown's UTF-8 byte count.");
     if (expectedBytes > NoticeThreshold)
-        Require(lines.ReadLine() == "Keep notes concise and under 15 KiB. The recommended maximum is 20 KiB.",
-            "The second line must give the expected size recommendation above 15 KiB.");
+        Require(lines.ReadLine() is { } notice && notice.Contains("15 KiB", StringComparison.Ordinal)
+            && notice.Contains("20 KiB", StringComparison.Ordinal),
+            "The receipt omitted the writing limits above 15 KiB.");
     if (truncated)
         Require(lines.ReadLine() == "The note was truncated to the save limit.", "The receipt did not report truncation.");
     Require(lines.ReadLine() is null, "The receipt contains unexpected lines.");

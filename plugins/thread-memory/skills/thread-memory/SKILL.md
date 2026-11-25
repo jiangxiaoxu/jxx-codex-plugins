@@ -15,13 +15,13 @@ $OutputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 
 ## Maintain the Markdown note
 
-Keep a concise Markdown document for the current work. Use short paragraphs and list items, and put distinct points on separate lines. Keep file paths and code intact. Use absolute paths in links to local files.
+Keep a concise Markdown note of the current state. Record the active goal, open requests, key decisions and constraints, verified progress, and next steps. For details you may need to recover from the rollout, keep a distinctive search phrase, a record reference, or a tool or attachment ID.
 
-Update relevant sections in place, consolidate repeated information, and remove obsolete details. Record the active goal, open requests, important decisions and constraints, verified progress, and next steps. Keep a rollout reference, a tool record ID, or a distinctive phrase for details you may need to find later.
+Update relevant sections in place, consolidate duplicates, and remove obsolete details. Avoid a running log. Use short paragraphs and list items. Keep file paths and code intact, and use absolute paths in local file links.
 
 The note stays with the thread across compaction. A main-thread fork gets its own copy as of its creation time. Subagents start with an empty note, including when they inherit chat history.
 
-Keep notes concise and usually under 15 KiB, with a recommended maximum of 20 KiB. The save limit is 25 KiB (25,600 UTF-8 bytes).
+Keep the note at or below 15 KiB unless essential details need more space. Stay within 20 KiB. The CLI save limit is 25 KiB (25,600 UTF-8 bytes).
 
 Use `memory read` to get the saved Markdown directly. Empty output means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details. For a routine edit, select just the relevant lines.
 
@@ -45,7 +45,7 @@ if ($writeExit -ne 0) { throw "memory write failed ($writeExit)" }
 $receipt
 ```
 
-Use `memory patch` for a targeted edit. Read the current note, then send a unified diff on stdin. Match the line numbers and context to the actual note. Generate diffs that repeat long lines inside PowerShell using the Markdown you just read. If the patch is stale or does not match, reread and rebuild the diff. Patches must leave the result within the same byte limit.
+Use `memory patch` for a targeted edit. Read the current note, then send a unified diff on stdin. Match the line numbers and context to the actual note. Generate diffs that repeat long lines inside PowerShell using the Markdown you just read. If the patch is stale or does not match, reread and rebuild the diff.
 
 ```powershell
 $patch = @'

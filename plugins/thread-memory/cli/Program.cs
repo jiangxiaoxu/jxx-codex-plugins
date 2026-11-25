@@ -12,12 +12,12 @@ internal static partial class Program
 {
     internal const int MaxNoteBytes = 25 * 1024;
     internal const int NoteNoticeThresholdKiB = 15;
-    private const int RecommendedNoteSizeKiB = 20;
+    private const int NoteWritingLimitKiB = 20;
     private const int MaxPatchBytes = 128 * 1024;
     private const int StdOutputHandle = -11;
     private const string Truncation = "\n\n[Summary truncated]";
     private static readonly string NoteSizeNotice = FormattableString.Invariant(
-        $"Keep notes concise and under {NoteNoticeThresholdKiB} KiB. The recommended maximum is {RecommendedNoteSizeKiB} KiB.");
+        $"Keep the note at or below {NoteNoticeThresholdKiB} KiB unless essential details need more space. Stay within {NoteWritingLimitKiB} KiB.");
     private static readonly UTF8Encoding Utf8 = new(false, true);
 
     public static int Main(string[] args)
