@@ -431,8 +431,7 @@ internal static partial class HistoryTools
             if (scope != next)
                 calls.Clear();
             scope = next;
-            if (row.Origin == "unknown" || row.Origin == "inherited" && !row.Copied &&
-                HistorySource.CopiedOrigin(row.Segment, row.Line, row.Value, row.Type).Unknown)
+            if (row.OwnershipUnknown)
             {
                 calls.Clear();
                 return null;

@@ -28,10 +28,14 @@ try
     Console.WriteLine("Passed scoped history, references, and latest messages after append.");
     await ForkHistory();
     Console.WriteLine("Passed physical fork cutoff and copied subagent provenance.");
+    await LegacyForkRecovery();
+    Console.WriteLine("Passed legacy fork recovery and history origin scopes.");
     await DamagedHistory();
     Console.WriteLine("Passed salvage pagination, physical offsets, and UTF-8.");
     await ToolDetails();
     Console.WriteLine("Passed tool metadata privacy, typed JSON values, and line-range reads.");
+    await CompactionRecovery();
+    Console.WriteLine("Passed recovery of generated images and asynchronous assistant messages.");
     return 0;
 }
 catch (Exception error) when (error is IOException or UnauthorizedAccessException or
@@ -132,6 +136,45 @@ async Task ForkHistory()
         "The copied message did not identify its original thread and copied timestamp.");
 }
 
+async Task LegacyForkRecovery()
+{
+    string parent = Guid.NewGuid().ToString();
+    string child = Guid.NewGuid().ToString();
+    JsonNode copy = JsonNode.Parse(Message(2, "marked as copied"))!;
+    copy["metadata"] = new JsonObject { ["inherited_user_message"] = true };
+    string path = RolloutPath(sessions, child);
+    File.WriteAllText(path, Record(1, "session_meta", new JsonObject
+    {
+        ["id"] = child, ["forked_from_id"] = parent, ["cwd"] = home,
+    }) + copy.ToJsonString() + "\n" +
+        Settings(3, parent) +
+        Record(4, "event_msg", new JsonObject { ["type"] = "turn_started", ["turn_id"] = "parent-turn" }) +
+        Message(5, "ambiguous prefix") +
+        Checkpoint(6, 4) +
+        Settings(7, child) +
+        Message(8, "owned message before compaction") +
+        Record(9, "compacted", new JsonObject { ["window_number"] = 5, ["replacement_history"] = new JsonArray() }),
+        utf8);
+
+    JsonElement recovery = await Query(child, ["recover"]);
+    var messages = recovery.GetProperty("messages");
+    Require(recovery.GetProperty("status").GetString() == "ok" &&
+        recovery.GetProperty("compaction_line").GetInt32() == 9 &&
+        messages.GetArrayLength() == 1 && messages[0].GetProperty("line").GetInt32() == 8,
+        "Recovery did not select the legacy fork's own compaction and its missing message.");
+    JsonElement owned = await Query(child, ["transcript", "--origin", "current", "--since", Stamp(3)]);
+    ExpectLines(owned, 8);
+    Require(Item(owned).GetProperty("turn_id").ValueKind == JsonValueKind.Null,
+        "The fork's own message was attributed to a turn from the copied prefix.");
+    ExpectLines(await Query(child, ["transcript", "--origin", "inherited"]), 2);
+    ExpectLines(await Query(child, ["transcript", "--origin", "unknown"]), 5);
+
+    static string Settings(int line, string thread) => Record(line, "event_msg", new JsonObject
+    {
+        ["type"] = "thread_settings_applied", ["thread_id"] = thread,
+    });
+}
+
 async Task DamagedHistory()
 {
     string thread = Guid.NewGuid().ToString();
@@ -215,6 +258,87 @@ async Task ToolDetails()
         Item(details).GetProperty("text").GetString() == outputLine + "\n" &&
         details.GetProperty("next_cursor").ValueKind == JsonValueKind.Null,
         "The direct tool output range returned the wrong line.");
+}
+
+async Task CompactionRecovery()
+{
+    const string imageData = "iVBORw0KGgoAAAANSUhEUgAAAAwAAAAGCAYAAAD37n+BAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAAAWSURBVChTY/i/lOE/KZgBXYAQHg4aACHFvdn3n82xAAAAAElFTkSuQmCC";
+    const string retainedImage = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/OeYAAAAASUVORK5CYII=";
+    const string retainedMessage = "Message carried forward";
+    string thread = Guid.NewGuid().ToString();
+    string localImage = Path.Combine(home, "local-image.png");
+    File.WriteAllBytes(localImage, Convert.FromBase64String(imageData));
+    File.WriteAllText(RolloutPath(sessions, thread),
+        Record(1, "session_meta", new JsonObject { ["id"] = thread }) +
+        Record(2, "event_msg", Completed("Asynchronous assistant message")) +
+        Record(3, "event_msg", new JsonObject
+        {
+            ["type"] = "agent_message", ["delivery"] = "async", ["message"] = "Legacy asynchronous message",
+        }) +
+        Record(4, "event_msg", Completed(retainedMessage)) +
+        Record(5, "response_item", Generated(imageData)) +
+        Record(6, "response_item", Generated(retainedImage)) +
+        Record(7, "response_item", new JsonObject
+        {
+            ["type"] = "function_call_output", ["call_id"] = "call-image",
+            ["output"] = new JsonArray(new JsonObject { ["type"] = "input_image", ["image_url"] = localImage }),
+        }) +
+        Record(8, "compacted", new JsonObject
+        {
+            ["window_number"] = 1,
+            ["replacement_history"] = new JsonArray(new JsonObject
+            {
+                ["type"] = "message", ["role"] = "assistant",
+                ["content"] = new JsonArray(new JsonObject { ["type"] = "output_text", ["text"] = retainedMessage }),
+            }, new JsonObject
+            {
+                ["type"] = "message", ["role"] = "user",
+                ["content"] = new JsonArray(new JsonObject
+                {
+                    ["type"] = "input_image", ["image_url"] = "data:image/png;base64," + retainedImage,
+                }),
+            }),
+        }), utf8);
+
+    JsonElement recovery = await Query(thread, ["recover"]);
+    Require(recovery.GetProperty("status").GetString() == "ok" && recovery.GetProperty("candidate_count").GetInt32() == 2,
+        "Recovery did not count exactly the missing asynchronous messages.");
+    JsonElement messages = recovery.GetProperty("messages");
+    Require(messages.EnumerateArray().Select(message => message.GetProperty("line").GetInt32()).SequenceEqual([2, 3])
+        && messages[0].GetProperty("text").GetString() == "Asynchronous assistant message"
+        && messages[1].GetProperty("text").GetString() == "Legacy asynchronous message"
+        && messages.EnumerateArray().All(message => message.GetProperty("role").GetString() == "assistant"),
+        "Recovery did not return the original asynchronous assistant records.");
+    JsonElement images = recovery.GetProperty("image_records");
+    Require(recovery.GetProperty("image_candidate_count").GetInt32() == 1 &&
+        images.GetArrayLength() == 1 && images[0].GetProperty("line").GetInt32() == 5,
+        "Recovery did not return exactly the generated image missing from the replacement history.");
+    JsonElement locals = recovery.GetProperty("local_images");
+    Require(recovery.GetProperty("local_image_candidate_count").GetInt32() == 1 && locals.GetArrayLength() == 1 &&
+        locals[0].GetProperty("line").GetInt32() == 7 && locals[0].GetProperty("path").GetString() == localImage &&
+        locals[0].GetProperty("thread_id").GetString() == thread && locals[0].GetProperty("origin").GetString() == "current",
+        "Recovery did not preserve the source of the local attachment.");
+    string imageId = images[0].GetProperty("images")[0].GetProperty("image_id").GetString()!;
+    string exportDir = Path.Combine(home, "recovered-images");
+    JsonElement export = await Query(thread, ["export-image", "--id", imageId, "--original", "--output-dir", exportDir]);
+    string imagePath = export.GetProperty("images")[0].GetProperty("original_file").GetString()!;
+    Require(File.ReadAllBytes(imagePath).SequenceEqual(Convert.FromBase64String(imageData)),
+        "The recovered image ID did not export the original bytes.");
+
+    static JsonObject Completed(string text) => new()
+    {
+        ["type"] = "item_completed",
+        ["item"] = new JsonObject
+        {
+            ["type"] = "AgentMessage", ["delivery"] = "async", ["phase"] = "final_answer",
+            ["content"] = new JsonArray(new JsonObject { ["type"] = "Text", ["text"] = text }),
+        },
+    };
+
+    static JsonObject Generated(string result) => new()
+    {
+        ["type"] = "image_generation_call", ["status"] = "completed", ["result"] = result,
+    };
 }
 
 async Task<JsonElement> Query(string thread, string[] arguments, string? stdin = null)

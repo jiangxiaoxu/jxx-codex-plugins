@@ -32,6 +32,7 @@ try
     await Check("main startup, compaction, and a silent fork snapshot", MainLifecycle);
     await Check("compaction recovery is queued and claimed once by its owning child", ChildLifecycle);
     await Check("65% and 80% reminders run at 45K, 35K, and 25K", ReminderCheckpoints);
+    await Check("copied forks require a thread-owned reminder boundary", CopiedForkReminderBoundary);
     await Check("observed delivery and compaction diagnostics survive rollout deletion", DurableDiagnostics);
     await Check("malformed Hook input returns structured stderr", MalformedInput);
     Console.WriteLine($"Passed {passed} Hook scenarios.");
@@ -162,6 +163,56 @@ async Task ReminderCheckpoints(string home)
         Usage(request, tokens);
         return Fire(home, request);
     }
+}
+
+async Task CopiedForkReminderBoundary(string home)
+{
+    const string Startup = "350000";
+    const int NearThreshold = 305_000;
+    HookRequest parent = Root(home);
+    HookRequest fork = Root(home, parent.SessionId, "2026-01-01T00:00:01Z");
+    Settings(parent.SessionId);
+    Checkpoint(fork);
+    HookRequest inheritedTurn = StartTurn(fork);
+    Usage(inheritedTurn, NearThreshold);
+    Settings(fork.SessionId);
+    Require(await Fire(home, inheritedTurn, Startup) is null,
+        "A copied compaction and usage sample enabled reminders for the fork.");
+
+    long copiedLength = new FileInfo(fork.TranscriptPath).Length;
+    Checkpoint(fork);
+    HookRequest ownTurn = StartTurn(fork);
+    Usage(ownTurn, NearThreshold);
+    string first = Reminder(await Fire(home, ownTurn, Startup), 0, duplicate: false);
+    Usage(ownTurn, NearThreshold + 10_000);
+    var followup = Reminder(await Fire(home, ownTurn, Startup), 0, duplicate: true);
+    Require(NotifyId(first) == NotifyId(followup), "Appending usage lost the verified owned window.");
+
+    // Force the 4 MiB recovery probe to scan a bounded tail without the owned settings or cursor offset.
+    Append(fork, "response_item", Message("assistant", new string('x', 4 * 1024 * 1024)));
+    const string LaterCompaction = "2026-01-01T00:00:02Z";
+    Checkpoint(fork, LaterCompaction);
+    await Fire(home, fork with { Source = "compact" });
+    Require((await Events(home, fork.SessionId)).Any(item => Event(item) == "compaction_checkpoint_observed" &&
+        item.GetProperty("details").GetProperty("compacted_at").GetString() == LaterCompaction),
+        "The bounded recovery scan lost the verified ancestry of the next compaction.");
+
+    Append(fork, "event_msg", new JsonObject { ["type"] = "thread_rolled_back", ["num_turns"] = 1 });
+    HookRequest rolledBackTurn = StartTurn(fork);
+    Usage(rolledBackTurn, NearThreshold);
+    string afterRollback = Reminder(await Fire(home, rolledBackTurn, Startup), 0, duplicate: false);
+    Require(NotifyId(first) != NotifyId(afterRollback), "A rollback reused an earlier window's reminder.");
+
+    using (var stream = File.Open(fork.TranscriptPath, FileMode.Open, FileAccess.Write))
+        stream.SetLength(copiedLength);
+    Require(await Fire(home, inheritedTurn, Startup) is null,
+        "A discarded checkpoint enabled reminders from copied history after truncation.");
+
+    void Settings(string owner) => Append(fork, "event_msg", new JsonObject
+    {
+        ["type"] = "thread_settings_applied", ["thread_id"] = owner,
+        ["thread_settings"] = new JsonObject { ["model"] = Model },
+    });
 }
 
 async Task DurableDiagnostics(string home)

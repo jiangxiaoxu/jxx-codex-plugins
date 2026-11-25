@@ -9,7 +9,8 @@ using static SQLitePCL.raw;
 
 namespace ThreadMemoryCli;
 
-internal readonly record struct HistoryAnnotation(string? Cwd, string? ActiveTurn = null, bool InPrefix = false);
+internal readonly record struct HistoryAnnotation(string? Cwd, string? ActiveTurn = null, bool InPrefix = false,
+    bool OwnsLegacyHistory = false);
 
 internal readonly record struct HistoryIndexedRecord(long Line, long Offset, long Length, string? Timestamp,
     bool Checkpoint, int? WindowNumber, HistoryAnnotation Next);

@@ -21,7 +21,7 @@ internal static partial class RolloutScanner
     private const string ReminderClose = "\n</thread_memory_reminder>";
     private const string ReminderLevels = @"(?:100|[1-9][0-9]?|0)(?:,(?:100|[1-9][0-9]?|0)){0,100}";
 
-    private sealed record Header(long End, UInt128? FirstOwned, string Segment, string? ThreadId);
+    private sealed record Header(long End, UInt128? FirstOwned, string Segment, string? ThreadId, bool CopiedWithoutBoundary);
     private readonly record struct Line(long? Offset, ReadOnlyMemory<byte> Raw, ReadOnlyMemory<byte> Trailer, bool Clipped);
     private readonly record struct Envelope(string Kind, UInt128? Ordinal, int PayloadOffset, string? Timestamp);
 
@@ -71,9 +71,8 @@ internal static partial class RolloutScanner
                 return Empty();
             var payload = rawHeader.Payload;
             var firstOwned = Ordinal(Property(payload, "subagent_history_start_ordinal"u8));
-            if (firstOwned.GetValueOrDefault() == 0 && Truthy(Property(payload, "forked_from_id"u8)) &&
-                !Truthy(Property(payload, "history_base"u8)))
-                return Empty();
+            var copiedWithoutBoundary = firstOwned.GetValueOrDefault() == 0 &&
+                Truthy(Property(payload, "forked_from_id"u8)) && !Truthy(Property(payload, "history_base"u8));
             var segments = new Dictionary<string, string>(StringComparer.Ordinal);
             string Segment(string name)
             {
@@ -82,7 +81,7 @@ internal static partial class RolloutScanner
                 return segment;
             }
             var header = new Header(rawHeader.Length, firstOwned.GetValueOrDefault() > 0 ? firstOwned : null,
-                Segment(file.Name), String(Property(payload, "id"u8)));
+                Segment(file.Name), String(Property(payload, "id"u8)), copiedWithoutBoundary);
 
             ReminderCheckpoint? ReadCheckpoint(string? raw) =>
                 RolloutCursor.ReadCheckpoint(file, stream, Segment, header.End, raw, ScanBytes);
@@ -443,6 +442,7 @@ internal static partial class RolloutScanner
         var hasSettingsModel = false;
         int? latestTurnModelAt = null;
         var omittedTurnModels = false;
+        var needsOwnedBoundary = header.CopiedWithoutBoundary && prior is null;
         var belowMinimum = false;
         var order = -1;
         var exhausted = true;
@@ -528,6 +528,15 @@ internal static partial class RolloutScanner
                     break;
                 }
                 var eventName = String(eventValue);
+                // Codex writes settings for the fork's own thread after the copied prefix.
+                // Only a settings row older than the candidate can prove its ownership.
+                if (needsOwnedBoundary && current is not null && eventName == "thread_settings_applied" &&
+                    header.ThreadId is string thread && String(Property(payload, "thread_id"u8)) == thread)
+                {
+                    needsOwnedBoundary = false;
+                    exhausted = false;
+                    break;
+                }
                 if (line.Offset is null && kind is not ("turn_context" or "token_usage_record") &&
                     eventName is not ("task_started" or "turn_started" or "token_count" or "thread_settings_applied"))
                     throw new FormatException("Invalid checkpoint signal.");
@@ -546,7 +555,10 @@ internal static partial class RolloutScanner
                     {
                         current = key;
                         boundary = compactOffset;
-                        if (!canDrain)
+                        if (needsOwnedBoundary && continuity is not null &&
+                            (compactOffset >= continuity.Offset || MatchesWindow(continuity, key, compactOffset)))
+                            needsOwnedBoundary = false;
+                        if (!needsOwnedBoundary && (!canDrain || (header.CopiedWithoutBoundary && prior is null)))
                         {
                             exhausted = false;
                             break;
@@ -579,10 +591,8 @@ internal static partial class RolloutScanner
                     native = Sample(payload, perResponse: false);
                     if (native is not null && native.Used < minimumUsed && (response is null || response.Used < minimumUsed))
                     {
-                        if (prior is null || !canDrain)
-                            return default;
                         belowMinimum = true;
-                        if (firstOwnedRecord)
+                        if (prior is null || !canDrain || firstOwnedRecord)
                         {
                             exhausted = false;
                             break;
@@ -676,6 +686,12 @@ internal static partial class RolloutScanner
         }
         if (exhausted && atStart)
             capture.LinkPrevious(VerifiedWindow(start, header.End));
+        if (needsOwnedBoundary)
+        {
+            capture.Receipts.Clear();
+            capture.Compactions.Clear();
+            return default;
+        }
         if (belowMinimum)
             return default;
         var markedTurn = latestTurn;

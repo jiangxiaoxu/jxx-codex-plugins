@@ -97,15 +97,20 @@ internal static partial class Program
         string? destination = options.One("--output") is string path ? Path.GetFullPath(path) : null;
         if (destination is not null && File.Exists(destination))
             throw new CliInputException($"Output already exists: {destination}", "output_exists");
-        bool pureRead = options.Command is not ("export-image" or "export-audio") &&
-            !(options.Command == "recover" && options.Has("--export-images"));
-        var source = HistorySource.Open(options, allowIndex: pureRead);
+        // A single attachment lookup completes index verification before any export writes.
+        bool canRetry = options.Command switch
+        {
+            "export-image" or "export-audio" => options.Many("--id").Count == 1,
+            "recover" => !options.Has("--export-images"),
+            _ => true,
+        };
+        var source = HistorySource.Open(options, allowIndex: canRetry);
         JsonObject result;
         try
         {
             result = Dispatch(options, source);
         }
-        catch (HistoryIndexUnavailable) when (pureRead)
+        catch (HistoryIndexUnavailable) when (canRetry)
         {
             source = HistorySource.Open(options, allowIndex: false);
             result = Dispatch(options, source);

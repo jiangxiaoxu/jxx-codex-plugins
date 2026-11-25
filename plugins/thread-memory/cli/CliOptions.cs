@@ -226,7 +226,8 @@ internal sealed class CliOptions
             {description}
 
             Writes and patches report saved bytes, with a notice over {Program.NoteNoticeThresholdKiB} KiB.
-            Failures print the reason to stderr and exit nonzero.
+            Command errors print the reason to stderr and exit nonzero.
+            A closed output pipe exits quietly with code 141.
 
             Options:
               --thread UUID      Select a thread (default: CODEX_THREAD_ID).

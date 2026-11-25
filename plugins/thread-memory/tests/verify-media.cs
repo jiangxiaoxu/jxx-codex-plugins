@@ -22,12 +22,13 @@ const string ImageData = "iVBORw0KGgoAAAANSUhEUgAAAAwAAAAGCAYAAAD37n+BAAAAAXNSR0
 const string AudioData = "UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQIAAACAgQ==";
 const string ImageMarker = "VBORw0KGgoAAAANSUhEUgAAAAwAAAAGCAYAAAD37n";
 const string AudioMarker = "UklGRiYAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQIAAACAgQ";
+const string JpegSignature = "/9j/4AAQSkZJRgABAQEASABIAAD/2Q==";
 const string Redacted = "[data URL omitted]";
 const string Thread = "00000000-0000-4000-8000-000000000026";
 const string Time = "2026-01-01T00:00:00Z";
 const string RawImageUrl = "data:image/png;base64," + ImageData;
 const string RawAudioUrl = "data:audio/wav;base64," + AudioData;
-const int ScenarioCount = 3;
+const int ScenarioCount = 5;
 
 string home = Directory.CreateTempSubdirectory("thread-memory-media-").FullName;
 string sessions = Directory.CreateDirectory(Path.Combine(home, "sessions")).FullName;
@@ -39,7 +40,9 @@ int passed = 0;
 try
 {
     await Check("inline data is redacted from text and diagnostics", TextRedaction);
+    await Check("typed JPEG data stays hidden while local paths remain visible", TypedImageRedaction);
     await Check("raw signatures export to files while malformed URLs stay private", MalformedMedia);
+    await Check("legacy user attachments honor complete image order", LegacyImageOrder);
     await Check("stdin selectors export local and inline attachments", SelectAttachments);
     Console.WriteLine($"Passed {passed}/{ScenarioCount} media scenarios.");
     return passed == ScenarioCount ? 0 : 1;
@@ -115,6 +118,73 @@ async Task TextRedaction()
     }
     Require(!File.Exists(alternateStream) && File.ReadAllText(baseFile) == "existing file",
         "An inline path argument changed the filesystem.");
+}
+
+async Task TypedImageRedaction()
+{
+    const string callId = "call-image";
+    const string local = "/9j/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/file.jpg";
+    string wrappedJpeg = JpegSignature[..4] + "\r\n" + JpegSignature[4..];
+    Seed(Row("response_item", new JsonObject
+    {
+        ["type"] = "function_call", ["name"] = "view_image", ["call_id"] = callId,
+        ["arguments"] = "{}",
+    }), Row("response_item", new JsonObject
+    {
+        ["type"] = "function_call_output", ["call_id"] = callId,
+        ["output"] = new JsonArray(Image(JpegSignature), Image(wrappedJpeg), Image(local)),
+    }), Message("images", Image(JpegSignature), Image(wrappedJpeg), Image(local)));
+
+    JsonElement results = await Query(["search", callId, "--tool", "view_image"]);
+    string outputId = results.GetProperty("items").EnumerateArray().Single(row => row.TryGetProperty("output_id", out _))
+        .GetProperty("output_id").GetString()!;
+    JsonElement line = One(await Query(["tool-output", "--id", outputId]), "items");
+    Require(line.GetProperty("text").GetString()!.TrimEnd() == local,
+        "The line view did not preserve the real path while omitting the JPEG.");
+
+    JsonElement output = (await Query(["tool-output", "--id", outputId, "--pointer", "/output"])).GetProperty("value");
+    Require(output[0].ValueKind == JsonValueKind.Null && output[1].ValueKind == JsonValueKind.Null &&
+        output[2].GetProperty("path").GetString() == local,
+        "The pointer view did not preserve the real path while omitting the JPEG.");
+
+    JsonElement hit = One(await Query(["search", "/9j/"]), "items");
+    Require(hit.GetProperty("text").GetString() == local,
+        "Search did not preserve the real path while omitting the JPEG.");
+    JsonElement record = One(await Query(["read", "--lines", "4:4"]), "items");
+    Require(record.GetProperty("fields").EnumerateArray().Any(field => field.GetProperty("text").GetString() == local),
+        "The message record did not preserve the real path while omitting the JPEG.");
+}
+
+async Task LegacyImageOrder()
+{
+    const string local = "local.png";
+    string[] files = ["file-image-1", "file-image-2"];
+    foreach (bool complete in new[] { true, false })
+    {
+        Seed(Row("event_msg", new JsonObject
+        {
+            ["type"] = "user_message", ["message"] = "mixed images",
+            ["images"] = new JsonArray(RawImageUrl, RawImageUrl),
+            ["file_ids"] = new JsonArray(files[0], files[1]),
+            ["local_images"] = new JsonArray(local),
+            ["image_order"] = complete
+                ? new JsonArray("file", "inline", "file", "inline")
+                : new JsonArray("file", "inline", "file"),
+        }));
+
+        JsonElement images = (await Query(["images"])).GetProperty("items");
+        string[] expected = complete
+            ? [files[0], "inline", files[1], "inline", local]
+            : ["inline", "inline", files[0], files[1], local];
+        Require(images.EnumerateArray().Select(image => image.GetProperty("kind").GetString() switch
+        {
+            "reference" => image.GetProperty("reference").GetString(),
+            "local" => image.GetProperty("path").GetString(),
+            _ => "inline",
+        }).SequenceEqual(expected), complete
+            ? "Complete image order did not interleave the split images."
+            : "Incomplete image order did not retain the full legacy order.");
+    }
 }
 
 async Task MalformedMedia()
@@ -282,7 +352,8 @@ static void ContainsRedaction(string text, string location)
 }
 
 static void Safe(string text, string location) => Require(
-    !text.Contains(ImageMarker, StringComparison.Ordinal) && !text.Contains(AudioMarker, StringComparison.Ordinal),
+    !text.Contains(ImageMarker, StringComparison.Ordinal) && !text.Contains(AudioMarker, StringComparison.Ordinal) &&
+    !text.Contains("/9j/4AAQSkZJRgABAQEASABIAAD", StringComparison.Ordinal),
     $"{location} contained inline media.");
 
 static void Require(bool condition, string message)

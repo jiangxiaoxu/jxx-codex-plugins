@@ -28,10 +28,6 @@ internal static partial class HistoryTools
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DataUrls();
 
-    [GeneratedRegex(@"\A(?:file:|[a-z]:[/\\]|[/\\])",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex LocalReference();
-
     [GeneratedRegex(@"~(?![01])", RegexOptions.CultureInvariant)]
     private static partial Regex PointerEscape();
 
@@ -98,7 +94,7 @@ internal static partial class HistoryTools
                 reference = ToolProperty(block, "imageUrl").StringValue();
             if (string.IsNullOrEmpty(reference))
                 reference = ToolProperty(block, "url").StringValue();
-            if (reference is not null && LocalReference().IsMatch(reference))
+            if (reference is not null && HistoryMedia.IsLocalImageReference(reference))
                 return reference;
         }
         return null;

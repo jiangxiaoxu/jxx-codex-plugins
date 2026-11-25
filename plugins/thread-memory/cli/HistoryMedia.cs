@@ -88,7 +88,14 @@ internal static partial class HistoryMedia
     [GeneratedRegex(@"\A[a-z][a-z0-9+.-]*:", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex UriScheme();
 
-    private sealed record PartSource(string Kind, string? Raw, string? Path = null, string? ResolvedPath = null, string? MediaType = null);
+    [GeneratedRegex(@"\A(?:file:|[a-z]:[/\\]|[/\\])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex LocalReference();
+
+    internal static bool IsLocalImageReference(string reference) =>
+        LocalReference().IsMatch(reference) && InlineMime(reference, "image") is null;
+
+    private sealed record PartSource(string Kind, string? Raw, string? Path = null, string? ResolvedPath = null,
+        string? MediaType = null, int? LegacyImageOrdinal = null);
 
     internal static JsonObject Run(CliOptions args, HistorySource source) => args.Command switch
     {
@@ -178,9 +185,12 @@ internal static partial class HistoryMedia
                 _ => "tool",
             };
             string? itemId = item.Text("id") ?? item.Text("call_id");
+            int firstImageOrdinal = imageOrdinal;
             foreach (var (part, medium, source) in Parts(item, row.Cwd, media))
             {
                 int index = medium == "image" ? imageOrdinal++ : audioOrdinal++;
+                if (source.LegacyImageOrdinal is int legacyOrdinal)
+                    index = firstImageOrdinal + legacyOrdinal;
                 yield return new(
                     row.Ref(medium, index), medium, source.Kind, part, checkpoint, kind, role, itemId,
                     Path.GetFileName(row.Path), row.Line, row.Type, row.Origin, row.OwnerThreadId,
@@ -240,16 +250,10 @@ internal static partial class HistoryMedia
         if (kind == "user_message" && media != "audio")
         {
             index = 0;
-            foreach (var image in item.Get("images").Items())
+            foreach (PartSource? source in LegacyImages(item, cwd))
             {
-                if (ImageSource(image.StringValue(), null, null, null, cwd) is { } imageSource)
-                    yield return (index, "image", imageSource);
-                index++;
-            }
-            foreach (var image in item.Get("file_ids").Items())
-            {
-                if (ImageSource(null, image.StringValue(), null, null, cwd) is { } imageSource)
-                    yield return (index, "image", imageSource);
+                if (source is not null)
+                    yield return (index, "image", source);
                 index++;
             }
         }
@@ -327,7 +331,8 @@ internal static partial class HistoryMedia
         if (IsDataUrl(url))
             return new("inline", url, MediaType: HeaderMime(url!, "image") ?? "application/octet-stream");
         if (!string.IsNullOrEmpty(data))
-            return new("inline", data, MediaType: HeaderMime(data, "image") ?? ValidMime(mime, "image") ?? "image/unknown");
+            return new("inline", data, MediaType: HeaderMime(data, "image") ?? ValidMime(mime, "image")
+                ?? InlineMime(data, "image") ?? "image/unknown");
         if (string.IsNullOrEmpty(url))
             return null;
         if (InlineMime(url, "image") is string inlineMime)
@@ -368,6 +373,33 @@ internal static partial class HistoryMedia
         }
         return string.IsNullOrEmpty(data) ? null : new("inline", data,
             MediaType: HeaderMime(data, "audio") ?? ValidMime(mime, "audio") ?? "audio/unknown");
+    }
+
+    private static IEnumerable<PartSource?> LegacyImages(JsonElement item, string? cwd)
+    {
+        JsonElement images = item.Get("images"), files = item.Get("file_ids");
+        var sources = images.Items().Select(image => ImageSource(image.StringValue(), null, null, null, cwd))
+            .Concat(files.Items().Select(file => ImageSource(null, file.StringValue(), null, null, cwd)));
+        if (images is { ValueKind: JsonValueKind.Array } && files is { ValueKind: JsonValueKind.Array } &&
+            item.Get("image_order") is { ValueKind: JsonValueKind.Array } recordedOrder)
+        {
+            int imageCount = images.GetArrayLength(), fileCount = files.GetArrayLength();
+            var order = recordedOrder.Items().Select(kind => kind.StringValue()).ToArray();
+            if (imageCount > 0 && fileCount > 0 && order.Length == imageCount + fileCount &&
+                order.Count(kind => kind == "inline") == imageCount && order.Count(kind => kind == "file") == fileCount)
+            {
+                // Present the original input order while keeping existing attachment IDs attached to the same images.
+                int ordinal = 0;
+                var indexed = sources.Select(source => source is null ? null : source with { LegacyImageOrdinal = ordinal++ })
+                    .ToArray();
+                int imageIndex = 0, fileIndex = imageCount;
+                foreach (string? kind in order)
+                    yield return indexed[kind == "inline" ? imageIndex++ : fileIndex++];
+                yield break;
+            }
+        }
+        foreach (PartSource? source in sources)
+            yield return source;
     }
 
     private static IEnumerable<PartSource?> LegacyAudio(JsonElement item, string? cwd)
@@ -450,9 +482,20 @@ internal static partial class HistoryMedia
         if (Path.IsPathFullyQualified(value))
             return null;
         ReadOnlySpan<char> encoded = value.AsSpan().TrimStart();
-        int count = Math.Min(encoded.Length, 32) / 4 * 4;
+        Span<char> compact = stackalloc char[32];
+        int count = 0;
+        foreach (char character in encoded)
+        {
+            if (character is ' ' or '\r' or '\n' or '\t')
+                continue;
+            compact[count++] = character;
+            if (count == compact.Length)
+                break;
+        }
+        count -= count % 4;
         Span<byte> prefix = stackalloc byte[24];
-        if (count == 0 || !Convert.TryFromBase64Chars(encoded[..count], prefix, out int length))
+        if (count == 0 || !Convert.TryFromBase64Chars(compact[..count], prefix, out int length) ||
+            Path.HasExtension(encoded))
             return null;
         var bytes = prefix[..length];
         if (media == "audio")

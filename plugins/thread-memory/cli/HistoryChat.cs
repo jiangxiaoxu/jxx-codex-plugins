@@ -158,15 +158,10 @@ internal static partial class HistoryChat
         {
             JsonElement item = row.ItemType == "item_completed" ? payload.Get("item") : payload;
             recordedPhase = item.Text("phase");
-            if (item.Text("delivery") != "async" || phase is not null && phase != recordedPhase)
+            if (phase is not null && phase != recordedPhase ||
+                AsyncAssistantBody(row.ItemType, item) is not string text)
                 return null;
-            if (row.ItemType == "item_completed" && item.Text("type") == "AgentMessage")
-                body = string.Join('\n', item.Get("content").Items()
-                    .Where(part => part.Text("type") == "Text").Select(part => part.Text("text")));
-            else if (row.ItemType == "agent_message")
-                body = item.Text("message") ?? "";
-            else
-                return null;
+            body = text;
             role = "assistant";
             asynchronous = true;
             turn ??= payload.Text("turn_id");
@@ -196,6 +191,20 @@ internal static partial class HistoryChat
         if (audio > 0)
             result["audio_count"] = audio;
         return result;
+    }
+
+    internal static string? AsyncAssistantBody(string? eventType, JsonElement item)
+    {
+        if (item.Text("delivery") != "async")
+            return null;
+        return eventType switch
+        {
+            "item_completed" when item.Text("type") == "AgentMessage" =>
+                string.Join('\n', item.Get("content").Items()
+                    .Where(part => part.Text("type") == "Text").Select(part => part.Text("text"))),
+            "agent_message" => item.Text("message"),
+            _ => null,
+        };
     }
 
     internal static (List<string> Text, List<int> Attachments, int Images, int Audio) ChatParts(

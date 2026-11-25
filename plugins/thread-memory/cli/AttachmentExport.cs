@@ -67,7 +67,11 @@ internal static partial class HistoryMedia
         string? outputDir = args.One("--output-dir");
         string? directory = null;
         var cache = new Dictionary<(string Kind, string Destination), JsonObject>();
-        foreach (HistoryRow row in source.FindMany(targets.Keys))
+        var rows = source.FindMany(targets.Keys);
+        // Finish verifying an indexed lookup before exporting any files.
+        if (targets.Count == 1)
+            rows = rows.ToArray();
+        foreach (HistoryRow row in rows)
         {
             var reference = new HistoryRef(row.Segment.Id, row.Line, row.Offset, row.Digest, "record", null);
             var ids = targets[reference];

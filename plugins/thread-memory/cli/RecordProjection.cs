@@ -16,9 +16,6 @@ internal static partial class RecordProjection
         "model", "model_provider_id", "service_tier", "reasoning_effort", "reasoning_summary", "personality",
     ];
 
-    [GeneratedRegex("^(?:file:|[a-z]:[/\\\\]|[/\\\\])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex LocalReference();
-
     [GeneratedRegex("\\n</command>\\n<result>\\nExit code: -?[0-9]+\\nDuration: [0-9]+(?:\\.[0-9]+)? seconds\\nOutput:\\n")]
     private static partial Regex ShellResult();
 
@@ -105,7 +102,7 @@ internal static partial class RecordProjection
                     break;
                 case "image" or "input_image" or "inputImage":
                     var reference = NonemptyText(part, "image_url") ?? NonemptyText(part, "imageUrl") ?? part.Text("url");
-                    if (reference is not null && LocalReference().IsMatch(reference))
+                    if (reference is not null && HistoryMedia.IsLocalImageReference(reference))
                         yield return ($"{location}.image_url", reference);
                     break;
             }

@@ -10,7 +10,7 @@ internal sealed record HistorySegment(
 internal sealed record HistoryRow(
     HistorySegment Segment, long Line, long Offset, JsonElement Value, string Digest, int Window,
     string? Turn, string? Cwd, string Origin, string? OwnerThreadId, long NextOffset = 0,
-    bool Gap = false, bool Copied = false)
+    bool Gap = false, bool Copied = false, bool OwnershipUnknown = false)
 {
     internal JsonElement Payload => Value.Get("payload");
     internal string Type => Value.Text("type") ?? "";

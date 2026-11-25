@@ -90,6 +90,9 @@ internal static class HistoryRecovery
             else if (row.Type == "event_msg")
             {
                 JsonElement item = row.ItemType == "item_completed" ? row.Payload.Get("item") : row.Payload;
+                if (HistoryChat.AsyncAssistantBody(row.ItemType, item) is { Length: > 0 } body)
+                    history.Add(ProjectMessage(row, null, "assistant", body, 0, [], maxChars));
+
                 string? itemType = item.Text("type");
                 if (itemType is not ("user_message" or "UserMessage" or "view_image_tool_call" or "ImageView"
                     or "image_generation_end" or "ImageGeneration" or "Extension") ||
@@ -99,7 +102,7 @@ internal static class HistoryRecovery
                 {
                     if (attachment.Kind == "local" && (attachment.ResolvedPath is not null || itemType is "user_message" or "UserMessage"))
                         eventImages.Add(MakeImage(row, attachment, row.ItemType!, eventPath: true));
-                    else if (itemType == "Extension" && attachment.Kind != "local")
+                    else if (attachment.Kind != "local" && itemType is "image_generation_end" or "ImageGeneration" or "Extension")
                         imageHistory.Add(MakeImage(row, attachment, row.ItemType!));
                 }
             }
@@ -190,7 +193,12 @@ internal static class HistoryRecovery
         var parts = HistoryChat.ChatParts(item, role == "user", recovery: true);
         if (parts.Text.Count == 0 && parts.Images == 0)
             return null;
-        string body = string.Join('\n', parts.Text);
+        return ProjectMessage(row, checkpointItem, role, string.Join('\n', parts.Text), parts.Images, images, maxChars);
+    }
+
+    private static Message ProjectMessage(HistoryRow row, int? checkpointItem, string role, string body,
+        int imageCount, IReadOnlyList<Image> images, int maxChars)
+    {
         // Use the exact unredacted body to detect duplicate content, not the bounded excerpt.
         string fingerprint = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(body.Trim())));
         string key = role + ":" + fingerprint + ":" + string.Concat(images.Select(image =>
@@ -201,7 +209,7 @@ internal static class HistoryRecovery
             text = RecordProjection.Slice(text, 0, maxChars);
         JsonObject locator = Location(row, checkpointItem);
         locator["role"] = role;
-        return new Message(locator, key, text, chars, parts.Images);
+        return new Message(locator, key, text, chars, imageCount);
     }
 
     private static List<Image> ResponseImages(HistoryRow row, JsonElement item, JsonElement metadata,
@@ -210,7 +218,7 @@ internal static class HistoryRecovery
         string? type = item.Text("type");
         if (type == "message" && (item.Text("role") is not ("user" or "assistant") ||
             metadata.Get("compaction_output").ValueKind == JsonValueKind.True) ||
-            type is not ("message" or "custom_tool_call_output" or "function_call_output" or "item_completed"))
+            type is not ("message" or "custom_tool_call_output" or "function_call_output" or "item_completed" or "image_generation_call"))
             return [];
         JsonElement parts = item.Get(type == "message" ? "content" : "output");
         List<Image> images = [];
@@ -346,8 +354,7 @@ internal static class HistoryRecovery
         var pathRecords = new JsonArray();
         foreach (Image image in selectedPaths)
         {
-            JsonObject metadata = image.EventPath ? (JsonObject)image.Locator.DeepClone()
-                : new JsonObject { ["rollout"] = image.Attachment.Rollout, ["line"] = image.Attachment.Line };
+            JsonObject metadata = (JsonObject)image.Locator.DeepClone();
             string? path = Redact(image.Attachment.Path);
             metadata["image_id"] = image.Attachment.Id;
             metadata["path"] = path;
@@ -356,8 +363,6 @@ internal static class HistoryRecovery
                 metadata["part"] = image.Attachment.Part;
                 metadata["reference"] = path;
                 metadata["item_type"] = image.ItemType;
-                if (image.Attachment.CheckpointItem is int checkpoint)
-                    metadata["checkpoint_item"] = checkpoint;
             }
             if (image.Attachment.ResolvedPath is not null)
                 metadata["resolved_path"] = Redact(image.Attachment.ResolvedPath);

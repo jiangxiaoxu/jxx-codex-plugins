@@ -733,8 +733,9 @@ internal sealed class HistorySource
         return true;
     }
 
+    // Legacy ownership is discovered while scanning and is not stored in the index.
     private HistoryIndex? OpenIndex(bool build, long? throughLine = null) =>
-        allowIndex && !salvage && Segments.Count == 1
+        allowIndex && !salvage && Segments.Count == 1 && !IsLegacyCopiedFork(Segments[0])
             ? HistoryIndex.TryOpen(options.Home, Segments[0], ScanIndex, build, throughLine)
             : null;
 
@@ -998,7 +999,11 @@ internal sealed class HistorySource
         string type = value.Text("type")!;
         var payload = value.Get("payload");
         string? eventType = type == "event_msg" ? payload.Text("type") : null;
-        (bool copied, bool unknown) = CopiedOrigin(segment, line, value, type);
+        // Copied settings keep their original thread ID. Only the child's own settings end the prefix.
+        bool startsOwnHistory = !state.OwnsLegacyHistory && eventType == "thread_settings_applied" && owner is not null
+            && payload.Text("thread_id") == owner && IsLegacyCopiedFork(segment);
+        bool ownsLegacyHistory = state.OwnsLegacyHistory || startsOwnHistory;
+        (bool copied, bool unknown) = CopiedOrigin(segment, line, value, type, ownsLegacyHistory);
         string? cwd = state.Cwd;
         string? activeTurn = state.ActiveTurn;
         if (copied != state.InPrefix)
@@ -1008,6 +1013,12 @@ internal sealed class HistorySource
         }
         if (gap)
             cwd = activeTurn = null;
+        if (startsOwnHistory)
+        {
+            cwd = payload.Get("thread_settings").Text("cwd") is { Length: > 0 } settingsDirectory
+                ? settingsDirectory : segment.Header.Text("cwd");
+            activeTurn = null;
+        }
         if (type is "session_meta" or "turn_context" && payload.Text("cwd") is { Length: > 0 } workingDirectory)
             cwd = workingDirectory;
         if (eventType is not null && TurnStart.Contains(eventType))
@@ -1025,19 +1036,28 @@ internal sealed class HistorySource
         string origin = copied || owner != ThreadId ? "inherited" : unknown ? "unknown" : "current";
         int window = type == "compacted" ? CheckpointWindow(previousWindow, payload) : FollowingWindow(previousWindow);
         return (new HistoryRow(segment, line, offset, value, fingerprint ? Fingerprint(raw.Span, cwd) : "", window,
-            turn, cwd, origin, owner, next, gap, copied), new HistoryAnnotation(cwd, activeTurn, copied));
+            turn, cwd, origin, owner, next, gap, copied, unknown),
+            new HistoryAnnotation(cwd, activeTurn, copied, ownsLegacyHistory));
     }
 
-    internal static (bool Copied, bool Unknown) CopiedOrigin(HistorySegment segment, long line, JsonElement value, string type)
+    private static (bool Copied, bool Unknown) CopiedOrigin(HistorySegment segment, long line, JsonElement value, string type,
+        bool ownsLegacyHistory)
     {
         if (line == 1 && type == "session_meta")
             return (false, false);
         if (HistoryWire.Integer(segment.Header, "subagent_history_start_ordinal") is > 0 and long start)
             return HistoryWire.Integer(value, "ordinal") is long ordinal ? (ordinal < start, false) : (false, true);
-        if (segment.Header.Text("forked_from_id") is { Length: > 0 } && !HistoryWire.Truthy(segment.Header.Get("history_base")))
-            return HistoryWire.Truthy(value.Get("metadata").Get("inherited_user_message")) ? (true, false) : (false, true);
+        if (HasCopiedFork(segment))
+            return HistoryWire.Truthy(value.Get("metadata").Get("inherited_user_message"))
+                ? (true, false) : (false, !ownsLegacyHistory);
         return (false, false);
     }
+
+    private static bool IsLegacyCopiedFork(HistorySegment segment) =>
+        HasCopiedFork(segment) && HistoryWire.Integer(segment.Header, "subagent_history_start_ordinal") is not > 0;
+
+    private static bool HasCopiedFork(HistorySegment segment) =>
+        segment.Header.Text("forked_from_id") is { Length: > 0 } && !HistoryWire.Truthy(segment.Header.Get("history_base"));
 
     private static string Fingerprint(ReadOnlySpan<byte> raw, string? cwd)
     {
