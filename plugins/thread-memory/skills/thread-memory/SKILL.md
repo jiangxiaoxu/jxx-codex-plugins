@@ -28,22 +28,13 @@ if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
 $noteLines
 ```
 
-Use `memory write` to save the full Markdown from stdin. To create a note, pipe the new Markdown to `memory write`. For a routine edit, read the current note, replace a unique snippet literally, and save the result.
+Pipe the full Markdown to `memory write` to create or update a note. For a routine edit, use a snippet that occurs exactly once.
 
 ```powershell
 $note = (& $cli memory read) -join "`n"
 $readExit = $LASTEXITCODE
 if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
-
-$old = '- [ ] Verify the panel'
-$first = $note.IndexOf($old, [StringComparison]::Ordinal)
-if ($first -lt 0 -or $first -ne $note.LastIndexOf($old, [StringComparison]::Ordinal)) {
-    throw 'Expected the old text exactly once.'
-}
-$receipt = $note.Replace($old, '- [x] Verify the panel') | & $cli memory write
-$writeExit = $LASTEXITCODE
-if ($writeExit -ne 0) { throw "memory write failed ($writeExit)" }
-$receipt
+$note.Replace('- [ ] Verify the panel', '- [x] Verify the panel') | & $cli memory write
 ```
 
 If the receipt reports truncation, shorten the original Markdown and save it again. See [patching a note](references/compaction.md#patch-a-thread-note) when you need to apply a targeted diff to the latest stored note.
