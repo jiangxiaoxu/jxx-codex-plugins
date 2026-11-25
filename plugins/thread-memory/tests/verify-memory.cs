@@ -1,7 +1,7 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
 
 if (args.Length > 1)
@@ -33,8 +33,7 @@ try
     Console.WriteLine($"Passed {scenario}.");
     return 0;
 }
-catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException
-    or JsonException or KeyNotFoundException or TimeoutException)
+catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidOperationException or TimeoutException)
 {
     Console.Error.WriteLine($"Failed {scenario}: {error.Message}");
     return 1;
@@ -47,26 +46,25 @@ finally
 async Task VerifyFork(string home)
 {
     string parent = MakeRollout(home);
-    AssertRead(await Query(home, parent, ["read"]), parent, null, null);
+    AssertRead(await Query(home, parent, ["read"]), "");
 
     const string Original = "Goal\n\u76ee\u6807 \U0001f3af\nNext";
-    JsonElement first = await Query(home, parent, ["write"], stdin: $"\uFEFF{Original}\r\n");
-    AssertWrite(first, parent, Original, truncated: false);
-    string savedAt = first.GetProperty("updated_at").GetString()!;
-    AssertRead(await Query(home, parent, ["read"]), parent, Original, savedAt);
+    string first = await Query(home, parent, ["write"], stdin: $"\uFEFF{Original}\r\n");
+    string savedAt = AssertSaved(first, parent, Original);
+    AssertRead(await Query(home, parent, ["read"]), Original);
 
     string child = MakeRollout(home, parent, savedAt);
     const string NewerParent = "Goal\nParent after fork\nNext";
-    JsonElement parentEdit = await Query(home, parent, ["write"], stdin: NewerParent);
-    AssertRead(await Query(home, parent, ["--thread", child, "read"]), child, Original, savedAt);
+    AssertSaved(await Query(home, parent, ["write"], stdin: NewerParent), parent, NewerParent);
+    AssertRead(await Query(home, parent, ["--thread", child, "read"]), Original);
 
     const string ChildLine = "\u5b50\u7ebf\u7a0b \U0001f680";
     const string ChildNote = $"Goal\n{ChildLine}\nReview";
     const string Diff = PatchHeader + $"@@ -2 +2 @@\n-\u76ee\u6807 \U0001f3af\n+{ChildLine}\n@@ -3 +3 @@\n-Next\n+Review\n";
-    JsonElement patch = await Query(home, parent, ["patch", "--thread", child], stdin: Diff.ReplaceLineEndings("\r\n"));
-    AssertWrite(patch, child, ChildNote);
-    AssertRead(await Query(home, child, ["read"]), child, ChildNote, patch.GetProperty("updated_at").GetString());
-    AssertRead(await Query(home, parent, ["read"]), parent, NewerParent, parentEdit.GetProperty("updated_at").GetString());
+    string patch = await Query(home, parent, ["patch", "--thread", child], stdin: Diff.ReplaceLineEndings("\r\n"));
+    AssertSaved(patch, child, ChildNote);
+    AssertRead(await Query(home, child, ["read"]), ChildNote);
+    AssertRead(await Query(home, parent, ["read"]), NewerParent);
 }
 
 async Task VerifyBounds(string home)
@@ -78,35 +76,33 @@ async Task VerifyBounds(string home)
 
     string noticeBody = new string('x', NoticeThreshold - Encoding.UTF8.GetByteCount(Heading));
     string atThreshold = Heading + noticeBody;
-    JsonElement threshold = await Query(home, thread, ["write"], stdin: atThreshold);
-    AssertWrite(threshold, thread, atThreshold, truncated: false);
-    AssertRead(await Query(home, thread, ["read"]), thread, atThreshold, threshold.GetProperty("updated_at").GetString());
+    AssertSaved(await Query(home, thread, ["write"], stdin: atThreshold), thread, atThreshold);
+    AssertRead(await Query(home, thread, ["read"]), atThreshold);
 
-    JsonElement aboveThreshold = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Goals\n");
+    string aboveThreshold = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Goals\n");
     string aboveThresholdNote = "Goals\n" + noticeBody;
-    AssertWrite(aboveThreshold, thread, aboveThresholdNote);
-    AssertRead(await Query(home, thread, ["read"]), thread, aboveThresholdNote, aboveThreshold.GetProperty("updated_at").GetString());
+    AssertSaved(aboveThreshold, thread, aboveThresholdNote);
+    AssertRead(await Query(home, thread, ["read"]), aboveThresholdNote);
 
     string body = new string('x', Limit - Encoding.UTF8.GetByteCount(Heading + Multibyte)) + Multibyte;
     string atLimit = Heading + body;
-    JsonElement boundary = await Query(home, thread, ["write"], stdin: atLimit + "\r\n");
-    AssertWrite(boundary, thread, atLimit, truncated: false);
-    AssertRead(await Query(home, thread, ["read"]), thread, atLimit, boundary.GetProperty("updated_at").GetString());
+    AssertSaved(await Query(home, thread, ["write"], stdin: atLimit + "\r\n"), thread, atLimit);
+    AssertRead(await Query(home, thread, ["read"]), atLimit);
 
-    JsonElement patched = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Next\n");
+    string patched = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Next\n");
     string patchedAtLimit = "Next\n" + body;
-    AssertWrite(patched, thread, patchedAtLimit);
-    AssertRead(await Query(home, thread, ["read"]), thread, patchedAtLimit, patched.GetProperty("updated_at").GetString());
+    AssertSaved(patched, thread, patchedAtLimit);
+    AssertRead(await Query(home, thread, ["read"]), patchedAtLimit);
 
     string prefix = Heading + new string('x', Limit - Encoding.UTF8.GetByteCount(Heading + Marker) - 1);
     string saved = prefix + Marker;
-    JsonElement written = await Query(home, thread, ["write"], stdin: prefix + Multibyte + new string('x', 70_000));
-    AssertWrite(written, thread, saved, truncated: true);
+    string written = await Query(home, thread, ["write"], stdin: prefix + Multibyte + new string('x', 70_000));
+    AssertSaved(written, thread, saved, truncated: true);
     Require(Encoding.UTF8.GetByteCount(saved) == Limit - 1, "The fixture did not cross the limit inside a UTF-8 character.");
-    string? updated = written.GetProperty("updated_at").GetString();
-    AssertRead(await Query(home, thread, ["read"]), thread, saved, updated);
+    AssertRead(await Query(home, thread, ["read"]), saved);
 
     const string FirstHunk = "@@ -1 +1 @@\n-Goal\n+Edit\n";
+    const string FailurePrefix = "Failed [invalid_input]: ";
     foreach (string rejected in new[]
     {
         PatchHeader + FirstHunk + "@@ -4 +4 @@\n-Wrong old line\n+Ignored\n",
@@ -114,10 +110,11 @@ async Task VerifyBounds(string home)
     })
     {
         CliResult error = await Invoke(home, thread, ["patch"], rejected);
-        Require(error.ExitCode == 1 && error.Stdout.Length == 0 && !error.Stderr.TrimEnd().Contains('\n') &&
-            Parse(error.Stderr).GetProperty("error").GetProperty("code").GetString() == "invalid_input",
-            "An invalid patch did not return a single structured error on stderr.");
-        AssertRead(await Query(home, thread, ["read"]), thread, saved, updated);
+        string failure = error.Stderr.TrimEnd('\r', '\n');
+        Require(error.ExitCode == 1 && error.Stdout.Length == 0 && !failure.Contains('\n') &&
+            failure.StartsWith(FailurePrefix, StringComparison.Ordinal) && failure.Length > FailurePrefix.Length,
+            "An invalid patch did not return a single plain-text error with a reason on stderr.");
+        AssertRead(await Query(home, thread, ["read"]), saved);
     }
 }
 
@@ -142,53 +139,48 @@ static string MakeRollout(string home, string? parent = null, string timestamp =
     return id;
 }
 
-static void AssertRead(JsonElement result, string thread, string? summary, string? updated)
-{
-    AssertSize(result, summary);
-    Require(result.GetProperty("thread_id").GetString() == thread &&
-        result.GetProperty("summary").GetString() == summary && result.GetProperty("updated_at").GetString() == updated,
-        "The selected thread's saved text or timestamp differed from the expected snapshot.");
-}
+static void AssertRead(string result, string expected) =>
+    Require(result == expected, "The read did not return exactly the selected thread's saved Markdown.");
 
-static void AssertWrite(JsonElement result, string thread, string expected, bool? truncated = null)
+static string AssertSaved(string result, string thread, string expected, bool truncated = false)
 {
-    AssertSize(result, expected);
-    Require(result.GetProperty("saved").GetBoolean() && result.GetProperty("thread_id").GetString() == thread &&
-        result.GetProperty("updated_at").GetDateTimeOffset().Offset == TimeSpan.Zero,
-        "The write receipt did not report the saved note's thread and UTC timestamp.");
-    if (truncated is bool value)
-        Require(result.GetProperty("truncated").GetBoolean() == value, "The write receipt had the wrong truncation state.");
-}
-
-static void AssertSize(JsonElement result, string? summary)
-{
-    var fields = result.EnumerateObject();
-    int expectedBytes = summary is null ? 0 : Encoding.UTF8.GetByteCount(summary);
-    Require(fields.MoveNext() && fields.Current.NameEquals("bytes") && fields.Current.Value.GetInt32() == expectedBytes,
-        "The result must start with the saved Markdown's UTF-8 byte count.");
+    using var lines = new StringReader(result);
+    int expectedBytes = Encoding.UTF8.GetByteCount(expected);
+    Require(lines.ReadLine() == FormattableString.Invariant($"Saved {expectedBytes:N0} UTF-8 bytes."),
+        "The receipt must start with the saved Markdown's UTF-8 byte count.");
     if (expectedBytes > NoticeThreshold)
-        Require(fields.MoveNext() && fields.Current.NameEquals("notice") &&
-            fields.Current.Value.GetString() == "Keep notes concise and under 15 KiB. The recommended maximum is 20 KiB.",
-            "The second field must give the expected size recommendation above 15 KiB.");
-    else
-        Require(!result.TryGetProperty("notice", out _), "There must be no size recommendation at or below 15 KiB.");
+        Require(lines.ReadLine() == "Keep notes concise and under 15 KiB. The recommended maximum is 20 KiB.",
+            "The second line must give the expected size recommendation above 15 KiB.");
+    Require(lines.ReadLine() == $"Thread: {thread}", "The receipt did not report the expected thread.");
+
+    const string UpdatedPrefix = "Updated: ";
+    string update = lines.ReadLine() ?? "";
+    Require(update.StartsWith(UpdatedPrefix, StringComparison.Ordinal), "The receipt did not report the update time.");
+    string timestamp = update[UpdatedPrefix.Length..];
+    Require(DateTimeOffset.TryParseExact(timestamp, "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture,
+        DateTimeStyles.AssumeUniversal, out _),
+        "The receipt did not report a UTC timestamp.");
+    if (truncated)
+        Require(lines.ReadLine() == "The note was truncated to the save limit.", "The receipt did not report truncation.");
+    Require(lines.ReadLine() is null, "The receipt contains unexpected lines.");
+    return timestamp;
 }
 
-async Task<JsonElement> Query(string home, string thread, string[] arguments, string? stdin = null)
+async Task<string> Query(string home, string thread, string[] arguments, string? stdin = null)
 {
     CliResult result = await Invoke(home, thread, arguments, stdin);
     Require(result.ExitCode == 0 && result.Stderr.Length == 0, $"memory {string.Join(' ', arguments)} failed with exit {result.ExitCode}.");
-    return Parse(result.Stdout);
+    return result.Stdout;
 }
 
 async Task<CliResult> Invoke(string home, string thread, string[] arguments, string? stdin)
 {
+    var utf8 = new UTF8Encoding(false, true);
     var start = new ProcessStartInfo(cli)
     {
         WorkingDirectory = home, UseShellExecute = false, CreateNoWindow = true,
         RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true,
-        StandardInputEncoding = new UTF8Encoding(false, true),
-        StandardOutputEncoding = new UTF8Encoding(false, true), StandardErrorEncoding = new UTF8Encoding(false, true),
+        StandardInputEncoding = utf8, StandardErrorEncoding = utf8,
     };
     start.ArgumentList.Add("memory");
     foreach (string argument in arguments)
@@ -198,7 +190,8 @@ async Task<CliResult> Invoke(string home, string thread, string[] arguments, str
     start.Environment["CODEX_THREAD_ID"] = thread;
     using var process = Process.Start(start) ?? throw new InvalidOperationException("The CLI did not start.");
     using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
-    Task<string> stdout = process.StandardOutput.ReadToEndAsync();
+    using var stdout = new MemoryStream();
+    Task readStdout = process.StandardOutput.BaseStream.CopyToAsync(stdout);
     Task<string> stderr = process.StandardError.ReadToEndAsync();
     try
     {
@@ -213,13 +206,8 @@ async Task<CliResult> Invoke(string home, string thread, string[] arguments, str
         await process.WaitForExitAsync();
         throw new TimeoutException("The CLI exceeded the test timeout.");
     }
-    return new CliResult(process.ExitCode, await stdout, await stderr);
-}
-
-static JsonElement Parse(string text)
-{
-    using var document = JsonDocument.Parse(text);
-    return document.RootElement.Clone();
+    await readStdout;
+    return new CliResult(process.ExitCode, utf8.GetString(stdout.GetBuffer().AsSpan(0, (int)stdout.Length)), await stderr);
 }
 
 static void Require(bool condition, string message)

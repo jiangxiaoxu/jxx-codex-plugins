@@ -127,7 +127,7 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
         <https://example.invalid/autolink>
         ![Remote image](https://example.invalid/tracker.png)
         """.ReplaceLineEndings("\n");
-    var activeWrite = await SaveNote(cli, home, active, summary);
+    string activeUpdatedAt = await SaveNote(cli, home, active, summary);
     WriteRollout(home, spawned);
     await SaveNote(cli, home, spawned, "Shown under its main thread");
     WriteRollout(home, archived, archived: true);
@@ -169,7 +169,7 @@ static async Task VerifyPanel(string home, string panel, string cli, string plug
 
     var read = await mcp.Tool("handoff_read", new { thread_id = active });
     Check(read.GetProperty("thread_id").GetString() == active && read.GetProperty("summary").GetString() == summary
-        && read.GetProperty("updated_at").GetString() == activeWrite.GetProperty("updated_at").GetString(),
+        && read.GetProperty("updated_at").GetString() == activeUpdatedAt,
         "The panel did not read the current CLI note and timestamp verbatim.");
     Check(read.TryGetProperty("summary_html", out var rendered) && rendered.ValueKind == JsonValueKind.String,
         "The note reader did not return rendered Markdown.");
@@ -295,20 +295,20 @@ static async Task VerifyChildDirectory(string home, string panel, string cli)
     await SaveNote(cli, home, main, "Main note");
     WriteRollout(home, childOnly, archived: true);
     WriteRollout(home, direct, source: new { subagent = new { thread_spawn = new { parent_thread_id = childOnly } } });
-    var directWrite = await SaveNote(cli, home, direct, "Direct note");
+    string directUpdatedAt = await SaveNote(cli, home, direct, "Direct note");
     WriteRollout(home, intermediate, source: new { subagent = new { thread_spawn = new { parent_thread_id = childOnly } } });
     WriteRollout(home, fork, forkedFrom: main);
     await SaveNote(cli, home, fork, "Independent fork note");
     WriteRollout(home, attached, forkedFrom: main, attached: true);
     await SaveNote(cli, home, attached, "Exclude attached note");
     WriteRollout(home, nested, archived: true, source: new { subagent = new { thread_spawn = new { parent_thread_id = intermediate } } });
-    var nestedWrite = await SaveNote(cli, home, nested, "Nested note");
+    string nestedUpdatedAt = await SaveNote(cli, home, nested, "Nested note");
 
     var groups = await mcp.Tool("handoff_list");
     Check(ThreadIds(groups).SequenceEqual([childOnly, fork, main]), "Only verified main threads should appear in the directory.");
     var group = groups.GetProperty("items")[0];
     Check(group.GetProperty("child_note_count").GetInt32() == 2
-        && group.GetProperty("latest_at").GetString() == nestedWrite.GetProperty("updated_at").GetString()
+        && group.GetProperty("latest_at").GetString() == nestedUpdatedAt
         && group.GetProperty("archived").GetBoolean(),
         "An archived main with only child notes must show the count and newest descendant note time.");
     var childOnlyMainNote = await mcp.Tool("handoff_read", new { thread_id = childOnly });
@@ -330,7 +330,7 @@ static async Task VerifyChildDirectory(string home, string panel, string cli)
     Check(ThreadIds(directPage).SequenceEqual([direct]) && directPage.GetProperty("page").GetInt32() == 2
         && directRow.GetProperty("parent_thread_id").GetString() == childOnly && directRow.GetProperty("preview").GetString() == "Task preview"
         && directRow.GetProperty("title").ValueKind == JsonValueKind.Null
-        && directRow.GetProperty("latest_at").GetString() == directWrite.GetProperty("updated_at").GetString(),
+        && directRow.GetProperty("latest_at").GetString() == directUpdatedAt,
         "A child without a recorded agent path must leave the title empty for the UUID label.");
     var named = await mcp.Tool("handoff_children", new { thread_id = childOnly, query = "/WORKER/PRINCIPAL_LANGUAGE" });
     Check(ThreadIds(named).SequenceEqual([nested]), "Child search must match the canonical path case-insensitively.");
@@ -356,8 +356,7 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
 
     AddChild(originalEarly, original, archived: true, path: "/root/original_reviewer");
     AddChild(originallyEmpty, original);
-    var beforeFirstFork = await SaveNote(cli, home, originalEarly, "Original note before first fork");
-    string firstCutoff = beforeFirstFork.GetProperty("updated_at").GetString()!;
+    string firstCutoff = await SaveNote(cli, home, originalEarly, "Original note before first fork");
     string firstForkPath = WriteRollout(home, firstFork, forkedFrom: original, timestamp: firstCutoff);
 
     await SaveNote(cli, home, originalEarly, "Post-fork change belongs to original");
@@ -366,9 +365,9 @@ static async Task VerifyForkDirectory(string home, string panel, string cli)
     await SaveNote(cli, home, originalLate, "Child created after the first fork");
 
     AddChild(forkEarly, firstFork);
-    var beforeSecondFork = await SaveNote(cli, home, forkEarly, "First fork note before the second fork");
+    string secondCutoff = await SaveNote(cli, home, forkEarly, "First fork note before the second fork");
     string secondForkPath = WriteRollout(home, secondFork, forkedFrom: firstFork,
-        timestamp: beforeSecondFork.GetProperty("updated_at").GetString()!);
+        timestamp: secondCutoff);
     Execute(Path.Combine(home, "state", "plugins", "thread-memory", "handoff.sqlite3"), """
         INSERT INTO memory_revisions (thread_id, summary, updated_us, effective_us)
         SELECT thread_id, NULL, updated_us + 1, effective_us + 1 FROM memory_revisions
@@ -502,9 +501,8 @@ static async Task VerifyCleanup(string home, string panel, string cli)
     string archivePath = WriteRollout(home, archived, archived: true);
     string indexedPath = WriteRollout(home, searchOnly, withMessage: true);
     const string snapshot = "Save this version for the archived fork";
-    var snapshotWrite = await SaveNote(cli, home, parent, snapshot);
-    string forkPath = WriteRollout(home, fork, archived: true, forkedFrom: parent,
-        timestamp: snapshotWrite.GetProperty("updated_at").GetString()!);
+    string snapshotUpdatedAt = await SaveNote(cli, home, parent, snapshot);
+    string forkPath = WriteRollout(home, fork, archived: true, forkedFrom: parent, timestamp: snapshotUpdatedAt);
     await SaveNote(cli, home, parent, "Parent note updated after the fork");
     await SaveNote(cli, home, deletedChild, "Deleted subagent's note");
     await SaveNote(cli, home, restored, "Restored after preview");
@@ -519,8 +517,8 @@ static async Task VerifyCleanup(string home, string panel, string cli)
     var archivedRead = (await mcp.Tool("handoff_read", new { thread_id = archived })).GetProperty("last_read_at");
     Check(archivedRead.ValueKind == JsonValueKind.String && archivedRead.GetDateTimeOffset().Offset == TimeSpan.Zero,
         "A self-read must expose a UTC timestamp to the panel.");
-    var indexed = await RunCli(cli, home, null, null,
-        "search", "Cache this message", "--rollout", indexedPath, "--since", "2026-01-01T00:00:00Z");
+    var indexed = JsonSerializer.Deserialize<JsonElement>(await RunCli(cli, home, null, null,
+        "search", "Cache this message", "--rollout", indexedPath, "--since", "2026-01-01T00:00:00Z"));
     Check(indexed.GetProperty("items").GetArrayLength() == 1, "Could not build the rollout index fixture.");
     foreach (string path in new[] { parentPath, deletedChildPath, restoredPath, indexedPath })
         File.Delete(path);
@@ -563,7 +561,7 @@ static async Task VerifyCleanup(string home, string panel, string cli)
         "Refreshing must confirm that the cleaned-up main thread has no remaining note group.");
     var forkNote = await mcp.Tool("handoff_read", new { thread_id = fork });
     Check(forkNote.GetProperty("summary").GetString() == snapshot
-        && forkNote.GetProperty("updated_at").GetString() == snapshotWrite.GetProperty("updated_at").GetString()
+        && forkNote.GetProperty("updated_at").GetString() == snapshotUpdatedAt
         && forkNote.GetProperty("last_read_at").ValueKind == JsonValueKind.Null,
         "Cleanup must copy a surviving fork's note as of fork time while leaving its read timestamp unset.");
     foreach (string id in new[] { archived, restored })
@@ -588,8 +586,10 @@ static async Task VerifyCleanup(string home, string panel, string cli)
         using var transaction = state.BeginTransaction(deferred: false);
         using var reader = ChildProcess.Start(cli, home, ["memory", "read"], lateRead);
         reader.StandardInput.Close();
-        string? stdout = await reader.StandardOutput.ReadLineAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        Check(stdout?.Contains(lateReadNote, StringComparison.Ordinal) == true,
+        var stdout = new char[lateReadNote.Length];
+        using var readTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        int count = await reader.StandardOutput.ReadBlockAsync(stdout, readTimeout.Token);
+        Check(count == stdout.Length && stdout.AsSpan().SequenceEqual(lateReadNote),
             "The note should be returned while the cleanup write transaction is open.");
         using var delete = state.CreateCommand();
         delete.Transaction = transaction;
@@ -684,14 +684,18 @@ static IEnumerable<string?> CleanupIds(JsonElement result)
     return result.GetProperty("thread_ids").EnumerateArray().Select(item => item.GetString());
 }
 
-static async Task<JsonElement> SaveNote(string cli, string home, string id, string note)
+static async Task<string> SaveNote(string cli, string home, string id, string note)
 {
-    var result = await RunCli(cli, home, id, note, "memory", "write");
-    Check(result.GetProperty("saved").GetBoolean(), "Could not save the note fixture.");
-    return result;
+    const string prefix = "Updated: ";
+    string result = await RunCli(cli, home, id, note, "memory", "write");
+    using var lines = new StringReader(result);
+    while (lines.ReadLine() is { } line)
+        if (line.StartsWith(prefix, StringComparison.Ordinal))
+            return line[prefix.Length..];
+    throw new InvalidOperationException("The save receipt omitted the note update time.");
 }
 
-static async Task<JsonElement> RunCli(string cli, string home, string? id, string? input, params string[] arguments)
+static async Task<string> RunCli(string cli, string home, string? id, string? input, params string[] arguments)
 {
     using var process = ChildProcess.Start(cli, home, arguments, id);
     process.StandardInput.Write(input);
@@ -709,7 +713,7 @@ static async Task<JsonElement> RunCli(string cli, string home, string? id, strin
             process.Kill(entireProcessTree: true);
     }
     Check(process.ExitCode == 0 && (await error).Length == 0, $"CLI fixture command failed: {await error}");
-    return JsonSerializer.Deserialize<JsonElement>(await output);
+    return await output;
 }
 
 static void Check(bool condition, string message)

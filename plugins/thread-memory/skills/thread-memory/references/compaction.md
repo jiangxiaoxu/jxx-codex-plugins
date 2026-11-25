@@ -2,16 +2,13 @@
 
 ## Read part of a thread note
 
-Use the [Skill's PowerShell setup and patch workflow](../SKILL.md#maintain-the-markdown-note). For a targeted edit, filter the decoded Markdown to the lines you need. This example shows lines 10 through 20.
+Use the [Skill's PowerShell setup and patch workflow](../SKILL.md#maintain-the-markdown-note). For a targeted edit, filter the Markdown to the lines you need. This example shows lines 10 through 20.
 
 ```powershell
-$json = & $cli memory read
+$noteLines = @(& $cli memory read)
 $readExit = $LASTEXITCODE
 if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
-$result = $json | ConvertFrom-Json
-'Note size: {0:0.#} KiB ({1} UTF-8 bytes)' -f ($result.bytes / 1KB), $result.bytes
-if ($result.PSObject.Properties['notice']) { $result.notice }
-$result.summary -split '\r?\n' | Select-Object -Skip 9 -First 11
+$noteLines | Select-Object -Skip 9 -First 11
 ```
 
 Hunk locations and original lines must match. A mismatch, empty result, or result over 25,600 UTF-8 bytes leaves the stored note unchanged.

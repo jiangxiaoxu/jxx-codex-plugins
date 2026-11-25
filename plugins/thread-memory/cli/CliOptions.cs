@@ -200,12 +200,12 @@ internal sealed class CliOptions
         string description = action switch
         {
             "read" => """
-                Return the original Markdown in the JSON summary field and its UTC updated_at.
-                Both fields are null when the thread has no saved note.
+                Write only the saved UTF-8 Markdown to stdout.
+                Output is empty when the thread has no saved note.
                 """,
             "write" => $"""
                 Create or replace the whole note with UTF-8 Markdown from stdin.
-                Notes over {noteLimit} UTF-8 bytes are shortened and report truncated: true.
+                Notes over {noteLimit} UTF-8 bytes are shortened, with a warning in the save receipt.
                 """,
             "patch" => $"""
                 Apply a UTF-8 unified diff from stdin to the current Markdown note.
@@ -213,7 +213,7 @@ internal sealed class CliOptions
                 A result over {noteLimit} UTF-8 bytes is rejected.
                 """,
             _ => """
-                read   Return the original Markdown and its update time as JSON.
+                read   Print only the saved Markdown.
                 write  Create or replace the whole note with UTF-8 Markdown on stdin.
                 patch  Apply a UTF-8 unified diff from stdin to edit part of the note.
 
@@ -225,8 +225,8 @@ internal sealed class CliOptions
 
             {description}
 
-            The JSON bytes field reports the saved Markdown's UTF-8 size.
-            Notes over {Program.NoteNoticeThresholdKiB} KiB also include a size notice.
+            Writes and patches report saved bytes, with a notice over {Program.NoteNoticeThresholdKiB} KiB.
+            Failures print the reason to stderr and exit nonzero.
 
             Options:
               --thread UUID      Select a thread (default: CODEX_THREAD_ID).

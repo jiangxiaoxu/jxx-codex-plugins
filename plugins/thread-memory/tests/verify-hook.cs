@@ -72,8 +72,8 @@ async Task MainLifecycle(string home)
     await Query(home, ["memory", "write", "--thread", root.SessionId], "Parent's later edit");
     HookRequest fork = Root(home, root.SessionId, forkedAt);
     Require(await Fire(home, fork with { Source = "fork" }) is null, "A main-thread fork emitted startup guidance.");
-    var read = await Query(home, ["memory", "read", "--thread", fork.SessionId]);
-    Require(read.GetProperty("summary").GetString() == note, "The fork did not copy the note as of fork time.");
+    string read = await Query(home, ["memory", "read", "--thread", fork.SessionId]);
+    Require(read == note, "The fork did not copy the note as of fork time.");
 
     Checkpoint(fork);
     recovery = Recovery(await Fire(home, fork with { Source = "compact" }), maintenance);
@@ -91,8 +91,8 @@ async Task ChildLifecycle(string home)
     HookRequest child = Child(home, root.SessionId, fork: true);
     HookRequest sibling = Child(home, root.SessionId, fork: false);
     string maintenance = Maintenance(await Fire(home, child));
-    JsonElement note = await Query(home, ["memory", "read", "--thread", child.AgentId!]);
-    Require(note.GetProperty("summary").ValueKind == JsonValueKind.Null,
+    string note = await Query(home, ["memory", "read", "--thread", child.AgentId!]);
+    Require(note.Length == 0,
         "A subagent with inherited history also inherited the parent note.");
     Require(await Fire(home, child with { HookEventName = "SessionStart", AgentId = null, Source = "compact" }) is null,
         "SessionStart used the child's transcript for the parent.");
@@ -195,7 +195,7 @@ async Task DurableDiagnostics(string home)
         checkpoint.GetProperty("previous_window").GetString() == priorWindow,
         $"Compaction lost its timestamp or prior window. Expected {CompactedAt} and {priorWindow}, got {checkpoint}.");
 
-    var summary = await Query(home, ["diagnostics", "--summary"]);
+    var summary = Parse(await Query(home, ["diagnostics", "--summary"]));
     Dictionary<string, int> metrics = summary.GetProperty("items").EnumerateArray().ToDictionary(
         item => item.GetProperty("metric").GetString()!, item => item.GetProperty("count").GetInt32());
     Require(metrics.Count == 5 && metrics.GetValueOrDefault("first") == 1 && metrics.GetValueOrDefault("followup_1") == 1 &&
@@ -359,15 +359,15 @@ async Task<string?> Fire(string home, HookRequest request, string? startup = nul
 }
 
 async Task<JsonElement[]> Events(string home, string thread) =>
-    (await Query(home, ["diagnostics", "--thread", thread])).GetProperty("items").EnumerateArray().ToArray();
+    Parse(await Query(home, ["diagnostics", "--thread", thread])).GetProperty("items").EnumerateArray().ToArray();
 
 static string? Event(JsonElement item) => item.GetProperty("event").GetString();
 
-async Task<JsonElement> Query(string home, string[] arguments, string? input = null)
+async Task<string> Query(string home, string[] arguments, string? input = null)
 {
     ProcessResult result = await Run(home, cli, arguments, input);
     Require(result.ExitCode == 0 && result.Error.Length == 0, $"{arguments[0]} failed ({result.ExitCode}): {result.Error}");
-    return Parse(result.Output);
+    return result.Output;
 }
 
 static JsonElement Parse(string json)

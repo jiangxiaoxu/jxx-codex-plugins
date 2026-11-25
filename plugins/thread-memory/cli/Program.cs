@@ -23,6 +23,7 @@ internal static partial class Program
 
     public static int Main(string[] args)
     {
+        bool plainMemory = args is ["memory", ..];
         try
         {
             var options = CliOptions.Parse(args);
@@ -31,7 +32,7 @@ internal static partial class Program
             Console.CancelKeyPress += (_, signal) =>
             {
                 signal.Cancel = true;
-                Environment.Exit(WriteError("interrupted", "Interrupted by user.", 130));
+                Environment.Exit(Fail("interrupted", "Interrupted by user.", 130));
             };
             SQLitePCL.raw.SetProvider(new SQLitePCL.SQLite3Provider_winsqlite3());
             if (options.Command == "memory")
@@ -47,46 +48,49 @@ internal static partial class Program
         }
         catch (CliInputException error)
         {
-            return WriteError(error.Code, error.Message, error.Code == "invalid_arguments" ? 2 : 1);
+            return Fail(error.Code, error.Message, error.Code == "invalid_arguments" ? 2 : 1);
         }
         catch (RolloutReadException error)
         {
-            return WriteError("invalid_rollout", error.Message, path: error.Path, line: error.Line,
+            return Fail("invalid_rollout", error.Message, path: error.Path, line: error.Line,
                 hint: error.Message.StartsWith("invalid JSONL", StringComparison.Ordinal)
                     ? "Retry with --salvage to skip damaged records." : null);
         }
         catch (ThreadMemory.InheritanceUnavailable error)
         {
-            return WriteError("invalid_input", error.Message);
+            return Fail("invalid_input", error.Message);
         }
         catch (ThreadMemory.InvalidNoteRollout error)
         {
-            return WriteError("invalid_rollout", error.Message, path: error.Path, line: 1);
+            return Fail("invalid_rollout", error.Message, path: error.Path, line: 1);
         }
         catch (FileNotFoundException error)
         {
-            return WriteError("not_found", error.Message);
+            return Fail("not_found", error.Message);
         }
         catch (UnauthorizedAccessException error)
         {
-            return WriteError("permission_denied", error.Message);
+            return Fail("permission_denied", error.Message);
         }
         catch (InvalidDataException error)
         {
-            return WriteError("invalid_rollout", error.Message);
+            return Fail("invalid_rollout", error.Message);
         }
         catch (IOException error)
         {
-            return WriteError("io_error", error.Message);
+            return Fail("io_error", error.Message);
         }
         catch (Exception error) when (error is ArgumentException or OverflowException)
         {
-            return WriteError("invalid_input", error.Message);
+            return Fail("invalid_input", error.Message);
         }
         catch (Exception error)
         {
-            return WriteError("runtime_error", $"{error.GetType().Name}: {error.Message}");
+            return Fail("runtime_error", $"{error.GetType().Name}: {error.Message}");
         }
+
+        int Fail(string code, string message, int status = 1, string? path = null, long? line = null, string? hint = null) =>
+            WriteError(plainMemory, code, message, status, path, line, hint);
     }
 
     private static int Query(CliOptions options)
@@ -201,13 +205,7 @@ internal static partial class Program
 
         if (action == "read")
         {
-            int status = WriteResult(writer =>
-            {
-                WriteNoteSize(writer, Utf8.GetByteCount(current?.Summary ?? ""));
-                writer.WriteString("thread_id", threadId);
-                writer.WriteString("summary", current?.Summary);
-                writer.WriteString("updated_at", current?.Summary is not null ? Timestamp(current.UpdatedUs) : null);
-            });
+            int status = WriteStdout(output => output.Write(Utf8.GetBytes(current?.Summary ?? "")));
             if (status == 0 && current?.Summary is { Length: > 0 } &&
                 Guid.TryParse(Environment.GetEnvironmentVariable("CODEX_THREAD_ID"), out Guid caller) &&
                 threadId == caller.ToString("D"))
@@ -231,24 +229,17 @@ internal static partial class Program
             ?? throw new ArgumentException(action == "patch"
                 ? "thread note changed while applying the patch; read it again"
                 : "thread note changed before saving. Read the thread note again.");
-        return WriteResult(writer =>
-        {
-            WriteNoteSize(writer, bytes);
-            writer.WriteBoolean("saved", true);
-            writer.WriteString("thread_id", threadId);
-            writer.WriteString("updated_at", Timestamp(saved.UpdatedUs));
-            if (inheritance is not null)
-                writer.WriteString("inheritance_unavailable", inheritance);
-            if (action == "write")
-                writer.WriteBoolean("truncated", truncated);
-        });
-    }
-
-    private static void WriteNoteSize(Utf8JsonWriter writer, int bytes)
-    {
-        writer.WriteNumber("bytes", bytes);
+        var receipt = new StringBuilder();
+        receipt.Append(FormattableString.Invariant($"Saved {bytes:N0} UTF-8 bytes.\n"));
         if (bytes > NoteNoticeThresholdKiB * 1024)
-            writer.WriteString("notice", NoteSizeNotice);
+            receipt.Append(NoteSizeNotice).Append('\n');
+        receipt.Append("Thread: ").Append(threadId).Append('\n');
+        receipt.Append("Updated: ").Append(Timestamp(saved.UpdatedUs)).Append('\n');
+        if (truncated)
+            receipt.Append("The note was truncated to the save limit.\n");
+        if (inheritance is not null)
+            receipt.Append("Note inheritance was unavailable: ").Append(MediaText.OmitDataUrls(inheritance)).Append('\n');
+        return WriteStdout(output => output.Write(Encoding.UTF8.GetBytes(receipt.ToString())));
     }
 
     private static JsonElement ReadNoteHeader(string path)
@@ -306,9 +297,6 @@ internal static partial class Program
         DateTimeOffset.UnixEpoch.AddTicks(checked(microseconds * 10))
             .ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'", CultureInfo.InvariantCulture);
 
-    private static int WriteResult(Action<Utf8JsonWriter> fields) =>
-        WriteStdout(output => WriteObject(output, fields));
-
     private static int WriteDocument(JsonObject result) =>
         WriteStdout(output => WriteJson(output, writer => result.WriteTo(writer)));
 
@@ -331,19 +319,34 @@ internal static partial class Program
     [LibraryImport("kernel32.dll")]
     private static partial IntPtr GetStdHandle(int standardHandle);
 
-    private static int WriteError(string code, string message, int status = 1, string? path = null,
-        long? line = null, string? hint = null)
+    private static int WriteError(bool plain, string code, string message, int status, string? path,
+        long? line, string? hint)
     {
         message = MediaText.OmitDataUrls(message);
+        message = message.Length <= 400 ? message : message[..400] + "…";
+        hint = hint is not null ? MediaText.OmitDataUrls(hint)
+            : status == 2 ? "Run Thread-Memory COMMAND --help for valid options." : null;
         using var output = Console.OpenStandardError();
+        if (plain)
+        {
+            var text = new StringBuilder().Append("Failed [").Append(code).Append("]: ")
+                .Append(message.ReplaceLineEndings(" ")).Append('\n');
+            if (path is not null)
+                text.Append("Path: ").Append(MediaText.OmitDataUrls(path)).Append('\n');
+            if (line is long position)
+                text.Append("Line: ").Append(position).Append('\n');
+            if (hint is not null)
+                text.Append("Hint: ").Append(hint).Append('\n');
+            output.Write(Encoding.UTF8.GetBytes(text.ToString()));
+            return status;
+        }
         WriteObject(output, writer =>
         {
             writer.WriteStartObject("error");
             writer.WriteString("code", code);
-            writer.WriteString("message", message.Length <= 400 ? message : message[..400] + "…");
-            if (hint is not null || status == 2)
-                writer.WriteString("hint", hint is null
-                    ? "Run Thread-Memory COMMAND --help for valid options." : MediaText.OmitDataUrls(hint));
+            writer.WriteString("message", message);
+            if (hint is not null)
+                writer.WriteString("hint", hint);
             if (path is not null)
                 writer.WriteString("path", MediaText.OmitDataUrls(path));
             if (line is long position)
