@@ -34,7 +34,9 @@
     body { margin: 0; }
     main { display: flex; flex-direction: column; padding: clamp(12px, 2.5vw, 26px); }
     header, .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    header { justify-content: space-between; margin-bottom: 14px; }
+    header { margin-bottom: 14px; }
+    main > header { column-gap: 16px; }
+    dialog > header { justify-content: space-between; }
     h1, h2, p { margin: 0; }
     h1 { font-size: 1.42rem; letter-spacing: -.023em; }
     #plugin-version { margin-inline-start: 5px; font-weight: 500; letter-spacing: normal; white-space: nowrap; }
@@ -277,7 +279,7 @@
 <body>
   <main data-view="directory">
     <header>
-      <h1>Thread Memory <span id="plugin-version" class="meta">v0.1.59</span></h1>
+      <h1>Thread Memory <span id="plugin-version" class="meta">v0.1.60</span></h1>
       <div class="actions">
         <button id="retry-connection" type="button" hidden>Retry connection</button>
         <button id="refresh" type="button" title="Refresh the directory and selected note" disabled>Refresh</button>

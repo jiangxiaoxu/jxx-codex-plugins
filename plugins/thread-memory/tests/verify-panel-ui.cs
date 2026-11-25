@@ -144,6 +144,19 @@ static async Task VerifyUi(DevTools browser)
 
 static async Task VerifyNavigationLayout(DevTools browser)
 {
+    await browser.Command("Emulation.setDeviceMetricsOverride", new { width = 320, height = 480, deviceScaleFactor = 1, mobile = false });
+    await browser.WaitFor("""
+        (() => {
+          const doc = frame.contentDocument;
+          const title = doc.querySelector('h1').getBoundingClientRect();
+          const refresh = el('refresh').getBoundingClientRect();
+          const manage = el('manage').getBoundingClientRect();
+          return frame.contentWindow.innerWidth <= 320 && visible('refresh') && visible('manage') &&
+            Math.abs(refresh.left - title.left) < 16 && title.bottom <= refresh.top &&
+            refresh.right <= manage.left && manage.right <= doc.documentElement.clientWidth;
+        })()
+        """, "A narrow panel should keep Refresh and Manage data visible below the title, in that order.");
+
     await browser.Command("Emulation.setDeviceMetricsOverride", new { width = 1440, height = 860, deviceScaleFactor = 1, mobile = false });
     await browser.Evaluate("el('threads').querySelector('button').click()");
     await browser.WaitFor("""
@@ -151,6 +164,16 @@ static async Task VerifyNavigationLayout(DevTools browser)
         el('detail-heading').textContent === '/root' && !el('note-feedback').hidden &&
         el('detail-status').textContent.includes('no saved note') && childNotePaths().length === 2
         """, "A wide panel should open the empty /root note beside its directory and the main threads.");
+    await browser.Check("""
+        (() => {
+          const title = frame.contentDocument.querySelector('h1').getBoundingClientRect();
+          const refresh = el('refresh').getBoundingClientRect();
+          const manage = el('manage').getBoundingClientRect();
+          return visible('refresh') && visible('manage') && title.right <= refresh.left &&
+            refresh.left - title.right < refresh.width && refresh.right <= manage.left &&
+            title.top < refresh.bottom && refresh.top < title.bottom;
+        })()
+        """, "A wide panel should keep its actions together beside its title.");
     await browser.Check("""
         ['directory', 'note-directory', 'reader'].every(id => effectiveBackground(el(id)) === 'rgb(24, 24, 24)') &&
         rootPinned() && childNotePaths().join() === [fixture.ownTitle, fixture.olderTitle].join()
