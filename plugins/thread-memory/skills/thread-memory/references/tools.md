@@ -2,7 +2,7 @@
 
 Use `read --tool NAME` to find an exact tool name before pagination. Narrow the history by turn, window, time, or physical line range. If you already know a call ID, use `search "$callId" --role tool` and check `.call_id` for an exact match. For tool records, `read` and `search` expose only metadata and any available `.input_id` and `.output_id`. An unnamed return can match the tool filter when the CLI finds a unique compatible earlier call within its history boundary.
 
-Pass the selected `.input_id` to `tool-input` or `.output_id` to `tool-output`, using the same rollout source. `--lines 8` caps a page at eight text lines, with a default of 20. `--lines 10:20` jumps straight to inclusive text lines 10 through 20 across the record's fields. Both forms default to a 4,000-character budget. A single line that exceeds the budget spans multiple pages.
+Pass the selected `.input_id` to `tool-input` or `.output_id` to `tool-output`, using the same rollout source. Tool line ranges select payload text across the record's fields. The same flag on `read` selects physical JSONL lines. A single payload line that exceeds the budget spans multiple pages. Run `& $cli tool-input --help` or `& $cli tool-output --help` for ranges and budgets.
 
 ```powershell
 $page = & $cli tool-output @source --id $outputId --lines 10:20 --budget-chars 1500
