@@ -22,10 +22,7 @@ Keep the note at or below 15 KiB unless essential details need more space. Stay 
 Use `memory read` to get the saved Markdown directly. Empty output means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details.
 
 ```powershell
-$noteLines = @(& $cli memory read)
-$readExit = $LASTEXITCODE
-if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
-$noteLines
+& $cli memory read
 ```
 
 Edit the Markdown as needed and pipe the full note to `memory write`. The following example replaces a snippet that occurs exactly once.
@@ -33,8 +30,11 @@ Edit the Markdown as needed and pipe the full note to `memory write`. The follow
 ```powershell
 $note = (& $cli memory read) -join "`n"
 $readExit = $LASTEXITCODE
-if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
-$note.Replace('- [ ] Verify the panel', '- [x] Verify the panel') | & $cli memory write
+if ($readExit -eq 0) {
+    $note.Replace('- [ ] Verify the panel', '- [x] Verify the panel') | & $cli memory write
+} else {
+    Write-Error "memory read failed ($readExit)" -ErrorAction Continue
+}
 ```
 
 If the receipt reports truncation, shorten the original Markdown and save it again. See [patching a note](references/compaction.md#patch-a-thread-note) when you need to apply a targeted diff to the latest stored note.

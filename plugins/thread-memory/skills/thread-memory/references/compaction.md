@@ -7,8 +7,11 @@ Use `$cli` from the [Skill](../SKILL.md). This example reads lines 10 through 20
 ```powershell
 $noteLines = @(& $cli memory read)
 $readExit = $LASTEXITCODE
-if ($readExit -ne 0) { throw "memory read failed ($readExit)" }
-$noteLines | Select-Object -Skip 9 -First 11
+if ($readExit -eq 0) {
+    $noteLines | Select-Object -Skip 9 -First 11
+} else {
+    Write-Error "memory read failed ($readExit)" -ErrorAction Continue
+}
 ```
 
 ## Patch a thread note
@@ -24,10 +27,7 @@ $patch = @'
 -- [ ] Verify the panel
 +- [x] Verify the panel
 '@
-$receipt = $patch | & $cli memory patch
-$patchExit = $LASTEXITCODE
-if ($patchExit -ne 0) { throw "memory patch failed ($patchExit)" }
-$receipt
+$patch | & $cli memory patch
 ```
 
 A mismatch, empty result, or result over 25,600 UTF-8 bytes leaves the stored note unchanged.
