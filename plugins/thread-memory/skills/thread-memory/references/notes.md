@@ -10,7 +10,7 @@ $readExit = $LASTEXITCODE
 if ($readExit -eq 0) {
     $heading = '## '
     $note = $noteLines -join "`n"
-    $sections = [regex]::Matches($note, "(?ms)^$heading(?<title>[^\r\n]+).*?(?=^$heading|\z)")
+    $sections = [regex]::Matches($note, "(?ms)^$heading[ \t]*(?<title>[^\r\n]+?)(?:[ \t]+#+)?[ \t]*$.*?(?=^$heading|\z)")
     foreach ($section in $sections) {
         [pscustomobject]@{
             Title = $section.Groups['title'].Value

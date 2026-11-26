@@ -9,11 +9,14 @@
 Use `search` or `transcript` when you already know the phrase or message you need. For a small batch of omitted excerpts, use the `recover` example below. With no window, recovery selects the latest eligible checkpoint written by the selected thread in its active rollout. Run `& $cli recover --help` for checkpoint selection, limits, and preview export. Pass a recovered `image_id` to `export-image --id ID --original` for the full-resolution file.
 
 ```powershell
-& $cli recover @source --max-images 0 --max-messages 4 --max-chars 1200 |
-    jq '{status, candidate_count, messages: [.messages[] | {rollout, line, role, text}]}'
+$recovery = & $cli recover @source --max-images 0 --max-messages 4 --max-chars 1200
+$recoverExit = $LASTEXITCODE
+if ($recoverExit -eq 0) {
+    $recovery | jq '{status, candidate_count, messages: [.messages[] | {rollout, line, role, text}]}'
+}
 ```
 
-Check `.status` and candidate counts before reading `.messages`. The comparison reports material absent verbatim from the stored replacement history. A summary can express the same information in different words. If the replacement history is unavailable or rollback or damage limits the comparison, switch to a scoped history read and check the reported boundaries. For malformed records, retry with `--salvage` when needed and report any relevant `damaged_records.count` or `missing_base_rollouts`.
+If `recover` exits nonzero, inspect its JSON error on stderr. On success, check `.status` and candidate counts before reading `.messages`. The comparison reports material absent verbatim from the stored replacement history. A summary can express the same information in different words. If the replacement history is unavailable or rollback or damage limits the comparison, switch to a scoped history read and check the reported boundaries. For malformed records, retry with `--salvage` when needed and report any relevant `damaged_records.count` or `missing_base_rollouts`.
 
 ## Inspect saved instructions or token counts
 
