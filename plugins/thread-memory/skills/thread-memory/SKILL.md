@@ -13,13 +13,13 @@ Use `& $cli --help` to discover commands. When you need the syntax, main output 
 
 Keep a concise Markdown note of the current state. Record the active goal, open requests, key decisions and constraints, verified progress, and next steps.
 
-For details you may need to recover from a rollout, save distinctive search phrases. Add tool or attachment IDs when useful.
+Before saving, replace superseded state in place, merge duplicates, and remove completed details that no longer affect open work. When the goal changes, review the whole note and carry forward still-applicable constraints and paused tasks. Keep each still-relevant past outcome to one line. Use distinctive rollout search phrases or report links for details you may need again. Add tool or attachment IDs when useful.
 
-Update relevant sections in place, consolidate duplicates, and remove obsolete details. Avoid a running log. Use descriptive headings to make sections easy to find, with short paragraphs and list items. Keep file paths and code intact, and use absolute paths in local file links.
+Use descriptive headings, short paragraphs, and lists. Keep file paths and code intact, and use absolute paths in local file links.
 
 The note stays with the thread across compaction. A main-thread fork gets its own copy as of its creation time. Subagents start with an empty note, including when they inherit chat history.
 
-Keep the note at or below 15 KiB unless essential details need more space. Stay within 20 KiB.
+Keep the note as short as possible while retaining what you need to resume. Exceed 15 KiB only for essential details. Stay within 20 KiB.
 
 Use `memory read` to get the saved Markdown directly. Empty output means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details.
 
@@ -29,13 +29,13 @@ For a targeted lookup or size check, capture the Markdown in PowerShell. Output 
 & $cli memory read
 ```
 
-Edit the Markdown as needed and pipe the full note to `memory write`. The following example replaces a snippet that occurs exactly once.
+Edit the Markdown as needed and pipe the full note to `memory write`. This example replaces an outdated next step that occurs exactly once.
 
 ```powershell
 $note = (& $cli memory read) -join "`n"
 $readExit = $LASTEXITCODE
 if ($readExit -eq 0) {
-    $note.Replace('- [ ] Verify the panel', '- [x] Verify the panel') | & $cli memory write
+    $note.Replace('- Next step: Verify the panel', '- Next step: Verify rollout search') | & $cli memory write
 } else {
     Write-Error "memory read failed ($readExit)" -ErrorAction Continue
 }

@@ -10,8 +10,8 @@ internal static class HookInstructions
     private const int Recorded = 3;
     private const int RecoveryScanBytes = 4 * 1024 * 1024;
     private const string Maintenance = "<thread_memory_maintenance>\n" +
-        "Proactively maintain this thread's note with $thread-memory. " +
-        "Update it when important decisions, constraints, progress, or next steps change.\n" +
+        "Proactively maintain a concise note for this thread with $thread-memory. " +
+        "When important decisions, constraints, progress, or next steps change, update the note and replace stale details.\n" +
         "</thread_memory_maintenance>";
 
     public static string? Get(JsonElement request, string home)
@@ -192,7 +192,7 @@ internal static class HookInstructions
         const string reminder = "The current context window may be compressed soon. Use $thread-memory to update the current thread note.";
         var context = notices.Any(item => item.Stage != 0)
             ? $"This may be a duplicate reminder. {reminder} If no update is needed, ignore this reminder."
-            : $"{reminder} Preserve useful details from the existing note, then continue the task.";
+            : $"{reminder} Keep only what is needed to resume the work.";
         var levels = string.Join(',', notices.Select(item => item.Tier.ToString(CultureInfo.InvariantCulture)));
         return $"<thread_memory_reminder>\n{context}\nNotify ID: [{levels}:{marker}]\n</thread_memory_reminder>";
 
