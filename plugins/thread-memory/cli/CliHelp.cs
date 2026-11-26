@@ -43,7 +43,7 @@ internal static class CliHelp
 
     private static (string Purpose, string Example, string Details) Describe(string command) => command switch
     {
-        "memory" => ("Read, write, or patch a persistent thread note.", "", ""),
+        "memory" => ("Read or write a persistent Markdown thread note.", "", ""),
         "diagnostics" => ("Read recorded Thread Memory hook activity.", "--limit 10",
             "JSON .items lists recent events, newest first. With --summary, it contains aggregate reminder counts."),
         "inspect" => ("Summarize the available rollout segments and compaction checkpoints.", "--thread UUID",

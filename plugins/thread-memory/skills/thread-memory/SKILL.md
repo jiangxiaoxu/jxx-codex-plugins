@@ -23,7 +23,7 @@ Keep the note at or below 15 KiB unless essential details need more space. Stay 
 
 Use `memory read` to get the saved Markdown directly. Empty output means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details.
 
-For a targeted lookup or size check, capture the Markdown in PowerShell. Output just the section headings, excerpts, or UTF-8 byte counts you need. See [reading part of a note](references/compaction.md#read-part-of-a-thread-note).
+For a targeted lookup or size check, capture the Markdown in PowerShell. Output just the section headings, excerpts, or UTF-8 byte counts you need. See [reading part of a note](references/notes.md#read-part-of-a-thread-note).
 
 ```powershell
 & $cli memory read
@@ -41,7 +41,7 @@ if ($readExit -eq 0) {
 }
 ```
 
-If the receipt reports truncation, shorten the original Markdown and save it again. See [patching a note](references/compaction.md#patch-a-thread-note) when you need to apply a targeted diff to the latest stored note.
+If the receipt reports truncation, shorten the original Markdown and save it again.
 
 Keep save receipts separate from the Markdown. Use the same workflow when a hook prompts an update. If the user asks you to save before manual compaction, confirm the note was saved in full before they run `/compact`.
 

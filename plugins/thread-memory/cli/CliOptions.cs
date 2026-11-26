@@ -97,6 +97,8 @@ internal sealed class CliOptions
                 if (options.Command is not ("memory" or "search") || options.Pattern is not null)
                     throw Invalid(export ? "Unexpected attachment export argument. Repeat --id or pipe IDs to --id -."
                         : media ? $"Unexpected argument for {options.Command}." : $"Unexpected argument: {argument}.");
+                if (options.Command == "memory" && argument is not ("read" or "write"))
+                    throw Invalid($"Unknown memory action: {argument}. Use read or write.");
                 options.Pattern = argument;
                 continue;
             }
@@ -192,7 +194,7 @@ internal sealed class CliOptions
 
     private string MemoryUsage()
     {
-        string action = Pattern is "read" or "write" or "patch" ? Pattern : "{read|write|patch}";
+        string action = Pattern ?? "{read|write}";
         string noteLimit = Program.MaxNoteBytes.ToString("N0", CultureInfo.InvariantCulture);
         string description = action switch
         {
@@ -204,31 +206,20 @@ internal sealed class CliOptions
                 Create or replace the whole note with UTF-8 Markdown from stdin.
                 Notes over {noteLimit} UTF-8 bytes are shortened, with a warning in the save receipt.
                 """,
-            "patch" => $"""
-                Apply a UTF-8 unified diff from stdin to the current Markdown note.
-                Line ranges and context must match. Read the note again if it has changed.
-                A result over {noteLimit} UTF-8 bytes is rejected.
-                """,
             _ => """
                 read   Print only the saved Markdown.
                 write  Create or replace the whole note with UTF-8 Markdown on stdin.
-                patch  Apply a UTF-8 unified diff from stdin to edit part of the note.
 
                 Use Thread-Memory memory ACTION --help for details.
                 """,
         };
-        string example = action switch
-        {
-            "write" => "'## Current goal' | Thread-Memory memory write",
-            "patch" => "Get-Content -Raw -Encoding utf8 note.patch | Thread-Memory memory patch",
-            _ => "Thread-Memory memory read",
-        };
+        string example = action == "write" ? "'## Current goal' | Thread-Memory memory write" : "Thread-Memory memory read";
         return $"""
             Usage: Thread-Memory memory {action} [OPTIONS]
 
             {description}
 
-            Writes and patches report saved bytes, with a notice over {Program.NoteNoticeThresholdKiB} KiB.
+            Writes report saved bytes, with a notice over {Program.NoteNoticeThresholdKiB} KiB.
             Command errors print the reason to stderr and exit nonzero.
             A closed output pipe exits quietly with code 141.
 
@@ -243,8 +234,8 @@ internal sealed class CliOptions
 
     private void Validate()
     {
-        if (Command == "memory" && Pattern is not ("read" or "write" or "patch"))
-            throw Invalid("memory requires read, write, or patch.");
+        if (Command == "memory" && Pattern is null)
+            throw Invalid("memory requires read or write.");
         if (Command == "search" && Pattern is null)
             throw Invalid("search requires a pattern.");
         if (Command == "search" && Pattern?.Length == 0)

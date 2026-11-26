@@ -13,7 +13,6 @@ internal static partial class Program
     internal const int MaxNoteBytes = 25 * 1024;
     internal const int NoteNoticeThresholdKiB = 15;
     private const int NoteWritingLimitKiB = 20;
-    private const int MaxPatchBytes = 128 * 1024;
     private const int StdOutputHandle = -11;
     private const string Truncation = "\n\n[Summary truncated]";
     private static readonly string NoteSizeNotice = FormattableString.Invariant(
@@ -176,63 +175,38 @@ internal static partial class Program
 
     private static int Memory(string action, string home, string threadId)
     {
-        string? summary = null;
-        string? patch = null;
-        bool truncated = false;
-        if (action != "read")
-        {
-            using var stdin = Console.OpenStandardInput();
-            if (action == "write")
-                (summary, truncated) = ReadNote(stdin);
-            else
-            {
-                byte[] input = new byte[MaxPatchBytes + 1];
-                int length = stdin.ReadAtLeast(input, input.Length, false);
-                if (length > MaxPatchBytes)
-                    throw new ArgumentException($"memory patch input is limited to {MaxPatchBytes} UTF-8 bytes");
-                patch = Utf8.GetString(WithoutBom(input.AsSpan(0, length)));
-            }
-        }
-
         var store = new HookStore(home);
-        ThreadMemory.Note? current;
-        string? inheritance = null;
-        try
-        {
-            current = ThreadMemory.ReadForCli(store, home, threadId, ReadNoteHeader);
-        }
-        catch (ThreadMemory.InheritanceUnavailable error) when (action == "write")
-        {
-            current = null;
-            inheritance = error.Message;
-        }
-
         if (action == "read")
         {
-            int status = WriteStdout(output => output.Write(Utf8.GetBytes(current?.Summary ?? "")));
-            if (status == 0 && current?.Summary is { Length: > 0 } &&
+            var note = ThreadMemory.ReadForCli(store, home, threadId, ReadNoteHeader);
+            int status = WriteStdout(output => output.Write(Utf8.GetBytes(note?.Summary ?? "")));
+            if (status == 0 && note?.Summary is { Length: > 0 } &&
                 Guid.TryParse(Environment.GetEnvironmentVariable("CODEX_THREAD_ID"), out Guid caller) &&
                 threadId == caller.ToString("D"))
                 MemoryReads.Record(store, threadId);
             return status;
         }
 
-        if (patch is not null)
-        {
-            if (current?.Summary is null)
-                throw new FileNotFoundException("no thread note was saved to patch");
-            summary = MemoryPatch.Apply(current.Summary, patch);
-            if (string.IsNullOrWhiteSpace(summary))
-                throw new ArgumentException("patch would leave an empty note");
-        }
-        int bytes = Utf8.GetByteCount(summary!);
-        if (patch is not null && bytes > MaxNoteBytes)
-            throw new ArgumentException($"patched note would exceed {MaxNoteBytes} UTF-8 bytes");
+        string summary;
+        bool truncated;
+        using (var stdin = Console.OpenStandardInput())
+            (summary, truncated) = ReadNote(stdin);
 
-        if (ThreadMemory.SaveForCli(store, threadId, summary!, current?.Revision ?? 0) is null)
-            throw new ArgumentException(action == "patch"
-                ? "thread note changed while applying the patch; read it again"
-                : "thread note changed before saving. Read the thread note again.");
+        ThreadMemory.Note? current;
+        string? inheritance = null;
+        try
+        {
+            current = ThreadMemory.ReadForCli(store, home, threadId, ReadNoteHeader);
+        }
+        catch (ThreadMemory.InheritanceUnavailable error)
+        {
+            current = null;
+            inheritance = error.Message;
+        }
+
+        if (ThreadMemory.SaveForCli(store, threadId, summary, current?.Revision ?? 0) is null)
+            throw new ArgumentException("thread note changed before saving. Read the thread note again.");
+        int bytes = Utf8.GetByteCount(summary);
         var receipt = new StringBuilder();
         receipt.Append(FormattableString.Invariant($"Note saved. Total size: {bytes:N0} UTF-8 bytes.\n"));
         if (bytes > NoteNoticeThresholdKiB * 1024)

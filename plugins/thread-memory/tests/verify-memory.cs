@@ -17,7 +17,6 @@ if (!File.Exists(cli))
     return 2;
 }
 
-const string PatchHeader = "--- a/note\n+++ b/note\n";
 const int Limit = 25_600;
 const int NoticeThreshold = 15 * 1024;
 string sandbox = Directory.CreateTempSubdirectory("thread-memory-note-").FullName;
@@ -27,7 +26,7 @@ try
 {
     await VerifyFork(NewHome("fork"));
     Console.WriteLine($"Passed {scenario}.");
-    scenario = "UTF-8 note limits and rejection of incomplete or over-limit patches";
+    scenario = "UTF-8 note limits and rejection of empty writes";
     await VerifyBounds(NewHome("bounds"));
     Console.WriteLine($"Passed {scenario}.");
     return 0;
@@ -59,9 +58,7 @@ async Task VerifyFork(string home)
 
     const string ChildLine = "\u5b50\u7ebf\u7a0b \U0001f680";
     const string ChildNote = $"Goal\n{ChildLine}\nReview";
-    const string Diff = PatchHeader + $"@@ -2 +2 @@\n-\u76ee\u6807 \U0001f3af\n+{ChildLine}\n@@ -3 +3 @@\n-Next\n+Review\n";
-    string patch = await Query(home, parent, ["patch", "--thread", child], stdin: Diff.ReplaceLineEndings("\r\n"));
-    AssertSaved(patch, ChildNote);
+    AssertSaved(await Query(home, parent, ["write", "--thread", child], stdin: ChildNote), ChildNote);
     AssertRead(await Query(home, child, ["read"]), ChildNote);
     AssertRead(await Query(home, parent, ["read"]), NewerParent);
 }
@@ -78,20 +75,14 @@ async Task VerifyBounds(string home)
     AssertSaved(await Query(home, thread, ["write"], stdin: atThreshold), atThreshold);
     AssertRead(await Query(home, thread, ["read"]), atThreshold);
 
-    string aboveThreshold = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Goals\n");
-    string aboveThresholdNote = "Goals\n" + noticeBody;
-    AssertSaved(aboveThreshold, aboveThresholdNote);
+    string aboveThresholdNote = atThreshold + "x";
+    AssertSaved(await Query(home, thread, ["write"], stdin: aboveThresholdNote), aboveThresholdNote);
     AssertRead(await Query(home, thread, ["read"]), aboveThresholdNote);
 
     string body = new string('x', Limit - Encoding.UTF8.GetByteCount(Heading + Multibyte)) + Multibyte;
     string atLimit = Heading + body;
     AssertSaved(await Query(home, thread, ["write"], stdin: atLimit + "\r\n"), atLimit);
     AssertRead(await Query(home, thread, ["read"]), atLimit);
-
-    string patched = await Query(home, thread, ["patch"], stdin: PatchHeader + "@@ -1 +1 @@\n-Goal\n+Next\n");
-    string patchedAtLimit = "Next\n" + body;
-    AssertSaved(patched, patchedAtLimit);
-    AssertRead(await Query(home, thread, ["read"]), patchedAtLimit);
 
     string prefix = Heading + new string('x', Limit - Encoding.UTF8.GetByteCount(Heading + Marker) - 1);
     string saved = prefix + Marker;
@@ -100,21 +91,13 @@ async Task VerifyBounds(string home)
     Require(Encoding.UTF8.GetByteCount(saved) == Limit - 1, "The fixture did not cross the limit inside a UTF-8 character.");
     AssertRead(await Query(home, thread, ["read"]), saved);
 
-    const string FirstHunk = "@@ -1 +1 @@\n-Goal\n+Edit\n";
     const string FailurePrefix = "Failed [invalid_input]: ";
-    foreach (string rejected in new[]
-    {
-        PatchHeader + FirstHunk + "@@ -4 +4 @@\n-Wrong old line\n+Ignored\n",
-        PatchHeader + "@@ -1 +1 @@\n-Goal\n+Goal \u754c\n",
-    })
-    {
-        CliResult error = await Invoke(home, thread, ["patch"], rejected);
-        string failure = error.Stderr.TrimEnd('\r', '\n');
-        Require(error.ExitCode == 1 && error.Stdout.Length == 0 && !failure.Contains('\n') &&
-            failure.StartsWith(FailurePrefix, StringComparison.Ordinal) && failure.Length > FailurePrefix.Length,
-            "An invalid patch did not return a single plain-text error with a reason on stderr.");
-        AssertRead(await Query(home, thread, ["read"]), saved);
-    }
+    CliResult error = await Invoke(home, thread, ["write"], "\r\n \t\r\n");
+    string failure = error.Stderr.TrimEnd('\r', '\n');
+    Require(error.ExitCode == 1 && error.Stdout.Length == 0 && !failure.Contains('\n') &&
+        failure.StartsWith(FailurePrefix, StringComparison.Ordinal) && failure.Length > FailurePrefix.Length,
+        "An empty write did not return a single plain-text error with a reason on stderr.");
+    AssertRead(await Query(home, thread, ["read"]), saved);
 }
 
 string NewHome(string name)
