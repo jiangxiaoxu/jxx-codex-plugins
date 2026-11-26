@@ -15,13 +15,15 @@ Keep a concise Markdown note of the current state. Record the active goal, open 
 
 For details you may need to recover from a rollout, save distinctive search phrases. Add tool or attachment IDs when useful.
 
-Update relevant sections in place, consolidate duplicates, and remove obsolete details. Avoid a running log. Use short paragraphs and list items. Keep file paths and code intact, and use absolute paths in local file links.
+Update relevant sections in place, consolidate duplicates, and remove obsolete details. Avoid a running log. Use descriptive headings to make sections easy to find, with short paragraphs and list items. Keep file paths and code intact, and use absolute paths in local file links.
 
 The note stays with the thread across compaction. A main-thread fork gets its own copy as of its creation time. Subagents start with an empty note, including when they inherit chat history.
 
 Keep the note at or below 15 KiB unless essential details need more space. Stay within 20 KiB.
 
 Use `memory read` to get the saved Markdown directly. Empty output means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details.
+
+For a targeted lookup or size check, capture the Markdown in PowerShell. Output just the section headings, excerpts, or UTF-8 byte counts you need. See [reading part of a note](references/compaction.md#read-part-of-a-thread-note).
 
 ```powershell
 & $cli memory read
