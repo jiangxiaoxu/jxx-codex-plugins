@@ -14,6 +14,9 @@
 
 - 本轮改动影响已有 plugin 的发布包时,由负责最终交付的 Agent 将受影响 plugin 的补丁版本各递增一次. 以迭代开始时 `plugins/<plugin>/.codex-plugin/plugin.json` 的 `version` 为基线. `task-memory` 另同步 `package.json` 的 `version` 和 `package-lock.json` 的 `version` 及 `packages[""].version`.
 - 验证最终改动后,由负责最终交付的 Agent 自动暂存本轮改动并创建本地 Git 提交. 版本变更与对应 plugin 的改动放在同一提交. 用户明确指定版本或提交安排时,按其要求执行.
+- 每次创建本地 Git 提交后,以新提交树中的 `.exe` blob 为保留集合. 如当前分支历史中有已被替换或移除的 `.exe` 生成产物,在提交收尾时重写该分支的历史并清除这些旧 blob.
+- 重写前在仓库外保存并验证可恢复备份. 保留当前提交的完整内容及其他文件的历史,比对重写前后的 `HEAD^{tree}`,并确认旧 blob 已无法从该分支到达.
+- 推送重写后的分支时,按用户已授权的范围执行,使用以重写前核对的远端 SHA 为预期值的 `--force-with-lease=<ref>:<sha>`.
 
 ## Plugin 发布与客户端更新
 
