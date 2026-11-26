@@ -2,15 +2,15 @@
 
 ## Read part of a thread note
 
-Capture the Markdown from `memory read` in PowerShell and print only what you need. This example lists titles and UTF-8 byte counts for sections under plain `##` headings. Set `$heading` to `'# '` for notes that use `#`. Use the `$cli` path from the [Skill](../SKILL.md).
+Capture the Markdown from `memory read` in PowerShell and print only what you need. This example lists titles and UTF-8 byte counts for sections from a plain `##` heading to the next `##` or `#` heading. Set `$level` to `1` to list `#` sections. Use the `$cli` path from the [Skill](../SKILL.md).
 
 ```powershell
 $noteLines = @(& $cli memory read)
 $readExit = $LASTEXITCODE
 if ($readExit -eq 0) {
-    $heading = '## '
+    $level = 2
     $note = $noteLines -join "`n"
-    $sections = [regex]::Matches($note, "(?ms)^$heading[ \t]*(?<title>[^\r\n]+?)(?:[ \t]+#+)?[ \t]*$.*?(?=^$heading|\z)")
+    $sections = [regex]::Matches($note, "(?ms)^#{$level}[ \t]+(?<title>[^\r\n]+?)(?:[ \t]+#+)?[ \t]*$.*?(?=^#{1,$level}(?:[ \t]|$)|\z)")
     foreach ($section in $sections) {
         [pscustomobject]@{
             Title = $section.Groups['title'].Value

@@ -11,12 +11,17 @@ Use `search` or `transcript` when you already know the phrase or message you nee
 ```powershell
 $recovery = & $cli recover @source --max-images 0 --max-messages 4 --max-chars 1200
 $recoverExit = $LASTEXITCODE
-if ($recoverExit -eq 0) {
-    $recovery | jq '{status, candidate_count, messages: [.messages[] | {rollout, line, role, text}]}'
-}
+if ($recoverExit -ne 0) { exit $recoverExit }
+
+$recovery | jq '{
+    status, candidate_count, history_ignored_through_rollback, history_ignored_through_gap,
+    missing_base_rollouts, damaged_record_count: .damaged_records.count,
+    messages: [.messages[] | {rollout, line, role, text}]
+} | with_entries(select(.value != null))'
+if (-not $?) { exit 1 }
 ```
 
-If `recover` exits nonzero, inspect its JSON error on stderr. On success, check `.status` and candidate counts before reading `.messages`. The comparison reports material absent verbatim from the stored replacement history. A summary can express the same information in different words. If the replacement history is unavailable or rollback or damage limits the comparison, switch to a scoped history read and check the reported boundaries. For malformed records, retry with `--salvage` when needed and report any relevant `damaged_records.count` or `missing_base_rollouts`.
+If `recover` exits nonzero, inspect its JSON error on stderr. On success, check `.status`, candidate counts, and any reported history boundaries or gaps before reading `.messages`. The comparison reports material absent verbatim from the stored replacement history. A summary can express the same information in different words. If the replacement history is unavailable or history is incomplete, switch to a scoped history read. For malformed records, retry with `--salvage` when needed and check `damaged_record_count`.
 
 ## Inspect saved instructions or token counts
 
