@@ -214,8 +214,14 @@ internal static class HistoryRecords
                 {
                     var match = regex.Match(field.Text);
                     if (match.Success)
-                        return (field, RecordProjection.CharacterCount(field.Text, match.Index),
+                    {
+                        int start = match.Index;
+                        // CharacterCount rounds a split pair up. For a nonempty match, round its start down instead.
+                        if (match.Length > 0 && start > 0 && char.IsSurrogatePair(field.Text, start - 1))
+                            start--;
+                        return (field, RecordProjection.CharacterCount(field.Text, start),
                             RecordProjection.CharacterCount(field.Text, match.Index + match.Length));
+                    }
                 }
             }
         }
@@ -333,6 +339,7 @@ internal static class HistoryRecords
             var view = RecordProjection.Project(row);
             var fields = ProjectReference(row, reference, view);
             var locator = Locator(row, view);
+            bool omittedPrefix = false;
             if (reference.Start is int start && reference.End is int end)
             {
                 if (reference.Kind == "hit")
@@ -342,13 +349,16 @@ internal static class HistoryRecords
                     if (chars is null)
                     {
                         int length = RecordProjection.CharacterCount(fields.First().Text);
-                        chars = (HitOffset(length, start, end, maxChars), length);
+                        int offset = HitOffset(length, start, end, maxChars);
+                        chars = (offset, length);
+                        omittedPrefix = offset > 0;
                     }
                 }
                 else if (chars is null)
                     chars = (start, end);
             }
-            item = WithPreview(locator, view, Preview(fields, maxChars, chars, offsets: true));
+            var preview = Preview(fields, maxChars, chars, offsets: true);
+            item = WithPreview(locator, view, preview with { Truncated = omittedPrefix || preview.Truncated });
         }
         item["ref"] = reference.ToString();
         return new JsonObject { ["items"] = new JsonArray(item), ["next_cursor"] = null };

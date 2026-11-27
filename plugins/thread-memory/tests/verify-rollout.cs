@@ -28,6 +28,8 @@ try
     Console.WriteLine("Passed rollout quick-start examples and command help.");
     await IndexedHistory();
     Console.WriteLine("Passed scoped history, references, and latest messages after append.");
+    await UnicodeSearch();
+    Console.WriteLine("Passed Unicode regex hits and reference round-trips.");
     await ForkHistory();
     Console.WriteLine("Passed physical fork cutoff and copied subagent provenance.");
     await LegacyForkRecovery();
@@ -123,17 +125,69 @@ async Task IndexedHistory()
     Require(read.GetProperty("line").GetInt64() == 5 &&
         read.GetProperty("fields")[0].GetProperty("text").GetString() == target[..1000],
         "A reference from stdin should reopen its record after append with a 1000-character excerpt.");
-    JsonElement expanded = Item(await Query(thread, ["read", "--ref", reference]));
-    Require(expanded.GetProperty("fields")[0].GetProperty("text").GetString() == target[..1000],
-        "Read with a reference should return 1000 characters by default for the long hit.");
-    JsonElement full = Item(await Query(thread, ["read", "--ref", reference, "--max-chars", "1500"]));
-    Require(full.GetProperty("fields")[0].GetProperty("text").GetString() == target,
-        "An explicit --max-chars should override the reference default and return the whole match.");
+    JsonElement tailHit = Item(await Query(thread, ["search", "end of target", "--window", "9"]));
+    string tailRef = tailHit.GetProperty("ref").GetString()!;
+    int totalChars = target.EnumerateRunes().Count();
+    int tailOffset = totalChars - 1000;
+    JsonElement expanded = Item(await Query(thread, ["read", "--ref", tailRef]));
+    JsonElement expandedField = expanded.GetProperty("fields")[0];
+    Require(expandedField.GetProperty("text_offset").GetInt32() == tailOffset &&
+        expandedField.GetProperty("text").GetString() == target[tailOffset..],
+        "A reference for a hit near the end should reopen the last 1000 characters.");
+    Require(expanded.GetProperty("text_truncated").GetBoolean(),
+        "An automatic excerpt that reaches the end but omits the prefix must report truncation.");
+
+    JsonElement full = Item(await Query(thread, ["read", "--ref", tailRef, "--max-chars", "1500"]));
+    Require(!full.GetProperty("text_truncated").GetBoolean() &&
+        full.GetProperty("fields")[0].GetProperty("text").GetString() == target,
+        "An explicit --max-chars should override the reference default and return the whole field without truncation.");
+
+    string tailRange = FormattableString.Invariant($"{tailOffset}:{totalChars}");
+    JsonElement slice = Item(await Query(thread, ["read", "--ref", tailRef, "--chars", tailRange]));
+    Require(!slice.GetProperty("text_truncated").GetBoolean() &&
+        slice.GetProperty("fields")[0].GetProperty("text").GetString() == target[tailOffset..],
+        "A complete explicit slice must not report truncation just because it omitted the prefix.");
+    JsonElement clipped = Item(await Query(thread, ["read", "--ref", tailRef, "--chars", tailRange, "--budget-chars", "999"]));
+    Require(clipped.GetProperty("text_truncated").GetBoolean() &&
+        clipped.GetProperty("fields")[0].GetProperty("text").GetString() == target[tailOffset..^2],
+        "An explicit slice larger than the page budget must report truncation.");
     ExpectLines(await Query(thread, ["transcript", "--window", "current", "--last", "2"]), 7, 8);
 
     records[4] = Message(5, "rewritten");
     File.WriteAllText(path, string.Concat(records), utf8);
     await ExpectError(thread, ["read", "--ref", reference], "invalid_input");
+}
+
+async Task UnicodeSearch()
+{
+    const string glyph = "\U00020bb7";
+    string thread = Guid.NewGuid().ToString();
+    File.WriteAllText(RolloutPath(sessions, thread),
+        Record(1, "session_meta", new JsonObject { ["id"] = thread }) + Message(2, $"A{glyph}Z"), utf8);
+
+    string? reference = null;
+    foreach (string pattern in new[] { ".(?=Z$)", "(?<=A).", $"{glyph}(?=Z$)" })
+    {
+        JsonElement hit = Item(await Query(thread, ["search", "--regex", pattern, "--max-chars", "1"]));
+        Require(hit.GetProperty("match_start").GetInt32() == 1 && hit.GetProperty("match_end").GetInt32() == 2 &&
+            hit.GetProperty("text_offset").GetInt32() == 1 && hit.GetProperty("text").GetString() == glyph,
+            $"A non-empty regex match for '{pattern}' must cover the complete Unicode character.");
+        string hitRef = hit.GetProperty("ref").GetString()!;
+        reference ??= hitRef;
+        Require(hitRef == reference, "Regex matches covering the same Unicode range should produce the same reference.");
+    }
+
+    JsonElement reopened = Item(await Query(thread, ["read", "--ref", reference!, "--max-chars", "1"]));
+    Require(reopened.GetProperty("match_start").GetInt32() == 1 && reopened.GetProperty("match_end").GetInt32() == 2 &&
+        reopened.GetProperty("fields")[0].GetProperty("text").GetString() == glyph,
+        "A regex hit reference should reopen the complete Unicode character at the same range.");
+
+    foreach (string pattern in new[] { "(?=Z$)", @"(?=\uDFB7)" })
+    {
+        JsonElement empty = Item(await Query(thread, ["search", "--regex", pattern, "--max-chars", "1"]));
+        Require(empty.GetProperty("match_start").GetInt32() == 2 && empty.GetProperty("match_end").GetInt32() == 2,
+            $"A zero-width regex hit for '{pattern}' must preserve its empty range.");
+    }
 }
 
 async Task ForkHistory()

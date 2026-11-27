@@ -11,7 +11,7 @@ Run `& $cli attachments --help` or `& $cli images --help` for catalog filters.
 
 The catalog lists metadata without reading inline media into stdout. `embedded` denotes inline data. `local` provides a resolved path, whose file may still be missing. `reference` and `unresolved` can identify attachments even when export cannot retrieve their bytes. Lookups and exports use local data.
 
-Pass `.image_id` to `export-image` for images and `.attachment_id` to `export-audio` for audio. When chaining from a piped ref, let `attachments` consume the ref and let the export command consume the selected ID. This example exports a single embedded image.
+Pass `.image_id` to `export-image` for images and `.attachment_id` to `export-audio` for audio. The image example assumes `$ref` points to a record known to contain an embedded image; if the image is optional, check that an ID was returned before calling `export-image`.
 
 ```powershell
 $ref | & $cli attachments @source --ref - --media image --kind inline --limit 1 |

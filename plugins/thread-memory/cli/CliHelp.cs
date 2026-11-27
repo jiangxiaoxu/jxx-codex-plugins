@@ -22,7 +22,7 @@ internal static class CliHelp
         return text.Append("""
 
             Run Thread-Memory COMMAND --help for inputs, output, and an example.
-            Commands default to CODEX_THREAD_ID. Rollout queries also accept --rollout PATH.
+            Use --thread UUID (default: CODEX_THREAD_ID). Rollout queries also accept --rollout PATH.
             Queries return JSON by default. Memory commands use plain text.
             """).ToString();
     }
@@ -67,13 +67,12 @@ internal static class CliHelp
         "inventory" => ("Count rollout records by type and role.", "--window current --limit 10",
             "JSON .items contains grouped counts and example.ref. Use read --ref REF to inspect that record."),
         "search" => ("Find literal text in readable rollout fields and tool metadata.", "\"phrase\" --limit 5",
-            "Check .items[].text first. To expand a hit, use its ref and keep the same rollout source:\n" +
+            "Check .items[].text. To expand a hit, use its ref with the same rollout source:\n" +
             "  Thread-Memory read --ref REF\n" +
             "For a pattern starting with '-', put options first and place -- before the pattern."),
         "read" => ("Read rollout record metadata and selected text.", "--ref REF",
-            "Use a ref from search or transcript with the same rollout source. Find the text in .items[].fields[].text.\n" +
-            "For a longer excerpt, raise --max-chars (up to --budget-chars). Use --chars START:END to read a slice.\n" +
-            "Use tool-input or tool-output for payloads identified by input_id or output_id."),
+            "JSON text is in .items[].fields[].text. For a search ref without --chars, text_truncated reports omitted text.\n" +
+            "For tool payloads, pass input_id to tool-input or output_id to tool-output."),
         "tool-input" => ("Read a tool call's arguments by input_id.", "--id ID --lines 10:20",
             "Get input_id from read or search in the same source. JSON .items contains text. Use --pointer for a typed .value."),
         "tool-output" => ("Read a tool call's result by output_id.", "--id ID --lines 10:20",
@@ -81,7 +80,7 @@ internal static class CliHelp
         "instructions" => ("Read system or developer messages in a compaction snapshot.", "--window 2 --role developer --limit 5",
             "Find checkpoint numbers with windows. JSON .items[].checkpoint_item is the index accepted by --item."),
         "transcript" => ("Read recorded user and assistant messages.", "--last 6",
-            "JSON .items contains messages and refs. Use --format markdown for text or --cursor for forward pagination."),
+            "Use --format markdown for readable chat. JSON .items contains messages and refs. Omit --last to page forward."),
         "images" => ("List image metadata and image IDs without exporting files.", "--window current --limit 5",
             "JSON has .items and next_cursor. Pass image_id to export-image using the same source."),
         "attachments" => ("List image and audio metadata without exporting files.", "--media audio --role user --limit 5",
@@ -90,9 +89,10 @@ internal static class CliHelp
             "Only one selector can read from stdin."),
         "export-image" => ("Export images selected by image_id.", "--id ID --max-resolution 512",
             "JSON .images reports thumbnail_file and any embedded_file. With --original, read original_file.\n" +
-            "Check unknown_ids and each item's export_error for failures."),
+            "Check invalid_id_count, unknown_ids, and per-item export_error."),
         "export-audio" => ("Export audio selected by attachment_id.", "--id ID",
-            "JSON .attachments reports audio_file when available. Check unknown_ids and each item's export_error for failures."),
+            "JSON .attachments reports audio_file. Local audio is not copied.\n" +
+            "Check invalid_id_count, unknown_ids, and per-item export_error."),
         "recover" => ("Find messages and images missing from a compaction snapshot.", "--window 2 --max-images 0",
             "Check JSON status and candidate counts. Results show content missing verbatim from the replacement history."),
         _ => throw new InvalidOperationException($"Missing help for {command}."),
@@ -140,7 +140,7 @@ internal static class CliHelp
         {
             "recover" => ("N", "Cap total message excerpt characters (default: 2400, 0 for images only)."),
             "transcript" or "instructions" => ("N", "Cap each item excerpt (default: 1000 characters)."),
-            "read" => ("N", $"Cap each record excerpt (default: 400 characters, or {HistoryRecords.DefaultReferenceChars} with --ref)."),
+            "read" => ("N", $"Default: 400 characters, or {HistoryRecords.DefaultReferenceChars} with --ref; capped by --budget-chars."),
             _ => ("N", "Cap each record excerpt (default: 400 characters)."),
         },
         "--budget-chars" => ("N", "Cap text per page (default: 4000 characters)."),
@@ -162,7 +162,7 @@ internal static class CliHelp
         "--after" => ("N", "Include up to N following records, 0 to 20 (alias: -A)."),
         "--ref" => command == "read"
             ? ("REF|-", "Reopen one record or field in the same source, or read one ref from stdin. Replaces history filters.")
-            : ("REF|-", "Catalog attachments on one record, or read one ref from stdin. Replaces history ranges."),
+            : ("REF|-", "Catalog attachments on one record, or read one ref from stdin. Replaces history scope filters."),
         "--metadata-only" => ("", "Show record metadata and body_available without text."),
         "--field" => ("NAME", "Read a field by name."),
         "--field-index" => ("N", "Read a field by zero-based index."),

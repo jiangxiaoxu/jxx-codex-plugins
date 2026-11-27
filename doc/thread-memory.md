@@ -2,7 +2,7 @@
 
 Use `$thread-memory` to maintain thread notes across context compaction in main threads and subagents. Main-thread forks get an independent copy of the note as of their creation time. Subagents start with an empty note, including when they inherit chat history. The Native AOT CLI also locates compaction windows, searches local rollout history, and retrieves selected tool details and attachments by ID. It opens Codex state and rollout files read-only. Thread notes and reminder claims live in plugin SQLite storage.
 
-## CLI help
+## CLI quick start
 
 Start here in PowerShell 7 from the repository root. By default, commands use `CODEX_THREAD_ID`; outside a thread shell, pass `--thread UUID` or, for rollout queries, `--rollout PATH`.
 
@@ -14,7 +14,7 @@ $cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path
 & $cli read --ref '<ref-from-search>'                       # Expand one excerpt when needed.
 ```
 
-When reopening a hit, keep the same rollout source and read text in `.items[].fields[].text`. `read --ref` defaults to 1,000 characters. Search and non-reference reads still default to 400 characters per result. See [PowerShell and jq pipelines](#powershell-and-jq-pipelines) to pass a ref without copying it. Run `& $cli --help` for the command list or `& $cli search --help` for flags and examples.
+Use the same rollout source to reopen a hit. `read --ref` defaults to 1,000 characters; `search` and plain `read` default to 400. See [PowerShell and jq pipelines](#powershell-and-jq-pipelines) to pass a ref without copying it. Run `& $cli --help` for commands or `& $cli search --help` for options and examples.
 
 ## Thread lifecycle and compaction
 
@@ -99,7 +99,7 @@ Closing **Manage data** dismisses a pending cleanup preview. The preview and con
 
 ## Progressive reads
 
-Start with locations and counts. Search within a likely window, time range, or turn, then read only the records needed. The examples below reuse `$cli` from [CLI help](#cli-help).
+When a simple search is too broad, narrow it to a likely window, time range, or turn. The examples below reuse `$cli` from the [quick start](#cli-quick-start).
 
 ```powershell
 $thread = '<thread-uuid>'
@@ -111,8 +111,6 @@ $until = '2026-11-20T14:30:00+08:00'
 & $cli search --thread $thread --window 2 --ignore-case --limit 5 'imagegen' | jq '.items[] | {ref, line, text}'
 ```
 
-If a hit's excerpt is too short, pass its `ref` to `read --ref REF` with the same source, or use the [pipeline below](#powershell-and-jq-pipelines) to pass the ref directly from `jq`.
-
 Rollout queries in JSON mode emit one compact UTF-8 JSON object on stdout and send errors to stderr. Use `jq` to project only the fields you need. Paged results put records in `.items[]` and return `.next_cursor`, which is `null` on the final page. Continue with `--cursor` set to `.next_cursor`. Keep the same rollout source and repeat the query filters for ordinary pagination. Tool detail cursors carry the ID and paging options. The per-item and per-page character limits apply to excerpts. JSON metadata and escaping add to the size of stdout.
 
 Pass cursor strings through unchanged. Start a fresh query to get refs, IDs, and cursors in the native format if you previously used the Python CLI.
@@ -123,47 +121,30 @@ With no explicit rollout source, the CLI uses `CODEX_THREAD_ID`, which identifie
 
 ## PowerShell and jq pipelines
 
-Use PowerShell 7.4 or later for the pipelines below. Reuse an argument array to keep the rollout source consistent between requests. `read --ref -`, `images --ref -`, and `attachments --ref -` read exactly one raw UTF-8 reference from stdin. `tool-input --id -` and `tool-output --id -` read one ID. `export-image --id -` and `export-audio --id -` read one or more IDs. Paged commands read one cursor with `--cursor -`. Use one raw UTF-8 line per value and one stdin consumer per invocation. The EXE has no runtime dependency on `jq`.
+The pipelines use PowerShell 7.4 or later and `jq`; the CLI itself does not require `jq`. Use `-` to read a ref, cursor, or ID from stdin where supported. Send one raw UTF-8 line per value. Only media exports accept multiple IDs on stdin; other selectors read one value. Use only one stdin selector per invocation.
 
 ```powershell
 $PSNativeCommandUseErrorActionPreference = $true
 $ErrorActionPreference = 'Stop'
-$source = @('--thread', $thread)
+$source = @() # Current thread; use @('--thread', $thread) or @('--rollout', $path) for another source.
 
-$hitRef = & $cli search @source --window 2 --limit 1 'imagegen' |
+$hitRef = & $cli search @source --limit 1 'phrase' |
     jq -r '.items[0].ref // empty'
 if ($hitRef) {
-    $hitRef | & $cli read @source --ref - | jq '.items[0] | {line, fields}'
+    $hitRef | & $cli read @source --ref - |
+        jq '.items[0] | {path, line, fields, text_truncated}'
 }
-
-$toolPage = & $cli read @source --tool apply_patch --type custom_tool_call_output --limit 1 |
-    jq -er 'first(.items[].output_id // empty)' |
-    & $cli tool-output @source --id - --lines 8
-$toolPage | jq -r '.items[].text'
-if ($toolPage | jq -r '.next_cursor // empty') {
-    $toolPage | jq -er '.next_cursor' |
-        & $cli tool-output @source --cursor - |
-        jq -r '.items[].text'
-}
-
-& $cli transcript @source --role user --since $since --until $until --limit 5 |
-    jq -er 'first(.items[] | select(.image_count > 0) | .ref)' |
-    & $cli images @source --ref - |
-    jq -er '.items[].image_id' |
-    & $cli export-image @source --id - --max-resolution 512 |
-    jq '{unknown_ids, images: [.images[] | {image_id, thumbnail_file, thumbnail_width, thumbnail_height, export_error}]}'
 
 $chat = @('--origin', 'current', '--window', 'current', '--role', 'assistant', '--limit', '1')
 $page = & $cli transcript @source @chat
 $cursor = $page | jq -r '.next_cursor // empty'
 if ($cursor) {
-    $page | jq -er '.next_cursor' |
-        & $cli transcript @source @chat --cursor - |
+    $cursor | & $cli transcript @source @chat --cursor - |
         jq -r '.items[].text'
 }
 ```
 
-`jq -er` writes unquoted values and exits nonzero when a required projection is empty or `null`. PowerShell's native command error handling stops on failed commands. An empty match page or a record without attachments is a successful query, so use `jq -r` when zero results are expected. `.next_cursor // empty` gives the `if` test an empty value on the final page.
+Use `jq -r` with `// empty` for optional values and check for output before piping to a command that requires one. Use `jq -er` when absence is an error. See [tool details](../plugins/thread-memory/skills/thread-memory/references/tools.md) and [attachment export](../plugins/thread-memory/skills/thread-memory/references/attachments.md) for ID pipelines.
 
 ## Errors and exit codes
 
@@ -171,7 +152,7 @@ Rollout and diagnostics errors write one compact UTF-8 JSON line to stderr with 
 
 | Exit code | Meaning |
 | --- | --- |
-| `0` | Success, including an empty result. A batch image export can report individual failures in its result. |
+| `0` | Success, including an empty result. [Media exports](#attachment-lookup-and-export) can report rejected or failed IDs even with exit code `0`. |
 | `2` | `invalid_arguments`, such as a malformed option value. |
 | `1` | `invalid_input`, `invalid_rollout`, `not_found`, `permission_denied`, `output_exists`, `io_error`, or `runtime_error`. |
 | `130` | `interrupted` on Ctrl+C. |
@@ -291,7 +272,11 @@ When the rollout's contents are unfamiliar, use `inventory` to count records by 
 
 For a single uncompressed Codex rollout in the selected home's `sessions` or `archived_sessions` directory, a time- or window-scoped `search` can build a metadata cache in `$CODEX_HOME/state/plugins/thread-memory/rollout-index.sqlite3`. The rollout header must match the owner in the filename. The cache stores timestamps, physical offsets, compaction checkpoints, and the context needed to annotate each record. Scoped queries extend the cache with complete appended rows, select candidate offsets in SQLite, and seek into the original JSONL for text matching. A change in file identity or the checked bytes triggers a rebuild. Line ranges, cursor continuations, `read --ref`, and `transcript --last` can reuse a verified index. The streaming reader handles multi-segment lineages, compressed files, named tool matching, `--salvage`, and files outside the selected Codex home's session directories. The first indexed search can take longer while it builds the cache.
 
-Each hit reports `ref`, `field`, `field_index`, `match_start`, `match_end`, `text_offset`, and `text_total_chars`. Use `read --ref REF` to reopen the matching field. For a large field, use `--chars START:END` to read a slice. You can also select one physical line and use zero-based `--field-index N` or `--field NAME`. When a field selector returns exactly one field, the ref reopens that field. Character offsets are zero-based, include `START`, and exclude `END`. Use adjacent ranges to read additional slices within the page budget.
+Each hit reports the field (`field`, `field_index`), match bounds (`match_start`, `match_end`), excerpt start (`text_offset`), and full field length (`text_total_chars`). Offsets count Unicode code points from zero, with the end excluded. A nonempty regex match that splits a UTF-16 surrogate pair covers the whole code point in the reported range.
+
+For more text, raise `--max-chars` (up to `--budget-chars`) or read adjacent slices with `--chars START:END`. To open a field on a known physical line, use `--field NAME` or zero-based `--field-index N`. Selecting one field yields a ref to that field.
+
+When `read --ref` opens a search hit without `--chars`, `text_truncated` is true if the automatic excerpt omits any part of the matching field. For an explicit `--chars` slice, or a field reference with a saved range, it reports whether the character budget cut the requested text short.
 
 For record queries, a numbered window covers records after the previous checkpoint through the selected checkpoint. Window zero represents an inherited initial checkpoint when the rollout records one. The open window covers the physical records after the latest checkpoint. Time-scoped results preserve the original record timestamps.
 
@@ -333,13 +318,13 @@ Use `attachments` to catalog images and audio. It provides an `attachment_id`, a
 
 Pass an ID from `images` to `export-image --id ID` with the same rollout source. For inline Base64, export saves the decoded original and a thumbnail. For a readable local path, export saves a thumbnail and reports the existing original path.
 
-Thumbnail scaling preserves aspect ratio. By default, images under the resolution cap keep their original dimensions. The CLI uses Lanczos resampling for WebP thumbnails. Successful thumbnails report `thumbnail_file`, `thumbnail_width`, and `thumbnail_height`. For a single required thumbnail, use `jq -er '.images[0].thumbnail_file'`. For a batch, inspect `unknown_ids` and each entry's `export_error` to catch partial failures.
+Thumbnail scaling preserves aspect ratio. By default, images under the resolution cap keep their original dimensions. The CLI uses Lanczos resampling for WebP thumbnails. Successful thumbnails report `thumbnail_file`, `thumbnail_width`, and `thumbnail_height`. For a single required thumbnail, use `jq -er '.images[0].thumbnail_file'`.
 
 Use `export-image --original --id ID` when full resolution is needed. The ID can come from `images`, `attachments`, or `recover`. It returns `original_file` for a readable local image or writes the unchanged inline image bytes to the export directory.
 
-Pass selected audio `attachment_id` values to `export-audio --id ID` with the same rollout source. A readable local audio entry returns its existing path. Embedded audio is decoded to a temporary file, or to `--output-dir DIR` if supplied. Opaque IDs and remote references report a per-item `export_error`. Check `unknown_ids` for IDs that did not resolve.
+Pass selected audio `attachment_id` values to `export-audio --id ID` with the same rollout source. A readable local audio entry returns its existing path. Embedded audio is decoded to a temporary file, or to `--output-dir DIR` if supplied. Opaque IDs and remote references report a per-item `export_error`.
 
-Media export writes bytes to files and returns a JSON receipt with paths and metadata. A single-ID export can use an existing rollout index and verifies the lookup before creating files. Invalid selectors are counted in `invalid_id_count`, and well-formed IDs that did not resolve are returned in `unknown_ids`.
+Both export commands return a JSON receipt. Even for a single ID and exit code `0`, check `invalid_id_count` for rejected selectors, `unknown_ids` for well-formed IDs that did not resolve, and per-item `export_error` for failed exports. Single-ID exports can use an existing rollout index to verify the lookup before creating files.
 
 ```powershell
 & $cli export-audio --thread $thread --id '<audio-attachment-id>' |
