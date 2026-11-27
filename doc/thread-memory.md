@@ -9,7 +9,7 @@ Start here in PowerShell 7 from the repository root. By default, commands use `C
 ```powershell
 $cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path
 & $cli memory read                                        # Read the saved thread note.
-& $cli transcript --last 6 --format markdown               # Read the latest chat in the terminal.
+& $cli transcript --last 6 --format markdown               # Read up to six recent chat messages.
 & $cli search 'phrase' --limit 5                            # Find up to five excerpts and their refs.
 & $cli read --ref '<ref-from-search>'                       # Expand one excerpt when needed.
 ```
@@ -190,7 +190,7 @@ For a thread marked `paginated` in the active Codex index, `--thread` reports an
 | `same_thread_history` | An older segment owned by the selected thread, such as history retained across a revert. |
 | `inherited_thread_history` | A physically linked segment owned by another thread. |
 
-`windows`, `search`, `read`, `transcript`, `images`, and `tokens` accept `--origin all`, `--origin current`, `--origin inherited`, or `--origin unknown`. The default is `all`. `current` includes the selected thread's own records in older segments. `inherited` includes parent segments reached through `history_base` and copied records in a child rollout whose ordinals precede `subagent_history_start_ordinal`. Legacy copied rollouts without an ordinal use a sequential scan to find a settings record for the fork's own thread. Before that record, explicit copies are `inherited` and ambiguous records are `unknown`.
+`windows`, `search`, `read`, `transcript`, `images`, and `tokens` accept `--origin all`, `--origin current`, `--origin inherited`, or `--origin unknown`. The default is `all`. `current` selects the thread's own records, including older segments, not the chat visible after rollback. `search`, `read`, and `transcript` can include turns later rolled back. `inherited` includes parent segments reached through `history_base` and copied records in a child rollout whose ordinals precede `subagent_history_start_ordinal`. Legacy copied rollouts without an ordinal use a sequential scan to find a settings record for the fork's own thread. Before that record, explicit copies are `inherited` and ambiguous records are `unknown`.
 
 For copied records, `forked_from_thread_id` reports the recorded fork parent. `timestamp_origin: copied_at` means the timestamp describes when the child recorded the copy. Use the parent rollout to query the original message time. `windows` filters a closed window by the origin of its checkpoint, and its start can fall in a different segment. Use `tokens --window N --origin current` to count only the selected thread's usage inside that window.
 
@@ -207,7 +207,9 @@ For copied records, `forked_from_thread_id` reports the recorded fork parent. `t
 
 `transcript` returns user and assistant messages with their recorded timestamps and source locations, including stored realtime voice transcripts and user-facing assistant messages recorded as explicit async delivery events. Use `--role user` or `--role assistant` to focus on one speaker. Use `search` or `read` for system and developer instructions, tool metadata, compaction records, or other legacy message events.
 
-Use `transcript --last N` for the newest messages in the selected scope, returned in chronological order. It uses the normal text budgets. For forward pagination, omit `--last` and use `--cursor`. Use `--phase final`, `--phase commentary`, or `--phase partial` to select assistant messages with that recorded phase. Messages without a recorded phase are excluded by this filter.
+`transcript --last N` returns the latest matching messages (at most N) within the text budget, in rollout order rather than timestamp order. It takes precedence over `--limit` and returns no continuation cursor. To fit more messages, raise `--budget-chars` or lower `--max-chars`. For forward pagination, omit `--last` and pass `--cursor` when the result has a non-null `next_cursor`.
+
+Use `--phase final`, `--phase commentary`, or `--phase partial` to select assistant messages with that recorded phase. Messages without a recorded phase are excluded by this filter.
 
 ```powershell
 & $cli transcript --thread $thread --origin current --last 6 --phase final --max-chars 240 |
@@ -261,7 +263,9 @@ Reasoning counts apply to entire responses. With `--by-summary`, `.items[]` list
 
 ## Search and ranges
 
-When the rollout's contents are unfamiliar, use `inventory` to count records by kind, item type, event type, extension, and role in a chosen scope. Each group has a `count` and one representative `example.ref`, with no text excerpt. Apply the usual history filters, `--type`, or `--role` to narrow the inventory. `read --metadata-only` gives individual record metadata and `body_available` with an empty `fields` array. If a record has available text, use its `ref` with `read --ref REF`. Use tool detail commands for tool bodies. The readable projections include selected fields from verified answers, outcomes, goals, settings, and agent records.
+When the rollout's contents are unfamiliar, use `inventory` to count records by kind, item type, event type, extension, and role in a chosen scope. Each group has a `count` and one representative `example.ref`, with no text excerpt. Apply the usual history filters, `--type`, or `--role` to narrow the inventory. For `read --type` or `search --type`, use the group's `kind`, `event_type`, or `example.read_type` when present. The raw `item_type` does not always match.
+
+`read --metadata-only` gives individual record metadata and `body_available` with an empty `fields` array. If a record has available text, use its `ref` with `read --ref REF`. Use tool detail commands for tool bodies. The readable projections include selected fields from verified answers, outcomes, goals, settings, and agent records.
 
 ```powershell
 & $cli inventory --thread $thread --window 2 --limit 8 |
@@ -274,13 +278,15 @@ For a single uncompressed Codex rollout in the selected home's `sessions` or `ar
 
 Each hit reports the field (`field`, `field_index`), match bounds (`match_start`, `match_end`), excerpt start (`text_offset`), and full field length (`text_total_chars`). Offsets count Unicode code points from zero, with the end excluded. A nonempty regex match that splits a UTF-16 surrogate pair covers the whole code point in the reported range.
 
+`search --before N` and `--after N` measure distance in physical JSONL lines within the same segment, not in readable messages. Context excerpts are in `.context[].fields[].text`, separate from the hits in `.items`.
+
 For more text, raise `--max-chars` (up to `--budget-chars`) or read adjacent slices with `--chars START:END`. To open a field on a known physical line, use `--field NAME` or zero-based `--field-index N`. Selecting one field yields a ref to that field.
 
 When `read --ref` opens a search hit without `--chars`, `text_truncated` is true if the automatic excerpt omits any part of the matching field. For an explicit `--chars` slice, or a field reference with a saved range, it reports whether the character budget cut the requested text short.
 
 For record queries, a numbered window covers records after the previous checkpoint through the selected checkpoint. Window zero represents an inherited initial checkpoint when the rollout records one. The open window covers the physical records after the latest checkpoint. Time-scoped results preserve the original record timestamps.
 
-Use the source segment and line number from the result to cite or revisit a record. A direct `read --segment NAME_OR_ID --lines N:N` can report a record that has metadata but no readable fields. Search operates on extracted text and image references, so image data URLs stay out of the excerpts. Search and read inspect physical records, including turns later rolled back. Window listings mark inferred window numbers for older checkpoints that did not write one.
+Use the source segment and line number from the result to cite or revisit a record. A direct `read --segment NAME_OR_ID --lines N:N` can report a record that has metadata but no readable fields. Search operates on extracted text and image references, so image data URLs stay out of the excerpts. Window listings mark inferred window numbers for older checkpoints that did not write one.
 
 ## Record references
 

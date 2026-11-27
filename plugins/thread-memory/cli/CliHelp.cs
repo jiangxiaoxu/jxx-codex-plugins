@@ -69,6 +69,7 @@ internal static class CliHelp
         "search" => ("Find literal text in readable rollout fields and tool metadata.", "\"phrase\" --limit 5",
             "Check .items[].text. To expand a hit, use its ref with the same rollout source:\n" +
             "  Thread-Memory read --ref REF\n" +
+            "Text from --before and --after is in .context[].fields[].text.\n" +
             "For a pattern starting with '-', put options first and place -- before the pattern."),
         "read" => ("Read rollout record metadata and selected text.", "--ref REF",
             "JSON text is in .items[].fields[].text. For a search ref without --chars, text_truncated reports omitted text.\n" +
@@ -80,7 +81,8 @@ internal static class CliHelp
         "instructions" => ("Read system or developer messages in a compaction snapshot.", "--window 2 --role developer --limit 5",
             "Find checkpoint numbers with windows. JSON .items[].checkpoint_item is the index accepted by --item."),
         "transcript" => ("Read recorded user and assistant messages.", "--last 6",
-            "Use --format markdown for readable chat. JSON .items contains messages and refs. Omit --last to page forward."),
+            "Recorded chat can include rolled-back turns. JSON .items contains messages and refs.\n" +
+            "Use --format markdown for readable chat. Omit --last to page forward."),
         "images" => ("List image metadata and image IDs without exporting files.", "--window current --limit 5",
             "JSON has .items and next_cursor. Pass image_id to export-image using the same source."),
         "attachments" => ("List image and audio metadata without exporting files.", "--media audio --role user --limit 5",
@@ -144,7 +146,9 @@ internal static class CliHelp
             _ => ("N", "Cap each record excerpt (default: 400 characters)."),
         },
         "--budget-chars" => ("N", "Cap text per page (default: 4000 characters)."),
-        "--type" => ("TYPE", "Match a record kind or type shown by inventory. Repeat to include more types."),
+        "--type" => command == "inventory"
+            ? ("TYPE", "Match a record kind, raw or projected type, or extension. Repeat to add types.")
+            : ("TYPE", "Match a kind, event type, or projected type (inventory's example.read_type). Repeat to add types."),
         "--role" => command switch
         {
             "transcript" => ("ROLE", "Choose user or assistant. Repeat for both."),
@@ -158,8 +162,8 @@ internal static class CliHelp
         "--tool" => ("NAME", "Match the exact tool name."),
         "--regex" => ("", "Treat PATTERN as a .NET regular expression."),
         "--ignore-case" => ("", "Match text case-insensitively (alias: -i)."),
-        "--before" => ("N", "Include up to N preceding records, 0 to 20 (alias: -B)."),
-        "--after" => ("N", "Include up to N following records, 0 to 20 (alias: -A)."),
+        "--before" => ("N", "Include context within N physical lines before a hit in its segment (0 to 20; -B)."),
+        "--after" => ("N", "Include context within N physical lines after a hit in its segment (0 to 20; -A)."),
         "--ref" => command == "read"
             ? ("REF|-", "Reopen one record or field in the same source, or read one ref from stdin. Replaces history filters.")
             : ("REF|-", "Catalog attachments on one record, or read one ref from stdin. Replaces history scope filters."),
@@ -177,7 +181,7 @@ internal static class CliHelp
         },
         "--pointer" => ("JSON_POINTER", "Select a typed JSON value. Use '' for the root and omit --lines."),
         "--item" => ("N", "Select the zero-based checkpoint_item index."),
-        "--last" => ("N", "Return the newest N messages in chronological order. Omit --limit and --cursor."),
+        "--last" => ("N", "Return up to N latest matches in recorded order, within the text budget. Overrides --limit."),
         "--phase" => ("PHASE", "Match the recorded assistant phase: final, commentary, or partial."),
         "--format" => ("FORMAT", "Choose json (default) or markdown."),
         "--media" => ("TYPE", "Choose image or audio. Omit to include both."),
