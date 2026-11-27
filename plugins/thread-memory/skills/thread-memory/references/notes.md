@@ -22,7 +22,7 @@ if ($readExit -eq 0) {
 }
 ```
 
-The scan counts bytes in the captured, LF-joined text. Check the full text before saving with `[Text.Encoding]::UTF8.GetByteCount($note)`. The save receipt reports the exact size after writing. The pattern also splits at heading-like lines inside code fences, so use the line filters for those notes.
+The scan counts bytes in the captured, LF-joined text. To estimate the full note size before saving, use `[Text.Encoding]::UTF8.GetByteCount($note)`. The save receipt reports the exact size after writing. The pattern also splits at heading-like lines inside code fences, so use the line filters for those notes.
 
 Use one of these expressions in place of the `foreach` block to print a named section, literal matches with line numbers, or lines 10 through 20.
 

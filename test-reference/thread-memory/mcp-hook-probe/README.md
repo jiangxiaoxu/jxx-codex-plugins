@@ -1,6 +1,6 @@
 # Synchronous Thread Memory Hook probe
 
-This Windows x64 test project exercises the existing Thread Memory Hook logic through `mcp_tool` over MCP stdio. The bundled plugin continues to use asynchronous command hooks. The probe and its configuration samples are outside the plugin package.
+This Windows x64 test project exercises the existing Thread Memory Hook logic through `mcp_tool` over MCP stdio. The probe and its configuration samples are outside the plugin package.
 
 Build the probe with the .NET 10 SDK from the repository root. The verifier uses a temporary Codex home and compares the probe with the packaged command Hook.
 

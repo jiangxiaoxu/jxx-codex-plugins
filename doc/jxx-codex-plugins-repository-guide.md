@@ -21,7 +21,7 @@ For every plugin, keep the plugin directory, `.codex-plugin/plugin.json`, market
 | Plugin identity, metadata, or marketplace inventory | Plugin manifest, `.agents/plugins/marketplace.json`, root README, and repository inventory. |
 | Codex Desktop MCP App views, entrypoints, or icons | [Codex MCP Apps](codex-mcp-apps.md) and the owning plugin's maintenance documentation. |
 | `task-memory` behavior | Plugin package scripts, shared CLI source, command entrypoints, and tests. |
-| Thread Memory hook lifecycle, reminder checks, and diagnostics | `plugins/thread-memory/src/` and `hooks/hooks.json`. |
+| Thread Memory hook lifecycle, reminder checks, and diagnostics | `plugins/thread-memory/src/` and `plugins/thread-memory/hooks/hooks.example.json`. |
 | Thread note edits and fork copies | Native note commands in `plugins/thread-memory/cli/` use `src/ThreadMemory.cs`, shared with the hook. |
 | Thread Memory panel and cleanup | `plugins/thread-memory/panel/`, the packaged panel HTML, and `mcp.json`. |
 | Rollout inspection, search, recovery, and attachment export | `plugins/thread-memory/cli/`, the Thread Memory skill and references, and plugin tests. |

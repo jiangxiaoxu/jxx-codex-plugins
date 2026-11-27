@@ -1,6 +1,6 @@
 ---
 name: thread-memory
-description: Maintain a persistent Markdown note for the current Codex thread as important decisions, constraints, progress, or next steps change. Save or read the note as needed and use it to recover context after compaction. Look up messages, instructions, tool calls and results, and image or audio attachments in this or another accessible local Codex thread.
+description: Maintain a persistent Markdown note for the current Codex thread as important decisions, constraints, progress, or next steps change. Save or read the note as needed to resume after a context reset or compaction. Look up messages, instructions, tool calls and results, and image or audio attachments in this or another accessible local Codex thread.
 ---
 
 # Thread Memory
@@ -21,7 +21,7 @@ The note stays with the thread across compaction. A main-thread fork gets its ow
 
 Keep the note as short as possible while retaining what you need to resume. Exceed 20 KiB only for essential details. Stay within 26 KiB.
 
-Use `memory read` to get the saved Markdown directly. Empty output means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details.
+Use `memory read` to get the saved Markdown directly. Empty output means there is no saved note. After a context reset or compaction, read the full note once before resuming and search the rollout as needed for missing details.
 
 For a targeted lookup or size check, capture the Markdown in PowerShell. Output just the section headings, excerpts, or UTF-8 byte counts you need. See [reading part of a note](references/notes.md#read-part-of-a-thread-note).
 
@@ -43,7 +43,7 @@ if ($readExit -eq 0) {
 
 If the receipt reports truncation, shorten the original Markdown and save it again.
 
-Keep save receipts separate from the Markdown. Use the same workflow when a hook prompts an update. If the user asks you to save before manual compaction, confirm the note was saved in full before they run `/compact`.
+Keep save receipts separate from the Markdown.
 
 ## Look up rollout history
 
