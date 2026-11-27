@@ -23,7 +23,8 @@ internal static class CliHelp
 
             Run Thread-Memory COMMAND --help for inputs, output, and an example.
             Use --thread UUID (default: CODEX_THREAD_ID). Rollout queries also accept --rollout PATH.
-            Queries return JSON by default. Memory commands use plain text.
+            Queries write JSON to stdout by default and errors to stderr.
+            Check the CLI exit code, not jq's. Memory commands use plain text.
             """).ToString();
     }
 

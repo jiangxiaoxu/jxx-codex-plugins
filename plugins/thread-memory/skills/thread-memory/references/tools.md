@@ -2,6 +2,13 @@
 
 Use `read --tool NAME` to find an exact tool name before pagination. Narrow the history by turn, window, time, or physical line range. If you already know a call ID, use `search "$callId" --role tool` and check `.call_id` for an exact match. For tool records, `read` and `search` expose only metadata and any available `.input_id` and `.output_id`. An unnamed return can match the tool filter when the CLI finds a unique compatible earlier call within its history boundary.
 
+Use the [PowerShell settings for jq pipelines](records.md#jq-quick-start), then select an ID by call or location:
+
+```powershell
+& $cli read @source --tool exec_command --metadata-only --limit 5 |
+    jq -c '.items[] | {path, line, call_id, input_id, output_id}'
+```
+
 Pass the selected `.input_id` to `tool-input` or `.output_id` to `tool-output`, using the same rollout source. Tool line ranges select payload text across the record's fields. The same flag on `read` selects physical JSONL lines. A single payload line that exceeds the budget spans multiple pages. Run `& $cli tool-input --help` or `& $cli tool-output --help` for ranges and budgets.
 
 ```powershell

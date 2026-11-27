@@ -1,6 +1,6 @@
 {
   "name": "thread-memory",
-  "version": "0.1.73",
+  "version": "0.1.74",
   "mcpServers": "./mcp.json",
   "description": "Maintain persistent Markdown notes for Codex threads and retrieve details from local rollout history.",
   "author": {

@@ -1,5 +1,18 @@
 # Chat and rollout records
 
+## jq quick start
+
+Use these settings in PowerShell 7.4 or later. A CLI failure raises an error even if `jq` succeeds on empty input.
+
+```powershell
+$PSNativeCommandUseErrorActionPreference = $true
+$ErrorActionPreference = 'Stop'
+& $cli search @source 'phrase' --limit 5 |
+    jq -c '{items: [.items[] | {path, line, text, ref}], next_cursor}'
+```
+
+Pass a non-null `next_cursor` to `--cursor` with the same source and query.
+
 ## Choose the scope
 
 Use `--window N`, `--turn ID`, or a time range to narrow a large history. For scope filters and value formats, run `& $cli search --help` or the help for the command you are using.
@@ -24,8 +37,6 @@ Use the same source and pass a `ref` from `search` or JSON `transcript` to `read
 For a search ref, `text_truncated` means the automatic excerpt omitted part of the matching field, before or after the excerpt. Use `--chars START:END` for a zero-based slice with the end excluded. For a requested slice (including a range saved in a field ref), `text_truncated` only reports a budget cut, not that the slice is partial.
 
 ```powershell
-$PSNativeCommandUseErrorActionPreference = $true
-$ErrorActionPreference = 'Stop'
 $messageRef = & $cli transcript @source --last 1 |
     jq -r '.items[0].ref // empty'
 if ($messageRef) {
