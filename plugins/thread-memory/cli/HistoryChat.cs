@@ -291,7 +291,17 @@ internal static partial class HistoryChat
                 if (message["omitted_chars"] is JsonNode omitted)
                     text.Append(CultureInfo.InvariantCulture, $"\n\n[Excerpt omitted {omitted} characters.]");
             }
-        HistoryMarkdown.AppendFooter(text, result);
+        if (result["next_cursor"] is JsonNode cursor)
+            text.Append(CultureInfo.InvariantCulture, $"\n\nNext cursor: {cursor}");
+        if (result["missing_base_rollouts"] is JsonArray gaps)
+            text.Append("\n\nMissing rollout segments: ").AppendJoin(", ", gaps);
+        if (result["damaged_records"] is JsonObject damaged && damaged["items"] is JsonArray issues)
+        {
+            text.Append(CultureInfo.InvariantCulture, $"\n\nDamaged records observed: {damaged["count"]}\n");
+            foreach (JsonNode? issue in issues)
+                if (issue is not null)
+                    text.Append(CultureInfo.InvariantCulture, $"\n- {issue["path"]}:{issue["line"]}, byte {issue["byte_offset"]} ({issue["reason"]})");
+        }
         return text.Append('\n').ToString();
     }
 }

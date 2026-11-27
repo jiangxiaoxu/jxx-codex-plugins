@@ -67,10 +67,9 @@ internal static class CliHelp
         "inventory" => ("Count rollout records by type and role.", "--window current --limit 10",
             "JSON .items contains grouped counts and example.ref. Use read --ref REF to inspect that record."),
         "search" => ("Find literal text in readable rollout fields and tool metadata.", "\"phrase\" --limit 5",
-            "In JSON, check .items[].text. To expand a hit, use its ref with the same rollout source:\n" +
+            "Check .items[].text. To expand a hit, use its ref with the same rollout source:\n" +
             "  Thread-Memory read --ref REF\n" +
-            "Use --format markdown for a readable page with refs and a continuation cursor when available.\n" +
-            "In JSON, text from --before and --after is in .context[].fields[].text.\n" +
+            "Text from --before and --after is in .context[].fields[].text.\n" +
             "For a pattern starting with '-', put options first and place -- before the pattern."),
         "read" => ("Read rollout record metadata and selected text.", "--ref REF",
             "JSON text is in .items[].fields[].text. For a search ref without --chars, text_truncated reports omitted text.\n" +

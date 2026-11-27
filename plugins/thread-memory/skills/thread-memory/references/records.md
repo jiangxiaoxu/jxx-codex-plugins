@@ -9,8 +9,7 @@ Use `--window N`, `--turn ID`, or a time range to narrow a large history. For sc
 ## Choose what to read
 
 - `transcript --last 6 --max-chars 240` returns the latest matching messages (at most six) within the text budget, in rollout order. Omit `--last` for forward pagination. `--phase final` matches `.phase == "final_answer"`; messages without a phase are excluded.
-- `search 'phrase' --limit 5 --format markdown` shows excerpts with source paths, physical line numbers, and refs. Repeat the query with `--cursor` if a continuation cursor is shown. JSON remains the default. Add `--output NEW_PATH` to save the selected format and get a JSON receipt with `next_cursor`.
-- `search --before N` and `--after N` measure physical JSONL line distance within the same segment. In JSON, context excerpts appear in `.context[].fields[].text`, not in `.items`.
+- `search --before N` and `--after N` measure physical JSONL line distance within the same segment. Context excerpts appear in `.context[].fields[].text`, not in `.items`.
 - `inventory --limit 8` counts record types and returns one `.example.ref` per group. For `read --type` or `search --type`, use the group's `kind`, `event_type`, or `.example.read_type` when present. Add `--metadata-only` to `read --type TYPE` to list metadata; use `read --ref REF` to open text. When `body_available` is false, use any `input_id` or `output_id` for [tool detail](tools.md).
 
 ```powershell
