@@ -2,16 +2,19 @@
 
 ## jq quick start
 
-Use these settings in PowerShell 7.4 or later. A CLI failure raises an error even if `jq` succeeds on empty input.
+Set the source and error preferences in each PowerShell 7.4+ invocation that runs a CLI pipeline. Check CLI failures in JSON `.error` on stderr.
 
 ```powershell
+$source = @() # Current thread; replace with @('--thread', $thread) or @('--rollout', $path) if needed.
 $PSNativeCommandUseErrorActionPreference = $true
 $ErrorActionPreference = 'Stop'
 & $cli search @source 'phrase' --limit 5 |
-    jq -c '{items: [.items[] | {path, line, text, ref}], next_cursor}'
+    jq -c '{items: [.items[] | {path, line, text, ref}], next_cursor}
+        + (if has("missing_base_rollouts") then {missing_base_rollouts} else {} end)
+        + (if has("damaged_records") then {damaged_record_count: .damaged_records.count} else {} end)'
 ```
 
-Pass a non-null `next_cursor` to `--cursor` with the same source and query.
+A missing segment or damaged-record count means a zero-hit result may be incomplete. Pass a non-null `next_cursor` to `--cursor` with the same source and query.
 
 ## Choose the scope
 

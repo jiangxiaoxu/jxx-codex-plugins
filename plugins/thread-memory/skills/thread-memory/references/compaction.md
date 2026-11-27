@@ -8,6 +8,8 @@
 
 Use `search` or `transcript` when you already know the phrase or message you need. For a small batch of omitted excerpts, use the `recover` example below. With no window, recovery selects the latest eligible checkpoint written by the selected thread in its active rollout. Run `& $cli recover --help` for checkpoint selection, limits, and preview export. Pass a recovered `image_id` to `export-image --id ID --original` for the full-resolution file.
 
+Set `$source` as in the [jq quick start](records.md#jq-quick-start).
+
 ```powershell
 $recovery = & $cli recover @source --max-images 0 --max-messages 4 --max-chars 1200
 $recoverExit = $LASTEXITCODE

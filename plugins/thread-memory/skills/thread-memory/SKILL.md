@@ -60,7 +60,7 @@ Start with the [jq quick start](references/records.md#jq-quick-start) to keep us
 | Images or audio | `attachments --ref REF` for a known record. See [attachments](references/attachments.md) for lookup and export. |
 | Missing history, checkpoint instructions, or token usage | `recover`, `instructions`, or `tokens`. See [compaction](references/compaction.md). |
 
-Reuse the same rollout source for refs, IDs, and cursors. For reference examples, set `$source` to `@()` for your thread, `@('--thread', $thread)` for another thread, or `@('--rollout', $path)` for a known file. In a subagent, `$env:CODEX_SESSION_ID` identifies the main thread.
+Reuse the same rollout source for refs, IDs, and cursors. In a subagent, `$env:CODEX_SESSION_ID` identifies the main thread.
 
 After a fork, search the current thread first. If there is no match, run `lineage` and search the ancestors in `fork_chain`, nearest first. Use `search "phrase" --origin inherited` to verify inheritance in the current thread. Treat ancestor-only matches as references. If a saved ref or ID no longer resolves, search for the record to get a fresh one.
 
