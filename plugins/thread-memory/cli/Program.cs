@@ -130,13 +130,20 @@ internal static partial class Program
             };
         }
 
-        bool markdown = options.Command == "transcript" && options.One("--format") == "markdown";
         void WriteOutput(Stream output)
         {
-            if (markdown)
-                output.Write(Utf8.GetBytes(HistoryChat.FormatMarkdown(result)));
-            else
+            if (options.One("--format") != "markdown")
+            {
                 WriteJson(output, writer => result.WriteTo(writer));
+                return;
+            }
+            string markdown = options.Command switch
+            {
+                "search" => HistoryMarkdown.FormatSearch(result),
+                "transcript" => HistoryChat.FormatMarkdown(result),
+                _ => throw new InvalidOperationException($"No Markdown formatter for {options.Command}.")
+            };
+            output.Write(Utf8.GetBytes(markdown));
         }
         if (destination is null)
             return WriteStdout(WriteOutput);

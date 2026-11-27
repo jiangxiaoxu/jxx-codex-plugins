@@ -28,6 +28,8 @@ try
     Console.WriteLine("Passed rollout quick-start examples and command help.");
     await IndexedHistory();
     Console.WriteLine("Passed scoped history, references, and latest messages after append.");
+    await MarkdownSearch();
+    Console.WriteLine("Passed Markdown search, JSON defaults, references, pagination, and file output.");
     await UnicodeSearch();
     Console.WriteLine("Passed Unicode regex hits and reference round-trips.");
     await ForkHistory();
@@ -72,9 +74,11 @@ async Task Help()
         "Transcript help should show how to read recent chat.");
     var search = await Invoke(thread, ["search", "--help"]);
     Require(search.Status == 0 && search.Error.Length == 0 &&
+        search.Output.Contains("--format", StringComparison.Ordinal) &&
+        search.Output.Contains("markdown", StringComparison.Ordinal) &&
         search.Output.Contains(".items[].text", StringComparison.Ordinal) &&
         search.Output.Contains($"Thread-Memory {expandHit}", StringComparison.Ordinal),
-        "Search help should show how to inspect an excerpt and expand a hit.");
+        "Search help should show how to choose an output format, inspect an excerpt, and expand a hit.");
     var read = await Invoke(thread, ["read", "--help"]);
     Require(read.Status == 0 && read.Error.Length == 0 &&
         read.Output.Contains($"Thread-Memory {expandHit}", StringComparison.Ordinal) &&
@@ -156,6 +160,93 @@ async Task IndexedHistory()
     records[4] = Message(5, "rewritten");
     File.WriteAllText(path, string.Concat(records), utf8);
     await ExpectError(thread, ["read", "--ref", reference], "invalid_input");
+}
+
+async Task MarkdownSearch()
+{
+    const string pattern = "markdown needle";
+    const string context = "previous context excerpt";
+    string target = $"{pattern} \u68c0\u7d22 \U0001f680\u001b\r\n````\n## Match 999\n<em>literal</em>\n" + new string('x', 100);
+    string thread = Guid.NewGuid().ToString();
+    string path = RolloutPath(sessions, thread);
+    File.WriteAllText(path,
+        Record(1, "session_meta", new JsonObject { ["id"] = thread }) + Message(2, context) +
+        Message(3, target) + Message(4, $"{pattern} on next page"), utf8);
+
+    string[] search = ["search", pattern, "--limit", "1", "--before", "1", "--max-chars", "80", "--budget-chars", "92"];
+    var json = await Invoke(thread, search);
+    var explicitJson = await Invoke(thread, [.. search, "--format", "json"]);
+    Require(json.Status == 0 && explicitJson.Status == 0 && json.Error.Length == 0 && explicitJson.Error.Length == 0 &&
+        json.Output == explicitJson.Output, "Omitting --format must produce the same JSON as --format json.");
+    JsonElement page = JsonElement.Parse(json.Output);
+    ExpectLines(page, 3);
+    JsonElement hit = Item(page);
+
+    string[] markdownSearch = [.. search, "--format", "markdown"];
+    var markdown = await Invoke(thread, markdownSearch);
+    Require(markdown.Status == 0 && markdown.Error.Length == 0 &&
+        markdown.Output.StartsWith("# Codex rollout search\n", StringComparison.Ordinal) &&
+        markdown.Output.Contains("## Match 1\n", StringComparison.Ordinal) &&
+        markdown.Output.Contains($"Source: `{path}:3`", StringComparison.Ordinal) &&
+        markdown.Output.Contains("[Excerpt truncated.]", StringComparison.Ordinal),
+        "Markdown should show the hit's physical location and warn when its excerpt is truncated.");
+    string[] lines = markdown.Output.Split('\n');
+    int openFence = Array.FindIndex(lines, line => line.Length > 4 && line.All(ch => ch == '`'));
+    int closeFence = openFence < 0 ? -1 : Array.IndexOf(lines, lines[openFence], openFence + 1);
+    string excerpt = hit.GetProperty("text").GetString()!
+        .Replace("\r\n", "\n", StringComparison.Ordinal).Replace("\u001b", @"\u001b", StringComparison.Ordinal);
+    Require(excerpt.Contains("\n````\n## Match 999\n<em>literal</em>\n", StringComparison.Ordinal) &&
+        openFence >= 0 && closeFence > openFence && string.Join('\n', lines[(openFence + 1)..closeFence]) == excerpt,
+        "A multiline excerpt must fence literal Markdown and HTML, normalize CRLF, and display escapes as text.");
+
+    string expectedReference = hit.GetProperty("ref").GetString()!;
+    Require(lines.Contains($"Ref: `{expectedReference}`"), "The Markdown hit reference must match the JSON reference.");
+    JsonElement reopened = Item(await Query(thread, ["read", "--ref", expectedReference]));
+    Require(reopened.GetProperty("fields")[0].GetProperty("text").GetString() == target,
+        "The displayed hit reference should reopen the original text.");
+    Require(page.GetProperty("context_truncated").GetBoolean() &&
+        markdown.Output.Contains("## Context\n", StringComparison.Ordinal) &&
+        markdown.Output.Contains(context[..12], StringComparison.Ordinal) &&
+        markdown.Output.Contains("[Context was limited by the text budget.]", StringComparison.Ordinal) &&
+        !markdown.Output.Contains(context, StringComparison.Ordinal),
+        "Markdown should show separate context excerpts with a warning if limited by the same text budget as JSON.");
+
+    const string cursorLabel = "Next cursor: ";
+    string? cursorLine = lines.LastOrDefault(line => line.StartsWith(cursorLabel, StringComparison.Ordinal));
+    Require(cursorLine is not null, "A Markdown page with more matches should show a cursor.");
+    string cursor = cursorLine![cursorLabel.Length..];
+    Require(cursor == page.GetProperty("next_cursor").GetString(), "The Markdown cursor must match the JSON cursor.");
+    var nextPage = await Invoke(thread, [.. markdownSearch, "--cursor", cursor]);
+    Require(nextPage.Status == 0 && nextPage.Error.Length == 0 &&
+        nextPage.Output.Contains($"Source: `{path}:4`", StringComparison.Ordinal) &&
+        nextPage.Output.Contains($"{pattern} on next page", StringComparison.Ordinal) &&
+        !nextPage.Output.Contains(cursorLabel, StringComparison.Ordinal),
+        "The displayed cursor should continue from the next hit and stop when there are no more matches.");
+
+    string output = Path.Combine(home, "search.md");
+    JsonElement receipt = await Query(thread, [.. markdownSearch, "--output", output]);
+    byte[] written = File.ReadAllBytes(output);
+    Require(written.SequenceEqual(utf8.GetBytes(markdown.Output)) &&
+        receipt.GetProperty("output").GetString() == output &&
+        receipt.GetProperty("bytes").GetInt64() == written.LongLength &&
+        receipt.GetProperty("next_cursor").GetString() == cursor,
+        "Writing Markdown should preserve its UTF-8 bytes and return the usual JSON output receipt.");
+
+    var empty = await Invoke(thread, ["search", "absent phrase", "--format", "markdown"]);
+    Require(empty.Status == 0 && empty.Error.Length == 0 && empty.Output.Contains("No matches.", StringComparison.Ordinal)
+        && !empty.Output.Contains(cursorLabel, StringComparison.Ordinal),
+        "A successful search without hits should show an empty-page message and no cursor.");
+
+    string damagedPath = Path.Combine(home, "rollout-[x](y)\u009b.jsonl");
+    File.WriteAllText(damagedPath, Record(1, "session_meta", new JsonObject { ["id"] = thread }) +
+        "{\"type\":\"response_item\",\"payload\":{\n" + Message(3, pattern), utf8);
+    var salvage = await Invoke(thread, ["search", pattern, "--rollout", damagedPath, "--format", "markdown", "--salvage"]);
+    string visiblePath = damagedPath.Replace("\u009b", @"\u009b", StringComparison.Ordinal);
+    Require(salvage.Status == 0 && salvage.Error.Length == 0 && !salvage.Output.Contains('\u009b') &&
+        salvage.Output.Contains($"Source: `{visiblePath}:3`", StringComparison.Ordinal) &&
+        salvage.Output.Contains("Damaged records observed: 1\n", StringComparison.Ordinal) &&
+        salvage.Output.Contains($"\n- `{visiblePath}:2`, byte ", StringComparison.Ordinal),
+        "Markdown should escape path controls and show literal paths in both hit locations and salvage warnings.");
 }
 
 async Task UnicodeSearch()

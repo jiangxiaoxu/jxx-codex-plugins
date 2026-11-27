@@ -31,7 +31,7 @@ internal sealed class CliOptions
         ["windows"] = $"{Source} {Time} {Page} --window --with-tokens",
         ["tokens"] = $"{Source} {Scope} {Page} --by-response --by-summary",
         ["inventory"] = $"{Source} {Scope} {Filter} {Page}",
-        ["search"] = $"{Source} {Scope} {Filter} {TextPage} --tool --regex --ignore-case --before --after",
+        ["search"] = $"{Source} {Scope} {Filter} {TextPage} --tool --regex --ignore-case --before --after --format",
         ["read"] = $"{Source} {Scope} {Filter} {TextPage} --tool --ref --metadata-only --field --field-index --chars",
         ["tool-input"] = $"{Source} --id --lines --pointer --budget-chars --cursor",
         ["tool-output"] = $"{Source} --id --lines --pointer --budget-chars --cursor",

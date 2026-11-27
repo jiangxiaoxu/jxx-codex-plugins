@@ -10,7 +10,7 @@ Start here in PowerShell 7 from the repository root. By default, commands use `C
 $cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path
 & $cli memory read                                        # Read the saved thread note.
 & $cli transcript --last 6 --format markdown               # Read up to six recent chat messages.
-& $cli search 'phrase' --limit 5                            # Find up to five excerpts and their refs.
+& $cli search 'phrase' --limit 5 --format markdown          # Find up to five excerpts and their refs.
 & $cli read --ref '<ref-from-search>'                       # Expand one excerpt when needed.
 ```
 
@@ -115,7 +115,7 @@ Rollout queries in JSON mode emit one compact UTF-8 JSON object on stdout and se
 
 Pass cursor strings through unchanged. Start a fresh query to get refs, IDs, and cursors in the native format if you previously used the Python CLI.
 
-For rollout queries, `--output NEW_PATH` writes the result to a new file and returns a JSON receipt with `output` and `bytes`. Paged results also include `next_cursor` in the receipt, including `null` on the final page. File output uses the same page limits. Request each needed page with its own output path. For a readable chat excerpt, explicitly select `transcript --format markdown` with the relevant filters and add `--output NEW_PATH` to save it.
+For rollout queries, `--output NEW_PATH` writes the result in the selected format to a new file and returns a JSON receipt with `output` and `bytes`. Paged results also include `next_cursor` in the receipt, including `null` on the final page. File output uses the same page limits. Request each needed page with its own output path. To save a readable search page or chat excerpt, use `search` or `transcript` with `--format markdown --output NEW_PATH`.
 
 With no explicit rollout source, the CLI uses `CODEX_THREAD_ID`, which identifies the subagent in a subagent shell. To inspect the root from that shell, pass `--thread $env:CODEX_SESSION_ID` in PowerShell. The CLI follows recorded `history_base` links. Use `--previous` to locate ancestors referenced by those links when they are outside the selected Codex home.
 
@@ -276,9 +276,11 @@ When the rollout's contents are unfamiliar, use `inventory` to count records by 
 
 For a single uncompressed Codex rollout in the selected home's `sessions` or `archived_sessions` directory, a time- or window-scoped `search` can build a metadata cache in `$CODEX_HOME/state/plugins/thread-memory/rollout-index.sqlite3`. The rollout header must match the owner in the filename. The cache stores timestamps, physical offsets, compaction checkpoints, and the context needed to annotate each record. Scoped queries extend the cache with complete appended rows, select candidate offsets in SQLite, and seek into the original JSONL for text matching. A change in file identity or the checked bytes triggers a rebuild. Line ranges, cursor continuations, `read --ref`, and `transcript --last` can reuse a verified index. The streaming reader handles multi-segment lineages, compressed files, named tool matching, `--salvage`, and files outside the selected Codex home's session directories. The first indexed search can take longer while it builds the cache.
 
-Each hit reports the field (`field`, `field_index`), match bounds (`match_start`, `match_end`), excerpt start (`text_offset`), and full field length (`text_total_chars`). Offsets count Unicode code points from zero, with the end excluded. A nonempty regex match that splits a UTF-16 surrogate pair covers the whole code point in the reported range.
+`search --format markdown` shows each excerpt with its source path, physical line, and copyable ref. If another page is available, it shows the cursor to pass to `--cursor`. JSON remains the default for scripts and full metadata.
 
-`search --before N` and `--after N` measure distance in physical JSONL lines within the same segment, not in readable messages. Context excerpts are in `.context[].fields[].text`, separate from the hits in `.items`.
+In JSON, each hit reports the field (`field`, `field_index`), match bounds (`match_start`, `match_end`), excerpt start (`text_offset`), and full field length (`text_total_chars`). Offsets count Unicode code points from zero, with the end excluded. A nonempty regex match that splits a UTF-16 surrogate pair covers the whole code point in the reported range.
+
+`search --before N` and `--after N` measure distance in physical JSONL lines within the same segment, not in readable messages. In JSON, context excerpts are in `.context[].fields[].text`, separate from the hits in `.items`.
 
 For more text, raise `--max-chars` (up to `--budget-chars`) or read adjacent slices with `--chars START:END`. To open a field on a known physical line, use `--field NAME` or zero-based `--field-index N`. Selecting one field yields a ref to that field.
 
