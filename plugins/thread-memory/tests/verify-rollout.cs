@@ -24,6 +24,8 @@ var utf8 = new UTF8Encoding(false, true);
 
 try
 {
+    await Help();
+    Console.WriteLine("Passed rollout quick-start examples and command help.");
     await IndexedHistory();
     Console.WriteLine("Passed scoped history, references, and latest messages after append.");
     await ForkHistory();
@@ -49,11 +51,41 @@ finally
     Directory.Delete(home, recursive: true);
 }
 
+async Task Help()
+{
+    const string expandHit = "read --ref REF";
+    string thread = Guid.NewGuid().ToString();
+    var overview = await Invoke(thread, ["--help"]);
+    Require(overview.Status == 0 && overview.Error.Length == 0, "Overview help should succeed without a rollout.");
+    int commands = overview.Output.IndexOf("Commands:", StringComparison.Ordinal);
+    foreach (string example in new[] { "transcript --last 6", "search \"phrase\" --limit 5", expandHit })
+    {
+        int offset = overview.Output.IndexOf($"Thread-Memory {example}", StringComparison.Ordinal);
+        Require(offset >= 0 && offset < commands, $"Overview should show '{example}' before the command list.");
+    }
+
+    var transcript = await Invoke(thread, ["transcript", "--help"]);
+    Require(transcript.Status == 0 && transcript.Error.Length == 0 &&
+        transcript.Output.Contains("Thread-Memory transcript --last 6", StringComparison.Ordinal),
+        "Transcript help should show how to read recent chat.");
+    var search = await Invoke(thread, ["search", "--help"]);
+    Require(search.Status == 0 && search.Error.Length == 0 &&
+        search.Output.Contains(".items[].text", StringComparison.Ordinal) &&
+        search.Output.Contains($"Thread-Memory {expandHit}", StringComparison.Ordinal),
+        "Search help should show how to inspect an excerpt and expand a hit.");
+    var read = await Invoke(thread, ["read", "--help"]);
+    Require(read.Status == 0 && read.Error.Length == 0 &&
+        read.Output.Contains($"Thread-Memory {expandHit}", StringComparison.Ordinal) &&
+        read.Output.Contains(".items[].fields[].text", StringComparison.Ordinal) &&
+        read.Output.Contains("400 characters, or 1000 with --ref", StringComparison.Ordinal),
+        "Read help should show how to request and locate a longer excerpt.");
+}
+
 async Task IndexedHistory()
 {
     string thread = Guid.NewGuid().ToString();
     string path = RolloutPath(sessions, thread);
-    string target = "needle target \u68c0\u7d22 \U0001f680";
+    string target = "needle target \u68c0\u7d22 " + new string('x', 1200) + " end of target \U0001f680";
     string[] records =
     [
         Record(1, "session_meta", new JsonObject { ["id"] = thread, ["cwd"] = home }),
@@ -69,7 +101,13 @@ async Task IndexedHistory()
     ExpectLines(search, 5);
     Require(File.Exists(Path.Combine(home, "state", "plugins", "thread-memory", "rollout-index.sqlite3")),
         "A time- or window-scoped search did not prepare the rollout index.");
-    string reference = Item(search).GetProperty("ref").GetString()!;
+    JsonElement hit = Item(search);
+    string reference = hit.GetProperty("ref").GetString()!;
+    Require(hit.GetProperty("text_truncated").GetBoolean() && hit.GetProperty("text").GetString() == target[..400],
+        "Search should return 400 characters by default for the long hit.");
+    JsonElement record = Item(await Query(thread, ["read", "--lines", "5:5"]));
+    Require(record.GetProperty("fields")[0].GetProperty("text").GetString() == target[..400],
+        "Read without a reference should still return 400 characters by default.");
 
     JsonElement timed = await Query(thread, ["search", "needle", "--since", "2026-01-01T08:00:05+08:00",
         "--until", Stamp(7), "--turn", "selected-turn"]);
@@ -81,10 +119,16 @@ async Task IndexedHistory()
     ExpectLines(await Query(thread, ["transcript", "--last", "2"]), 5, 7);
 
     File.AppendAllText(path, Message(8, "newly appended") + """{"type":""", utf8);
-    JsonElement read = await Query(thread, ["read", "--ref", "-"], reference + "\n");
-    Require(Item(read).GetProperty("line").GetInt64() == 5 &&
-        Item(read).GetProperty("fields")[0].GetProperty("text").GetString() == target,
-        "An existing reference did not reopen its record after append.");
+    JsonElement read = Item(await Query(thread, ["read", "--ref", "-"], reference + "\n"));
+    Require(read.GetProperty("line").GetInt64() == 5 &&
+        read.GetProperty("fields")[0].GetProperty("text").GetString() == target[..1000],
+        "A reference from stdin should reopen its record after append with a 1000-character excerpt.");
+    JsonElement expanded = Item(await Query(thread, ["read", "--ref", reference]));
+    Require(expanded.GetProperty("fields")[0].GetProperty("text").GetString() == target[..1000],
+        "Read with a reference should return 1000 characters by default for the long hit.");
+    JsonElement full = Item(await Query(thread, ["read", "--ref", reference, "--max-chars", "1500"]));
+    Require(full.GetProperty("fields")[0].GetProperty("text").GetString() == target,
+        "An explicit --max-chars should override the reference default and return the whole match.");
     ExpectLines(await Query(thread, ["transcript", "--window", "current", "--last", "2"]), 7, 8);
 
     records[4] = Message(5, "rewritten");

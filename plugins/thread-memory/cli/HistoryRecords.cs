@@ -9,6 +9,7 @@ namespace ThreadMemoryCli;
 internal static class HistoryRecords
 {
     private const int DefaultPreviewChars = 400;
+    internal const int DefaultReferenceChars = 1000;
     private const int DefaultBudgetChars = 4000;
     private const int MaxContext = 20;
 
@@ -19,9 +20,10 @@ internal static class HistoryRecords
             return Inventory(args, source, limit);
 
         int budget = args.Integer("--budget-chars", DefaultBudgetChars);
-        int maxChars = Math.Min(args.Integer("--max-chars", DefaultPreviewChars), budget);
-        if (args.One("--ref") is { } token)
-            return ReadReference(source, HistoryRef.Parse(token), maxChars, CharacterRange(args));
+        string? reference = args.One("--ref");
+        int maxChars = Math.Min(args.Integer("--max-chars", reference is null ? DefaultPreviewChars : DefaultReferenceChars), budget);
+        if (reference is not null)
+            return ReadReference(source, HistoryRef.Parse(reference), maxChars, CharacterRange(args));
 
         var cursor = args.One("--cursor");
         var tool = args.One("--tool");

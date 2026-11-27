@@ -4,14 +4,17 @@ Use `$thread-memory` to maintain thread notes across context compaction in main 
 
 ## CLI help
 
-Run `--help` to list commands. Add it to a command or memory subcommand to see its accepted options, defaults, output, and an example. From the repository root in PowerShell 7:
+Start here in PowerShell 7 from the repository root. By default, commands use `CODEX_THREAD_ID`; outside a thread shell, pass `--thread UUID` or, for rollout queries, `--rollout PATH`.
 
 ```powershell
 $cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path
-& $cli --help
-& $cli attachments --help
-& $cli memory write --help
+& $cli memory read                                        # Read the saved thread note.
+& $cli transcript --last 6 --format markdown               # Read the latest chat in the terminal.
+& $cli search 'phrase' --limit 5                            # Find up to five excerpts and their refs.
+& $cli read --ref '<ref-from-search>'                       # Expand one excerpt when needed.
 ```
+
+When reopening a hit, keep the same rollout source and read text in `.items[].fields[].text`. `read --ref` defaults to 1,000 characters. Search and non-reference reads still default to 400 characters per result. See [PowerShell and jq pipelines](#powershell-and-jq-pipelines) to pass a ref without copying it. Run `& $cli --help` for the command list or `& $cli search --help` for flags and examples.
 
 ## Thread lifecycle and compaction
 
@@ -108,7 +111,7 @@ $until = '2026-11-20T14:30:00+08:00'
 & $cli search --thread $thread --window 2 --ignore-case --limit 5 'imagegen' | jq '.items[] | {ref, line, text}'
 ```
 
-Pass a hit's `ref` to `read --ref` with the same source, or use the [pipeline below](#powershell-and-jq-pipelines) to pass it directly from `jq`.
+If a hit's excerpt is too short, pass its `ref` to `read --ref REF` with the same source, or use the [pipeline below](#powershell-and-jq-pipelines) to pass the ref directly from `jq`.
 
 Rollout queries in JSON mode emit one compact UTF-8 JSON object on stdout and send errors to stderr. Use `jq` to project only the fields you need. Paged results put records in `.items[]` and return `.next_cursor`, which is `null` on the final page. Continue with `--cursor` set to `.next_cursor`. Keep the same rollout source and repeat the query filters for ordinary pagination. Tool detail cursors carry the ID and paging options. The per-item and per-page character limits apply to excerpts. JSON metadata and escaping add to the size of stdout.
 
@@ -127,10 +130,11 @@ $PSNativeCommandUseErrorActionPreference = $true
 $ErrorActionPreference = 'Stop'
 $source = @('--thread', $thread)
 
-& $cli search @source --window 2 --limit 1 'imagegen' |
-    jq -er '.items[0].ref' |
-    & $cli read @source --ref - |
-    jq '.items[0] | {line, fields}'
+$hitRef = & $cli search @source --window 2 --limit 1 'imagegen' |
+    jq -r '.items[0].ref // empty'
+if ($hitRef) {
+    $hitRef | & $cli read @source --ref - | jq '.items[0] | {line, fields}'
+}
 
 $toolPage = & $cli read @source --tool apply_patch --type custom_tool_call_output --limit 1 |
     jq -er 'first(.items[].output_id // empty)' |

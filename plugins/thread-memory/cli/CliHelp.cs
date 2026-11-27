@@ -6,7 +6,17 @@ internal static class CliHelp
 {
     internal static string Overview(IEnumerable<string> commands)
     {
-        var text = new StringBuilder("Usage: Thread-Memory COMMAND [OPTIONS]\n\nCommands:\n");
+        var text = new StringBuilder("""
+            Usage: Thread-Memory COMMAND [OPTIONS]
+
+            Common rollout lookups:
+              See recent chat      Thread-Memory transcript --last 6
+              Find a phrase        Thread-Memory search "phrase" --limit 5
+              Expand a search hit  Thread-Memory read --ref REF
+
+            Commands:
+
+            """);
         foreach (string command in commands)
             text.AppendLine($"  {command,-15}{Describe(command).Purpose}");
         return text.Append("""
@@ -56,18 +66,21 @@ internal static class CliHelp
             "JSON shows usage totals. Choose --by-response or --by-summary to also return .items and next_cursor."),
         "inventory" => ("Count rollout records by type and role.", "--window current --limit 10",
             "JSON .items contains grouped counts and example.ref. Use read --ref REF to inspect that record."),
-        "search" => ("Find literal text in readable rollout fields and tool metadata.", "\"checkpoint_ready\" --limit 5",
-            "Read JSON .items for hits and their ref values. Use read --ref REF for more text.\n" +
+        "search" => ("Find literal text in readable rollout fields and tool metadata.", "\"phrase\" --limit 5",
+            "Check .items[].text first. To expand a hit, use its ref and keep the same rollout source:\n" +
+            "  Thread-Memory read --ref REF\n" +
             "For a pattern starting with '-', put options first and place -- before the pattern."),
-        "read" => ("Read rollout record metadata and selected text.", "--window current --limit 5",
-            "JSON .items contains fields and refs. Use tool-input or tool-output for payloads identified by input_id or output_id."),
+        "read" => ("Read rollout record metadata and selected text.", "--ref REF",
+            "Use a ref from search or transcript with the same rollout source. Find the text in .items[].fields[].text.\n" +
+            "For a longer excerpt, raise --max-chars (up to --budget-chars). Use --chars START:END to read a slice.\n" +
+            "Use tool-input or tool-output for payloads identified by input_id or output_id."),
         "tool-input" => ("Read a tool call's arguments by input_id.", "--id ID --lines 10:20",
             "Get input_id from read or search in the same source. JSON .items contains text. Use --pointer for a typed .value."),
         "tool-output" => ("Read a tool call's result by output_id.", "--id ID --lines 10:20",
             "Get output_id from read or search in the same source. JSON .items contains text. Use --pointer for a typed .value."),
         "instructions" => ("Read system or developer messages in a compaction snapshot.", "--window 2 --role developer --limit 5",
             "Find checkpoint numbers with windows. JSON .items[].checkpoint_item is the index accepted by --item."),
-        "transcript" => ("Read recorded user and assistant messages.", "--window current --last 5",
+        "transcript" => ("Read recorded user and assistant messages.", "--last 6",
             "JSON .items contains messages and refs. Use --format markdown for text or --cursor for forward pagination."),
         "images" => ("List image metadata and image IDs without exporting files.", "--window current --limit 5",
             "JSON has .items and next_cursor. Pass image_id to export-image using the same source."),
@@ -127,6 +140,7 @@ internal static class CliHelp
         {
             "recover" => ("N", "Cap total message excerpt characters (default: 2400, 0 for images only)."),
             "transcript" or "instructions" => ("N", "Cap each item excerpt (default: 1000 characters)."),
+            "read" => ("N", $"Cap each record excerpt (default: 400 characters, or {HistoryRecords.DefaultReferenceChars} with --ref)."),
             _ => ("N", "Cap each record excerpt (default: 400 characters)."),
         },
         "--budget-chars" => ("N", "Cap text per page (default: 4000 characters)."),
