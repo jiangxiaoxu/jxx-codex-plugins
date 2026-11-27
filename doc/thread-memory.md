@@ -353,7 +353,9 @@ JSON output renders isolated UTF-16 surrogate escapes from old records as U+FFFD
 
 ## Runtime and validation
 
-The Windows x64 Native AOT hook, CLI, and MCP panel use the system `winsqlite3` library and run without a separately installed .NET runtime or Python. The panel serves its packaged HTML to Codex over MCP stdio and uses the same note database and rollout index as the CLI. The CLI includes Zstandard decoding for `.jsonl.zst` and the image thumbnail implementation. It accepts a `session_meta` record up to 32 MiB before the line ending. The hook accepts up to 4 MiB.
+The Windows x64 Native AOT hook, CLI, and MCP panel use the system `winsqlite3` library and run without a separately installed .NET runtime or Python. The panel serves its packaged HTML to Codex over MCP stdio and uses the same note database and rollout index as the CLI. The CLI includes Zstandard decoding for `.jsonl.zst` and accepts a `session_meta` record up to 32 MiB before the line ending. The hook accepts up to 4 MiB.
+
+The CLI loads the adjacent Native AOT `Thread-Memory-Imaging.dll` only when decoding and encoding a thumbnail for `export-image` or `recover --export-images`. Searching, listing attachments, exporting originals, and exporting audio do not load it.
 
 PowerShell 7 normally uses UTF-8 for native commands. In Windows PowerShell 5.1 or a session with custom encoding, check `$OutputEncoding.CodePage` for text sent to native stdin and `[Console]::OutputEncoding.CodePage` for captured native stdout. If either direction you use is set to a code page other than UTF-8 (`65001`), set that direction to `[Text.UTF8Encoding]::new($false)` before calling the CLI.
 
@@ -361,7 +363,9 @@ Zstandard archives are read sequentially. A scan that reaches a truncated frame 
 
 ### Build and validate
 
-From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include the three EXEs and `THIRD-PARTY-NOTICES.txt` in the plugin package.
+From the repository root on Windows x64, use the .NET 10 SDK and Visual Studio C++ build tools. Include the three EXEs and `Thread-Memory-Imaging.dll` in the plugin's `bin/` directory, and keep `THIRD-PARTY-NOTICES.txt` in the package. Reuse the checked-in DLL for releases that do not change the thumbnail implementation, its dependencies, or its ABI. A clean rebuild can change the DLL bytes even with the same source.
+
+The release that introduces a DLL uses a DLL-only second parent with no EXE blobs. Preserve that commit during old EXE cleanup so Git can use it as common history on the next push. Keep the current remote tip available locally before pushing rewritten history; a separately uploaded tag is not a substitute for shared ancestry.
 
 When preparing a release, update the title badge in `plugins/thread-memory/skills/thread-memory/assets/handoffs.html` to match the version in `plugins/thread-memory/.codex-plugin/plugin.json`. The MCP panel check verifies that the first resource read serves that badge with the packaged HTML.
 
@@ -382,7 +386,17 @@ foreach ($target in $targets.GetEnumerator()) {
 }
 ```
 
-Run the file-based C# integration checks after packaging the executables. Each check creates an isolated Codex home. It can also take explicit executable paths after `--`.
+Publish the imaging DLL separately when it needs to change:
+
+```powershell
+$publish = Join-Path $artifacts 'Thread-Memory-Imaging'
+dotnet publish "$plugin/imaging/thread-memory-imaging.csproj" -c Release -r win-x64 --artifacts-path $artifacts -o $publish
+$publishExit = $LASTEXITCODE
+if ($publishExit -ne 0) { throw "Native AOT imaging publish failed ($publishExit)" }
+Copy-Item -LiteralPath (Join-Path $publish 'Thread-Memory-Imaging.dll') -Destination "$plugin/bin/"
+```
+
+Run the file-based C# integration checks after packaging the native files. Each check creates an isolated Codex home. It can also take explicit executable paths after `--`.
 
 ```text
 dotnet run --file plugins/thread-memory/tests/verify-rollout.cs

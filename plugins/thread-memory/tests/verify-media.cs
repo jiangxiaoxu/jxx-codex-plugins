@@ -28,7 +28,7 @@ const string Thread = "00000000-0000-4000-8000-000000000026";
 const string Time = "2026-01-01T00:00:00Z";
 const string RawImageUrl = "data:image/png;base64," + ImageData;
 const string RawAudioUrl = "data:audio/wav;base64," + AudioData;
-const int ScenarioCount = 5;
+const int ScenarioCount = 6;
 
 string home = Directory.CreateTempSubdirectory("thread-memory-media-").FullName;
 string sessions = Directory.CreateDirectory(Path.Combine(home, "sessions")).FullName;
@@ -44,6 +44,7 @@ try
     await Check("raw signatures export to files while malformed URLs stay private", MalformedMedia);
     await Check("legacy user attachments honor complete image order", LegacyImageOrder);
     await Check("stdin selectors export local and inline attachments", SelectAttachments);
+    await Check("search and original image export work without the imaging DLL", WithoutImagingLibrary);
     Console.WriteLine($"Passed {passed}/{ScenarioCount} media scenarios.");
     return passed == ScenarioCount ? 0 : 1;
 }
@@ -243,9 +244,51 @@ async Task SelectAttachments()
             "Thumbnail dimensions did not honor the aspect ratio and cap.");
     }
 
+    string firstThumbnail = images[1].GetProperty("thumbnail_file").GetString()!;
+    string firstEmbedded = images[1].GetProperty("embedded_file").GetString()!;
+    byte[] firstThumbnailBytes = File.ReadAllBytes(firstThumbnail);
+    JsonElement repeated = One(await Query(["export-image", "--id", inlineId, "--max-resolution", "4",
+        "--output-dir", destination]), "images");
+    string nextThumbnail = repeated.GetProperty("thumbnail_file").GetString()!;
+    string nextEmbedded = repeated.GetProperty("embedded_file").GetString()!;
+    Require(nextThumbnail != firstThumbnail && nextEmbedded != firstEmbedded &&
+        File.Exists(nextThumbnail) && File.Exists(nextEmbedded) &&
+        File.ReadAllBytes(firstThumbnail).AsSpan().SequenceEqual(firstThumbnailBytes) &&
+        File.ReadAllBytes(firstEmbedded).AsSpan().SequenceEqual(imageBytes),
+        "Repeating an export reused or changed previous output files.");
+
     JsonElement audio = await Query(["export-audio", "--id", "-", "--output-dir", destination], audioId + "\n");
     Require(File.ReadAllBytes(One(audio, "attachments").GetProperty("audio_file").GetString()!).AsSpan().SequenceEqual(audioBytes),
         "Export changed the inline audio bytes.");
+}
+
+async Task WithoutImagingLibrary()
+{
+    const string Marker = "standalone media marker";
+    string standalone = Path.Combine(Directory.CreateDirectory(Path.Combine(home, "standalone")).FullName,
+        Path.GetFileName(cli));
+    File.Copy(cli, standalone);
+    Seed(Message(Marker, Image(RawImageUrl)));
+
+    JsonElement hit = One(await Query(["search", Marker], executable: standalone), "items");
+    Require(hit.GetProperty("text").GetString() == Marker, "Search failed without the imaging DLL.");
+    JsonElement catalog = await Query(["images"], executable: standalone);
+    string imageId = One(catalog, "items").GetProperty("image_id").GetString()!;
+    JsonElement original = One(await Query(["export-image", "--id", imageId, "--original",
+        "--output-dir", Path.Combine(home, "standalone-original")], executable: standalone), "images");
+    string originalPath = original.GetProperty("original_file").GetString()!;
+    Require(Path.GetExtension(originalPath) == ".png" && File.ReadAllBytes(originalPath).AsSpan().SequenceEqual(imageBytes),
+        "Original export changed the PNG bytes or extension without the imaging DLL.");
+
+    string destination = Path.Combine(home, "standalone-thumbnail");
+    JsonElement image = One(await Query(["export-image", "--id", imageId, "--output-dir", destination],
+        executable: standalone), "images");
+    Require(image.TryGetProperty("export_error", out JsonElement error) &&
+        error.GetString()?.Contains("Thread-Memory-Imaging.dll", StringComparison.OrdinalIgnoreCase) == true &&
+        !image.TryGetProperty("thumbnail_file", out _) && !image.TryGetProperty("embedded_file", out _),
+        "Missing imaging DLL did not produce a clear per-item export error.");
+    Require(!Directory.Exists(destination) || !Directory.EnumerateFiles(destination).Any(),
+        "Missing imaging DLL left a partial export file.");
 }
 
 static string[] Ids(JsonElement catalog, string media, string identifier) => catalog.GetProperty("items").EnumerateArray()
@@ -288,17 +331,17 @@ static JsonObject Image(string url) => new() { ["type"] = "input_image", ["image
 
 static JsonObject Audio(string url) => new() { ["type"] = "input_audio", ["audio_url"] = url };
 
-async Task<JsonElement> Query(string[] arguments, string? input = null)
+async Task<JsonElement> Query(string[] arguments, string? input = null, string? executable = null)
 {
-    CliResult result = await Invoke(arguments, input);
+    CliResult result = await Invoke(arguments, input, executable);
     ExpectExit(result, 0);
     using var document = JsonDocument.Parse(result.Output);
     return document.RootElement.Clone();
 }
 
-async Task<CliResult> Invoke(string[] arguments, string? input = null)
+async Task<CliResult> Invoke(string[] arguments, string? input = null, string? executable = null)
 {
-    var start = new ProcessStartInfo(cli)
+    var start = new ProcessStartInfo(executable ?? cli)
     {
         WorkingDirectory = home, UseShellExecute = false, CreateNoWindow = true,
         RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true,

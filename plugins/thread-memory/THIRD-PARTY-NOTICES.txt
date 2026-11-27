@@ -1,8 +1,9 @@
 Thread Memory third-party notices
 =================================
 
-These notices accompany the Windows x64 Native AOT executables
-bin/Thread-Memory-Hook.exe, bin/Thread-Memory.exe, and bin/Thread-Memory-Panel.exe.
+These notices accompany the Windows x64 Native AOT binaries
+bin/Thread-Memory-Hook.exe, bin/Thread-Memory.exe, bin/Thread-Memory-Panel.exe,
+and bin/Thread-Memory-Imaging.dll.
 SQLite itself is supplied by Windows (winsqlite3.dll).
 
 .NET 10 Native AOT runtime (10.0.15) and Microsoft.Data.Sqlite.Core (10.0.11)
@@ -545,7 +546,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Meziantou.Framework.Imaging (1.2.18), Fonts (1.0.13), and Hashing (1.0.3)
 -------------------------------------------------------------------------
-These packages supply code or data to bin/Thread-Memory.exe.
+These packages supply code or data to bin/Thread-Memory.exe and
+bin/Thread-Memory-Imaging.dll.
 Imaging: https://github.com/meziantou/Meziantou.Framework/tree/ae96f1be736856b85543e1b295397fd23c0f30fd/src/Meziantou.Framework.Imaging
 Fonts: https://github.com/meziantou/Meziantou.Framework/tree/f90e4c346f0ca4a265137a3e2aff570b544424f1/src/Meziantou.Framework.Fonts
 Hashing: https://github.com/meziantou/Meziantou.Framework/tree/f90e4c346f0ca4a265137a3e2aff570b544424f1/src/Meziantou.Framework.Hashing

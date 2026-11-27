@@ -13,17 +13,6 @@ internal static partial class HistoryMedia
     internal const int DefaultResolution = 1024;
     private const int DecodeChunk = 64 * 1024;
     private static readonly SearchValues<char> Base64Whitespace = SearchValues.Create(" \r\n\t");
-    private static readonly ImageDecodeOptions PreviewDecode = new()
-    {
-        FrameLimit = 1,
-        CmykConversion = new CmykConversionOptions(),
-    };
-    private static readonly WebPEncoder PreviewEncoder = new()
-    {
-        Compression = WebPCompression.Lossy,
-        Quality = 80,
-        MetadataHandling = MetadataHandling.Strip,
-    };
 
     internal static string ExportDirectory(string? destination, string medium) => string.IsNullOrEmpty(destination)
         ? Directory.CreateTempSubdirectory($"codex-rollout-{medium}-").FullName
@@ -145,44 +134,25 @@ internal static partial class HistoryMedia
             }
         }
 
-        string? thumbnail = null;
+        string name = inline ? digest ?? Digest(item) : $"local-{Hash(item.ResolvedPath!)}";
+        var thumbnail = new ThumbnailOutput(directory, name, inline);
         try
         {
-            using var source = inline ? null : new FileStream(item.ResolvedPath!, FileMode.Open,
-                FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            using var picture = original is not null
-                ? Image.Load<Rgba32>(original.AsSpan(0, originalSize), PreviewDecode)
-                : Image.Load<Rgba32>(source!, PreviewDecode);
-            picture.AutoOrient();
-            var longestEdge = Math.Max(picture.Width, picture.Height);
-            if (maxResolution is int cap && cap < longestEdge)
-                scale = Math.Min(scale, (double)cap / longestEdge);
-            int width = Math.Max(1, (int)Math.Round(picture.Width * scale));
-            int height = Math.Max(1, (int)Math.Round(picture.Height * scale));
-            if (width != picture.Width || height != picture.Height)
-                picture.Resize(new ResizeOptions(width, height) { Filter = ResamplingFilter.Lanczos3 });
-
-            Directory.CreateDirectory(directory);
-            string name = inline ? digest ?? Digest(item) : $"local-{Hash(item.ResolvedPath!)}";
-            var frame = picture.PosterFrame ?? picture.Frames[0];
-            thumbnail = WriteNew(directory, $"{name}-{width}x{height}", ".webp", output => frame.Save(output, PreviewEncoder));
+            thumbnail.Create(inline ? null : item.ResolvedPath, original.AsSpan(0, originalSize), scale, maxResolution);
             var result = new JsonObject
             {
-                ["thumbnail_file"] = thumbnail,
-                ["thumbnail_width"] = width,
-                ["thumbnail_height"] = height,
+                ["thumbnail_file"] = thumbnail.File,
+                ["thumbnail_width"] = thumbnail.Width,
+                ["thumbnail_height"] = thumbnail.Height,
             };
             if (original is not null)
-            {
-                string extension = ImageExtension(picture.Metadata.SourceFormat);
-                result["embedded_file"] = WriteNew(directory, name, extension, stream => stream.Write(original, 0, originalSize));
-            }
+                result["embedded_file"] = WriteNew(directory, name, thumbnail.SourceExtension!, stream => stream.Write(original, 0, originalSize));
             return result;
         }
-        catch (Exception error) when (error is ImageException or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
-            if (thumbnail is not null)
-                File.Delete(thumbnail);
+            if (thumbnail.File is string file)
+                File.Delete(file);
             return new() { ["export_error"] = $"Could not create an image thumbnail: {MediaText.OmitDataUrls(error.Message)}" };
         }
     }
