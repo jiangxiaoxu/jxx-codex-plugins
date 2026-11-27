@@ -22,7 +22,7 @@ if ($readExit -eq 0) {
 }
 ```
 
-The scan counts bytes in the captured, LF-joined text. To estimate the full note size before saving, use `[Text.Encoding]::UTF8.GetByteCount($note)`. The save receipt reports the exact size after writing. The pattern also splits at heading-like lines inside code fences, so use the line filters for those notes.
+The scan counts bytes in the captured, LF-joined text. The pattern also splits at heading-like lines inside code fences, so use the line filters for those notes.
 
 Use one of these expressions in place of the `foreach` block to print a named section, literal matches with line numbers, or lines 10 through 20.
 
@@ -33,4 +33,4 @@ $noteLines | Select-String -SimpleMatch 'checkpoint_ready' | Select-Object LineN
 $noteLines | Select-Object -Skip 9 -First 11
 ```
 
-For a local edit, keep the full note in `$note` and review only the relevant lines. Apply the edit to `$note`, then send the complete Markdown to `memory write`. See the [Skill's edit example](../SKILL.md#maintain-the-markdown-note). For compaction recovery, read the full note.
+For a local edit, keep the full note in `$note` and review only the relevant lines. Apply the edit to `$note`, then send the complete Markdown to `memory write`. See the [Skill's edit example](../SKILL.md#maintain-the-markdown-note).
