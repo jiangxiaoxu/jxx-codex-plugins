@@ -99,7 +99,7 @@ Closing **Manage data** dismisses a pending cleanup preview. The preview and con
 
 ## Progressive reads
 
-When a simple search is too broad, narrow it to a likely window, time range, or turn. The examples below reuse `$cli` from the [quick start](#cli-quick-start).
+When a simple search is too broad, narrow it to a likely window, time range, or turn. Reuse `$cli` from the [quick start](#cli-quick-start) and apply the [PowerShell jq settings](#powershell-and-jq-pipelines) before piping.
 
 ```powershell
 $thread = '<thread-uuid>'
@@ -107,11 +107,11 @@ $since = '2026-11-20T14:00:00+08:00'
 $until = '2026-11-20T14:30:00+08:00'
 
 & $cli inspect --thread $thread | jq '{segments, checkpoint_count}'
-& $cli windows --thread $thread --since $since --until $until | jq '.items[] | {window, first_at, last_at, compacted_at}'
-& $cli search --thread $thread --window 2 --ignore-case --limit 5 'imagegen' | jq '.items[] | {ref, line, text}'
+& $cli windows --thread $thread --since $since --until $until | jq '.items |= map({window, first_at, last_at, compacted_at})'
+& $cli search --thread $thread --window 2 --ignore-case --limit 5 'imagegen' | jq '.items |= map({path, line, text, ref, text_truncated})'
 ```
 
-Rollout queries in JSON mode emit one compact UTF-8 JSON object on stdout and send errors to stderr. Use `jq` to project only the fields you need. Paged results put records in `.items[]` and return `.next_cursor`, which is `null` on the final page. Continue with `--cursor` set to `.next_cursor`. Keep the same rollout source and repeat the query filters for ordinary pagination. Tool detail cursors carry the ID and paging options. The per-item and per-page character limits apply to excerpts. JSON metadata and escaping add to the size of stdout.
+Rollout queries in JSON mode emit one compact UTF-8 JSON object on stdout and send errors to stderr. To trim a page with `jq`, project `.items` without dropping its cursor or diagnostics. Paged results return `.next_cursor`, which is `null` on the final page. Continue with `--cursor` set to `.next_cursor`. Keep the same rollout source and repeat the query filters for ordinary pagination. Tool detail cursors carry the ID and paging options. The per-item and per-page character limits apply to excerpts. JSON metadata and escaping add to the size of stdout.
 
 Pass cursor strings through unchanged. Start a fresh query to get refs, IDs, and cursors in the native format if you previously used the Python CLI.
 
@@ -140,7 +140,7 @@ $page = & $cli transcript @source @chat
 $cursor = $page | jq -r '.next_cursor // empty'
 if ($cursor) {
     $cursor | & $cli transcript @source @chat --cursor - |
-        jq -r '.items[].text'
+        jq -c '.items |= map({path, line, text, ref, omitted_chars})'
 }
 ```
 
@@ -213,7 +213,7 @@ Use `--phase final`, `--phase commentary`, or `--phase partial` to select assist
 
 ```powershell
 & $cli transcript --thread $thread --origin current --last 6 --phase final --max-chars 240 |
-    jq '.items[] | {phase, text, ref}'
+    jq '.items |= map({phase, text, ref, omitted_chars})'
 ```
 
 ## Recorded instructions
@@ -229,16 +229,16 @@ Use `kind` and `item_type` to distinguish explicit message records from settings
 
 ```powershell
 & $cli read --thread $thread --role system --limit 3 --max-chars 240 |
-    jq '.items[] | {kind, item_type, role, line, fields}'
+    jq '.items |= map({kind, item_type, role, path, line, ref, fields, text_truncated})'
 & $cli search --thread $thread --role developer --limit 5 --max-chars 240 'workspace' |
-    jq '.items[] | {kind, item_type, role, line, ref, text}'
+    jq '.items |= map({kind, item_type, role, path, line, ref, text, text_truncated})'
 ```
 
 Use `instructions --window N` for system and developer messages in a compaction checkpoint's recorded `replacement_history`. Use `windows` to find the checkpoint number. Repeat `--role` to select both roles explicitly. `checkpoint_item` is the zero-based index in the full snapshot. Pass that index to `--item` and use `--chars START:END` for a zero-based, half-open slice. Use `--limit`, `--max-chars`, and `--budget-chars` to bound excerpts and `--cursor` to continue with the same checkpoint and filters.
 
 ```powershell
 & $cli instructions --thread $thread --window 2 --role developer --limit 5 |
-    jq '{items: [.items[] | {role, checkpoint_item, text_total_chars}], next_cursor}'
+    jq '.items |= map({role, checkpoint_item, text_total_chars})'
 & $cli instructions --thread $thread --window 2 --item 3 --chars 0:240 |
     jq -r '.items[].text'
 ```
@@ -269,9 +269,9 @@ When the rollout's contents are unfamiliar, use `inventory` to count records by 
 
 ```powershell
 & $cli inventory --thread $thread --window 2 --limit 8 |
-    jq '{items: [.items[] | {kind, item_type, count, example}], next_cursor}'
+    jq '.items |= map({kind, item_type, event_type, extension, role, count, example})'
 & $cli read --thread $thread --window 2 --metadata-only --limit 8 |
-    jq '.items[] | {kind, item_type, line, body_available, ref, input_id, output_id}'
+    jq '.items |= map({kind, item_type, path, line, body_available, ref, input_id, output_id})'
 ```
 
 For a single uncompressed Codex rollout in the selected home's `sessions` or `archived_sessions` directory, a time- or window-scoped `search` can build a metadata cache in `$CODEX_HOME/state/plugins/thread-memory/rollout-index.sqlite3`. The rollout header must match the owner in the filename. The cache stores timestamps, physical offsets, compaction checkpoints, and the context needed to annotate each record. Scoped queries extend the cache with complete appended rows, select candidate offsets in SQLite, and seek into the original JSONL for text matching. A change in file identity or the checked bytes triggers a rebuild. Line ranges, cursor continuations, `read --ref`, and `transcript --last` can reuse a verified index. The streaming reader handles multi-segment lineages, compressed files, named tool matching, `--salvage`, and files outside the selected Codex home's session directories. The first indexed search can take longer while it builds the cache.
@@ -307,7 +307,7 @@ The character budget applies to both line counts and explicit ranges. A line tha
 For structured payloads, pass `--pointer JSON_POINTER` with the same `--id` to `tool-input` or `tool-output`. This reads a typed JSON `.value` from the supported fields. The empty pointer `--pointer ''` selects the available root. Use `~0` for `~` and `~1` for `/` in a key. Embedded media, encrypted content, and internal fields are excluded. If the JSON value exceeds `--budget-chars`, select a narrower pointer or increase the budget.
 
 ```powershell
-& $cli tool-input --thread $thread --id '<input-id>' --pointer '/arguments/nested' --budget-chars 800 |
+& $cli tool-input --thread $thread --id '<input-id>' --pointer '/arguments/cmd' --budget-chars 800 |
     jq '.value'
 ```
 
@@ -319,7 +319,7 @@ Use `attachments` to catalog images and audio. It provides an `attachment_id`, a
 
 ```powershell
 & $cli attachments --thread $thread --window 2 --media audio --role user --limit 5 |
-    jq '.items[] | {attachment_id, media, availability, path, resolved_path}'
+    jq '.items |= map({attachment_id, media, availability, path, resolved_path})'
 ```
 
 Pass an ID from `images` to `export-image --id ID` with the same rollout source. For inline Base64, export saves the decoded original and a thumbnail. For a readable local path, export saves a thumbnail and reports the existing original path.

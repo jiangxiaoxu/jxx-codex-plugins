@@ -6,24 +6,25 @@ Use the [PowerShell settings for jq pipelines](records.md#jq-quick-start), then 
 
 ```powershell
 & $cli read @source --tool exec_command --metadata-only --limit 5 |
-    jq -c '.items[] | {path, line, call_id, input_id, output_id}'
+    jq -c '.items |= map({path, line, call_id, input_id, output_id})'
 ```
 
 Pass the selected `.input_id` to `tool-input` or `.output_id` to `tool-output`, using the same rollout source. Tool line ranges select payload text across the record's fields. The same flag on `read` selects physical JSONL lines. A single payload line that exceeds the budget spans multiple pages. Run `& $cli tool-input --help` or `& $cli tool-output --help` for ranges and budgets.
 
 ```powershell
 $page = & $cli tool-output @source --id $outputId --lines 10:20 --budget-chars 1500
-$page | jq -r '.items[].text'
+$page | jq -c '.items |= map({field, text_offset, text})'
 $cursor = $page | jq -r '.next_cursor // empty'
 if ($cursor) {
-    $cursor | & $cli tool-output @source --cursor - | jq -r '.items[].text'
+    $cursor | & $cli tool-output @source --cursor - |
+        jq -c '.items |= map({field, text_offset, text})'
 }
 ```
 
 The tool cursor carries the ID, lines, and budget. Resume with the same command and source, omitting those three options. If the selected record changed, locate it again and start a new read.
 
-Use `--pointer` in place of the line view for a typed JSON selection. The empty pointer selects the visible root. Escape `~` as `~0` and `/` as `~1` in keys. Protected fields and embedded media stay hidden. If the value exceeds the budget, select a narrower path. A selected JSON `null` is valid, so use `jq '.value'` without `-e` when `null` is expected.
+Use `--pointer` in place of the line view for a typed JSON selection. The empty pointer selects the visible root. Escape `~` as `~0` and `/` as `~1` in keys. Protected fields and embedded media stay hidden. If the value exceeds the budget, select a narrower path. A selected `null` or `false` is valid; use `jq '.value'` without `-e`.
 
 ```powershell
-& $cli tool-input @source --id $inputId --pointer '/arguments/nested' | jq '.value'
+& $cli tool-input @source --id $inputId --pointer '/arguments/cmd' | jq '.value'
 ```

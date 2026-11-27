@@ -9,12 +9,12 @@ $source = @() # Current thread; replace with @('--thread', $thread) or @('--roll
 $PSNativeCommandUseErrorActionPreference = $true
 $ErrorActionPreference = 'Stop'
 & $cli search @source 'phrase' --limit 5 |
-    jq -c '{items: [.items[] | {path, line, text, ref}], next_cursor}
+    jq -c '{items: [.items[] | {path, line, text, ref, text_truncated}], next_cursor}
         + (if has("missing_base_rollouts") then {missing_base_rollouts} else {} end)
         + (if has("damaged_records") then {damaged_record_count: .damaged_records.count} else {} end)'
 ```
 
-A missing segment or damaged-record count means a zero-hit result may be incomplete. Pass a non-null `next_cursor` to `--cursor` with the same source and query.
+A missing segment or damaged-record count means a zero-hit result may be incomplete. Use `read --ref` to expand a truncated hit. Pass a non-null `next_cursor` to `--cursor` with the same source and query.
 
 ## Choose the scope
 
@@ -30,7 +30,7 @@ Use `--window N`, `--turn ID`, or a time range to narrow a large history. For sc
 
 ```powershell
 & $cli inventory @source --limit 8 |
-    jq -c '.items[] | {kind, item_type, event_type, extension, count, example}'
+    jq -c '.items |= map({kind, item_type, event_type, extension, role, count, example})'
 ```
 
 ## Read more of one record

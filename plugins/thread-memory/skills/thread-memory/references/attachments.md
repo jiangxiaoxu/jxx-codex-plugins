@@ -6,7 +6,7 @@ Apply the [PowerShell settings for jq pipelines](records.md#jq-quick-start). For
 
 ```powershell
 & $cli attachments @source --media audio --role user --window 2 --limit 8 |
-    jq '.items[] | {line, attachment_id, availability, resolved_path}'
+    jq -c '.items |= map({line, attachment_id, availability, resolved_path})'
 ```
 
 The catalog lists metadata without reading inline media into stdout. `embedded` denotes inline data. `local` provides a resolved path, whose file may still be missing. `reference` and `unresolved` can identify attachments even when export cannot retrieve their bytes. Lookups and exports use local data.
