@@ -19,7 +19,7 @@ Use descriptive headings, short paragraphs, and lists. Keep file paths and code 
 
 The note stays with the thread across compaction. A main-thread fork gets its own copy as of its creation time. Subagents start with an empty note, including when they inherit chat history.
 
-Keep the note as short as possible while retaining what you need to resume. Exceed 15 KiB only for essential details. Stay within 20 KiB.
+Keep the note as short as possible while retaining what you need to resume. Exceed 20 KiB only for essential details. Stay within 26 KiB.
 
 Use `memory read` to get the saved Markdown directly. Empty output means there is no saved note. Read the full note after compaction and search the rollout as needed for missing details.
 

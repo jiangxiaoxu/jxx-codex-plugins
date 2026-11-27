@@ -10,9 +10,9 @@ namespace ThreadMemoryCli;
 
 internal static partial class Program
 {
-    internal const int MaxNoteBytes = 25 * 1024;
-    internal const int NoteNoticeThresholdKiB = 15;
-    private const int NoteWritingLimitKiB = 20;
+    internal const int MaxNoteBytes = 32 * 1024;
+    internal const int NoteNoticeThresholdKiB = 20;
+    private const int NoteWritingLimitKiB = 26;
     private const int StdOutputHandle = -11;
     private const string Truncation = "\n\n[Summary truncated]";
     private static readonly string NoteSizeNotice = FormattableString.Invariant(

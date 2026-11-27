@@ -17,8 +17,9 @@ if (!File.Exists(cli))
     return 2;
 }
 
-const int Limit = 25_600;
-const int NoticeThreshold = 15 * 1024;
+const int Limit = 32 * 1024;
+const int NoticeThreshold = 20 * 1024;
+const int WritingLimitKiB = 26;
 string sandbox = Directory.CreateTempSubdirectory("thread-memory-note-").FullName;
 string scenario = "UTF-8 notes, CLI thread selection, and lazy fork isolation";
 
@@ -70,8 +71,8 @@ async Task VerifyBounds(string home)
     const string Heading = "Goal\n";
     const string Multibyte = "\u754c";
 
-    string noticeBody = new string('x', NoticeThreshold - Encoding.UTF8.GetByteCount(Heading));
-    string atThreshold = Heading + noticeBody;
+    string noticeBody = new string('x', NoticeThreshold - Encoding.UTF8.GetByteCount(Heading + Multibyte));
+    string atThreshold = Heading + noticeBody + Multibyte;
     AssertSaved(await Query(home, thread, ["write"], stdin: atThreshold), atThreshold);
     AssertRead(await Query(home, thread, ["read"]), atThreshold);
 
@@ -131,9 +132,9 @@ static void AssertSaved(string result, string expected, bool truncated = false)
     Require(lines.ReadLine() == FormattableString.Invariant($"Note saved. Total size: {expectedBytes:N0} UTF-8 bytes."),
         "The receipt must start with the complete saved Markdown's UTF-8 byte count.");
     if (expectedBytes > NoticeThreshold)
-        Require(lines.ReadLine() is { } notice && notice.Contains("15 KiB", StringComparison.Ordinal)
-            && notice.Contains("20 KiB", StringComparison.Ordinal),
-            "The receipt omitted the writing limits above 15 KiB.");
+        Require(lines.ReadLine() is { } notice && notice.Contains($"{NoticeThreshold / 1024} KiB", StringComparison.Ordinal)
+            && notice.Contains($"{WritingLimitKiB} KiB", StringComparison.Ordinal),
+            "The receipt omitted the note size guidance above the notice threshold.");
     if (truncated)
         Require(lines.ReadLine() == "The note was truncated to the save limit.", "The receipt did not report truncation.");
     Require(lines.ReadLine() is null, "The receipt contains unexpected lines.");
