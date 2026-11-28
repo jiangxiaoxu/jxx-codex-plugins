@@ -74,21 +74,18 @@ internal static class CliHelp
         "inventory" => ("Count rollout records by type and role.", "--window current --limit 10",
             "JSON .items contains grouped counts and example.ref. Use read --ref REF to inspect that record."),
         "search" => ("Find literal text in readable rollout fields and tool metadata.", "\"phrase\" --limit 5",
-            "Check .items[].text. Open a text hit with its ref and the same rollout source.\n" +
-            "  Thread-Memory read --ref REF\n" +
+            "Check .items[].text. Open a hit with Thread-Memory read --ref REF.\n" +
+            "Use the same rollout source to open refs or tool payloads.\n" +
             "\n" +
-            "For tools, search matches metadata only. Compare .items[].call_id or .items[].item_id exactly.\n" +
+            "For tool records, search matches metadata only. Find a recorded ID with\n" +
             "  Thread-Memory search TOOL_ID --role tool\n" +
-            "A call_id groups related records. An item_id can locate an individual record.\n" +
-            "To find argument or result text, narrow by time, window, or turn and list candidate records.\n" +
+            "Match the full .items[].call_id to link records or .items[].item_id for one record.\n" +
+            "Pass input_id to tool-input --id or output_id to tool-output --id.\n" +
+            "For a payload fragment, list candidates by time, window, or turn.\n" +
             "  Thread-Memory read --tool NAME --window current --metadata-only\n" +
             "Use --role tool in place of --tool NAME if the name is unknown.\n" +
-            "Open the available .items[].input_id or .items[].output_id using the same rollout source.\n" +
-            "  Thread-Memory tool-input --id INPUT_ID\n" +
-            "  Thread-Memory tool-output --id OUTPUT_ID\n" +
             "\n" +
-            "Search starts with the first matches in rollout order. For recent hits, narrow the scope with\n" +
-            "--since TIME or --window current. Pass next_cursor to --cursor for the next page.\n" +
+            "For recent hits, use --since TIME or --window current.\n" +
             "Text from --before and --after is in .context[].fields[].text.\n" +
             "For a pattern starting with '-', put options first and place -- before the pattern."),
         "read" => ("Read rollout record metadata and selected text.", "--ref REF",
@@ -153,7 +150,7 @@ internal static class CliHelp
         "--limit" => command switch
         {
             "diagnostics" => ("N", "Return up to N recent events (default: 20, maximum: 2048)."),
-            "search" => ("N", "Return up to N hits per page in rollout order (default: 20)."),
+            "search" => ("N", "Return up to N hits per page in rollout order (default: 20). Start at the first match without --cursor."),
             "tokens" => ("N", "Return up to N detail items per page (default: 20)."),
             _ => ("N", "Return up to N items per page (default: 20)."),
         },

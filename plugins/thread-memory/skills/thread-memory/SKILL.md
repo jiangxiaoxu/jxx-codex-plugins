@@ -7,7 +7,7 @@ description: Maintain a persistent Markdown note for the current Codex thread as
 
 These examples use PowerShell 7 with UTF-8 native I/O. Set `$cli = Join-Path '<directory containing this SKILL.md>' '../../bin/Thread-Memory.exe'` using the actual skill directory. Run commands as `& $cli <command>`. Commands default to your own thread via `CODEX_THREAD_ID`. Pass `--thread UUID` to select another thread.
 
-Use `& $cli --help` for quick examples and `& $cli COMMAND --help` for command options.
+Use `& $cli --help` for quick examples, `& $cli COMMAND --help` for options, and the [user manual](references/manual.md) for full workflows.
 
 ## Maintain the Markdown note
 
@@ -25,7 +25,7 @@ Use `memory read` to get the saved Markdown directly. Empty output means there i
 & $cli memory read
 ```
 
-For partial inspection, see [reading part of a note](references/notes.md#read-part-of-a-thread-note).
+For partial inspection, see [reading part of a note](references/manual.md#read-part-of-a-thread-note).
 
 Edit the Markdown as needed and pipe the full note to `memory write`. This example replaces an outdated next step that occurs exactly once.
 
@@ -45,23 +45,23 @@ Keep save receipts separate from the Markdown.
 
 ## Look up rollout history
 
-Start with the [jq quick start](references/records.md#jq-quick-start) to keep useful fields and catch CLI failures.
+Use the [PowerShell setup](references/manual.md#powershell-setup) before running `jq` pipelines.
 
 | Need | Start here |
 | --- | --- |
 | Recent chat | `transcript --last 6` |
-| A known phrase in chat or other readable records | `search "phrase" --limit 5`, then check `.items[].text`. Search can show multiple records for one chat message. |
-| More than the excerpt | Pass the hit's `ref` to `read --ref REF`. See [fields and slices](references/records.md#read-more-of-one-record). |
+| A known phrase | `search "phrase" --limit 5`, then read `.items[].text`. |
+| More of a text hit | `read --ref REF` with the hit's `ref`. See [fields and slices](references/manual.md#read-more-of-one-record). |
 | Hook activity or reminder counts | `diagnostics` |
-| Available records or recorded instructions | `inventory` or `read --role system --role developer`. See [records](references/records.md). |
-| Tool arguments or results | Scope `read --tool NAME --metadata-only` by time, window, or turn. If you lack the name, use `--role tool` in its place. |
-| A known tool ID | `search TOOL_ID --role tool`, then match `.items[].call_id` or `.items[].item_id` exactly. |
-| Images or audio | `attachments --ref REF` for a known record. See [attachments](references/attachments.md) for lookup and export. |
-| Missing history, checkpoint instructions, or token usage | `recover`, `instructions`, or `tokens`. See [compaction](references/compaction.md). |
+| Available records or recorded instructions | `inventory` or `read --role system --role developer`. See [records](references/manual.md#chat-and-rollout-records). |
+| A known `call_id` or `item_id` | `search TOOL_ID --role tool`, then match `.call_id` or `.item_id` exactly in `.items[]`. |
+| Candidate tool records | `read --tool NAME --metadata-only`, or `read --role tool --metadata-only` if the name is unknown. Scope by time, window, or turn. |
+| Images or audio | `attachments --ref REF` for a known record. See [attachments](references/manual.md#find-and-export-attachments). |
+| Missing history, checkpoint instructions, or token usage | `recover`, `instructions`, or `tokens`. See [compaction](references/manual.md#compaction-and-usage). |
 
-For tool records, `search` matches metadata only. Open candidate payloads to find text in them. Pass `input_id` to `tool-input --id ID` and `output_id` to `tool-output --id ID`. See [tool lookup examples](references/tools.md).
+For tool records, `search` matches metadata only. Check payload text with `tool-input --id INPUT_ID` or `tool-output --id OUTPUT_ID`, using the record's `input_id` or `output_id` respectively. See [tool lookup examples](references/manual.md#tool-calls-and-payloads).
 
-`search --limit N` starts with the first matches in rollout order. Add `--since TIME` or `--window current` to narrow the scope. Reuse the same rollout source for refs, IDs, and cursors. In a subagent, `$env:CODEX_SESSION_ID` identifies the main thread.
+`search --limit N` starts with the first matches in rollout order. For recent records, use `--since TIME` or `--window current` for the open window. Reuse the same rollout source for refs, IDs, and cursors. In a subagent, `$env:CODEX_SESSION_ID` identifies the main thread.
 
 After a fork, search the current thread first. If there is no match, run `lineage` and search the ancestors in `fork_chain`, nearest first. Use `search "phrase" --origin inherited` to verify inheritance in the current thread. Treat ancestor-only matches as references. If a saved ref or ID no longer resolves, search for the record to get a fresh one.
 

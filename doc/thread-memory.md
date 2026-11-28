@@ -15,7 +15,7 @@ $cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path
 & $cli search '<tool-id>' --role tool                       # Find a tool record by call_id or item_id.
 ```
 
-Use the same rollout source to reopen a hit. `read --ref` defaults to 1,000 characters. `search` and plain `read` default to 400. See [PowerShell and jq pipelines](#powershell-and-jq-pipelines) to pass a ref without copying it and [tool arguments and returns](#tool-arguments-and-returns-by-id) for tool ID lookup. Run `& $cli --help` for commands or `& $cli search --help` for options and examples.
+Reuse the same rollout source to reopen a hit. Run `& $cli --help` for commands or `& $cli search --help` for search options. For lookup and export workflows, see the [user manual](../plugins/thread-memory/skills/thread-memory/references/manual.md).
 
 ## Thread lifecycle and compaction
 
@@ -53,7 +53,7 @@ Ask Codex to maintain a thread note, save a checkpoint before switching context 
 
 `memory read` writes the stored UTF-8 Markdown to stdout without adding a line ending. For a known thread without a saved note, stdout is empty and the command succeeds. A successful write reports the full saved note's UTF-8 byte count, for example `Note saved. Total size: 16,000 UTF-8 bytes.` The count includes any truncation marker. If the saved size exceeds 20 KiB, the receipt reminds the agent to exceed that size only for essential details and to stay within its 26 KiB writing limit. Memory failures print `Failed [code]: message` on stderr and exit nonzero. Rollout queries report failures as JSON on stderr. See the [Skill's PowerShell examples](../plugins/thread-memory/skills/thread-memory/SKILL.md#maintain-the-markdown-note) or run `memory --help` for command help.
 
-For an inspection that only needs part of the note, capture the Markdown in PowerShell and emit the requested section or size summary. See [partial reads and size checks](../plugins/thread-memory/skills/thread-memory/references/notes.md#read-part-of-a-thread-note).
+For an inspection that only needs part of the note, capture the Markdown in PowerShell and emit the requested section or size summary. See [partial reads and size checks](../plugins/thread-memory/skills/thread-memory/references/manual.md#read-part-of-a-thread-note).
 
 Main-thread forks use the creation timestamp in the new thread's original verified rollout header to choose the parent's version. The first `SessionStart(fork)` or first memory access copies that version, including an empty result if the parent had no note at that time. Further reads and edits use the new thread's revisions, and a later main-thread fork can inherit them. If a verified fork's inheritance is unavailable, an explicit `memory write` can start its own note. The receipt reports the inheritance failure. The note store and fork logic use local SQLite and rollout headers.
 
@@ -102,7 +102,7 @@ Closing **Manage data** dismisses a pending cleanup preview. The preview and con
 
 ## Progressive reads
 
-`search --limit N` returns a page of up to N matches in rollout order, starting with the first matches. Use `--since TIME` for recent records or `--window current` for the open window after the latest checkpoint. When you know more about the event, narrow the search to a numbered window, time range, or turn. Reuse `$cli` from the [quick start](#cli-quick-start) and apply the [PowerShell jq settings](#powershell-and-jq-pipelines) before piping.
+`search --limit N` starts with up to N matches in rollout order. Use `--since TIME` for recent records, `--window current` for the open window, or `--turn ID` for a known turn. Apply the [PowerShell jq settings](#powershell-and-jq-pipelines) before piping.
 
 ```powershell
 $thread = '<thread-uuid>'
@@ -147,7 +147,7 @@ if ($cursor) {
 }
 ```
 
-Use `jq -r` with `// empty` for optional values and check for output before piping to a command that requires one. Use `jq -er` when absence is an error. See [tool details](../plugins/thread-memory/skills/thread-memory/references/tools.md) and [attachment export](../plugins/thread-memory/skills/thread-memory/references/attachments.md) for ID pipelines.
+Use `jq -r` with `// empty` for optional values and check for output before piping to a command that requires one. Use `jq -er` when absence is an error. See [tool lookup](../plugins/thread-memory/skills/thread-memory/references/manual.md#tool-calls-and-payloads) and [attachment export](../plugins/thread-memory/skills/thread-memory/references/manual.md#find-and-export-attachments) for ID pipelines.
 
 ## Errors and exit codes
 
@@ -208,7 +208,7 @@ For copied records, `forked_from_thread_id` reports the recorded fork parent. `t
     jq -e '.items | length == 1 and (.[0] | has("first_at") and has("last_at") and has("compacted_at") and (.compacted_at | type == "string"))'
 ```
 
-`transcript` returns user and assistant messages with their recorded timestamps and source locations, including stored realtime voice transcripts and user-facing assistant messages recorded as explicit async delivery events. Use `--role user` or `--role assistant` to focus on one speaker. Use `search` or `read` for system and developer instructions, tool metadata, compaction records, or other legacy message events. `search` can return separate hits for multiple records representing the same chat message. Use `transcript` to view the chat itself.
+`transcript` returns user and assistant messages with their recorded timestamps and source locations, including stored realtime voice transcripts and user-facing assistant messages recorded as explicit async delivery events. Use `--role user` or `--role assistant` to focus on one speaker. `search` and `read` cover system and developer instructions, tool metadata, compaction records, and other legacy message events. `search` can return multiple hits for one chat message when several records represent it.
 
 `transcript --last N` returns the latest matching messages (at most N) within the text budget, in rollout order rather than timestamp order. It takes precedence over `--limit` and returns no continuation cursor. To fit more messages, raise `--budget-chars` or lower `--max-chars`. For forward pagination, omit `--last` and pass `--cursor` when the result has a non-null `next_cursor`.
 
@@ -283,7 +283,7 @@ Each hit reports the field (`field`, `field_index`), match bounds (`match_start`
 
 `search --before N` and `--after N` measure distance in physical JSONL lines within the same segment, not in readable messages. Context excerpts are in `.context[].fields[].text`, separate from the hits in `.items`.
 
-For more text, raise `--max-chars` (up to `--budget-chars`) or read adjacent slices with `--chars START:END`. To open a field on a known physical line, use `--field NAME` or zero-based `--field-index N`. Selecting one field yields a ref to that field.
+`search` and plain `read` default to 400 characters per excerpt. `read --ref` defaults to 1,000. For more text, raise `--max-chars` (up to `--budget-chars`) or read adjacent slices with `--chars START:END`. To open a field on a known physical line, use `--field NAME` or zero-based `--field-index N`. Selecting one field yields a ref to that field.
 
 When `read --ref` opens a search hit without `--chars`, `text_truncated` is true if the automatic excerpt omits any part of the matching field. For an explicit `--chars` slice, or a field reference with a saved range, it reports whether the character budget cut the requested text short.
 
@@ -299,22 +299,17 @@ Use `--ref -` to pipe one ref from `jq -er`. Record scope selectors such as `--w
 
 ## Tool arguments and returns by ID
 
-For tool records, `search`, its surrounding records, and `read` expose metadata such as the tool name and `call_id` when available, source location, and `input_id` or `output_id`. Search matches tool metadata only. To find a word from arguments or a result, use `read --tool NAME --metadata-only` with a window, time, or turn filter, then open candidate payloads. Use `--role tool` in place of `--tool NAME` if the name is unknown. `read --field` and `read --field-index` also operate on the recorded metadata fields for tools.
+`search TOOL_ID --role tool` matches tool metadata by substring. Compare `.call_id` or `.item_id` exactly. If you remember payload text, use `read --tool NAME --metadata-only` or `read --role tool --metadata-only` with a window, time, or turn filter, then inspect the candidate payloads. See [tool lookup and payload examples](../plugins/thread-memory/skills/thread-memory/references/manual.md#tool-calls-and-payloads).
 
-When you have a tool ID, use `search TOOL_ID --role tool` and compare `.call_id` or `.item_id` exactly. A `call_id` groups related records, so look for both `input_id` and `output_id` across the matching hits. An `item_id` can locate a single record with one or both IDs. Use `next_cursor` when you need another page and scope `read` by tool name or nearby source location when you lack an ID. See [worked lookup examples](../plugins/thread-memory/skills/thread-memory/references/tools.md).
+The tool projections in `search`, its surrounding records, and `read` include source location and available IDs. For tools, `read --field` and `read --field-index` select recorded metadata fields.
 
 `search --tool NAME` and `read --tool NAME` prefer the name recorded on the tool record. For an unnamed return, the filter can use a unique compatible earlier call in the same segment and history boundary, including a call outside the selected line range. Ambiguous or incompatible calls leave the tool name unknown. Read the resolved label with `read --tool NAME | jq -r '.items[].tool_name'`. Search patterns and field selectors operate on recorded fields.
 
-Pass `input_id` to `tool-input --id ID` or `output_id` to `tool-output --id ID` with the same rollout source. With those commands, `--lines 10:20` jumps directly to lines of the payload across fields. With `read`, the same range selects physical JSONL records.
+`tool-input` and `tool-output` select payload lines with `--lines`. On `read`, the same option selects physical JSONL lines. The character budget applies to both payload line counts and ranges. A long line can span multiple pages.
 
-The character budget applies to both line counts and explicit ranges. A line that cannot fit on an empty page is split across pages. The cursor restores the ID, line selection, and character budget on the same command and source. A tool cursor checks the raw JSONL record bytes excluding the final line terminator. Appending later records preserves the cursor, while editing or reformatting the selected record can invalidate it. Start a fresh page to replace a stale tool detail cursor. For large payloads, write pages to separate files with `--output NEW_PATH`. A phrase can span pages in a single field. To check for a phrase across a selected range, follow the cursor until it is null and [join chunks by field in offset order](../plugins/thread-memory/skills/thread-memory/references/tools.md#find-a-fragment-across-pages). Use the image commands for media stored as image blocks.
+Tool detail cursors carry the ID, line selection, and budget. They check the selected record's raw JSONL bytes excluding its final line terminator. Appending later records preserves a cursor. If editing the record invalidates the cursor, start a fresh read. For large payloads, write pages to separate files with `--output NEW_PATH` or [check for a fragment across pages](../plugins/thread-memory/skills/thread-memory/references/manual.md#find-a-fragment-across-pages).
 
-For structured payloads, pass `--pointer JSON_POINTER` with the same `--id` to `tool-input` or `tool-output`. This reads a typed JSON `.value` from the supported fields. The empty pointer `--pointer ''` selects the available root. Use `~0` for `~` and `~1` for `/` in a key. Embedded media, encrypted content, and internal fields are excluded. If the JSON value exceeds `--budget-chars`, select a narrower pointer or increase the budget.
-
-```powershell
-& $cli tool-input --thread $thread --id '<input-id>' --pointer '/arguments/cmd' --budget-chars 800 |
-    jq '.value'
-```
+[`--pointer`](../plugins/thread-memory/skills/thread-memory/references/manual.md#read-a-structured-value) reads a typed `.value` from the supported JSON fields. Embedded media, encrypted content, and internal fields are excluded. Use the image commands for image blocks.
 
 ## Attachment lookup and export
 
