@@ -10,11 +10,12 @@ Start here in PowerShell 7 from the repository root. By default, commands use `C
 $cli = (Resolve-Path 'plugins/thread-memory/bin/Thread-Memory.exe').Path
 & $cli memory read                                        # Read the saved thread note.
 & $cli transcript --last 6 --format markdown               # Read up to six recent chat messages.
-& $cli search 'phrase' --limit 5                            # Find up to five excerpts and their refs.
+& $cli search 'phrase' --limit 5                            # Find up to five matches in rollout order.
 & $cli read --ref '<ref-from-search>'                       # Expand one excerpt when needed.
+& $cli search '<tool-id>' --role tool                       # Find a tool record by call_id or item_id.
 ```
 
-Use the same rollout source to reopen a hit. `read --ref` defaults to 1,000 characters; `search` and plain `read` default to 400. See [PowerShell and jq pipelines](#powershell-and-jq-pipelines) to pass a ref without copying it. Run `& $cli --help` for commands or `& $cli search --help` for options and examples.
+Use the same rollout source to reopen a hit. `read --ref` defaults to 1,000 characters. `search` and plain `read` default to 400. See [PowerShell and jq pipelines](#powershell-and-jq-pipelines) to pass a ref without copying it and [tool arguments and returns](#tool-arguments-and-returns-by-id) for tool ID lookup. Run `& $cli --help` for commands or `& $cli search --help` for options and examples.
 
 ## Thread lifecycle and compaction
 
@@ -101,7 +102,7 @@ Closing **Manage data** dismisses a pending cleanup preview. The preview and con
 
 ## Progressive reads
 
-When a simple search is too broad, narrow it to a likely window, time range, or turn. Reuse `$cli` from the [quick start](#cli-quick-start) and apply the [PowerShell jq settings](#powershell-and-jq-pipelines) before piping.
+`search --limit N` returns a page of up to N matches in rollout order, starting with the first matches. Use `--since TIME` for recent records or `--window current` for the open window after the latest checkpoint. When you know more about the event, narrow the search to a numbered window, time range, or turn. Reuse `$cli` from the [quick start](#cli-quick-start) and apply the [PowerShell jq settings](#powershell-and-jq-pipelines) before piping.
 
 ```powershell
 $thread = '<thread-uuid>'
@@ -207,7 +208,7 @@ For copied records, `forked_from_thread_id` reports the recorded fork parent. `t
     jq -e '.items | length == 1 and (.[0] | has("first_at") and has("last_at") and has("compacted_at") and (.compacted_at | type == "string"))'
 ```
 
-`transcript` returns user and assistant messages with their recorded timestamps and source locations, including stored realtime voice transcripts and user-facing assistant messages recorded as explicit async delivery events. Use `--role user` or `--role assistant` to focus on one speaker. Use `search` or `read` for system and developer instructions, tool metadata, compaction records, or other legacy message events.
+`transcript` returns user and assistant messages with their recorded timestamps and source locations, including stored realtime voice transcripts and user-facing assistant messages recorded as explicit async delivery events. Use `--role user` or `--role assistant` to focus on one speaker. Use `search` or `read` for system and developer instructions, tool metadata, compaction records, or other legacy message events. `search` can return separate hits for multiple records representing the same chat message. Use `transcript` to view the chat itself.
 
 `transcript --last N` returns the latest matching messages (at most N) within the text budget, in rollout order rather than timestamp order. It takes precedence over `--limit` and returns no continuation cursor. To fit more messages, raise `--budget-chars` or lower `--max-chars`. For forward pagination, omit `--last` and pass `--cursor` when the result has a non-null `next_cursor`.
 
@@ -298,13 +299,15 @@ Use `--ref -` to pipe one ref from `jq -er`. Record scope selectors such as `--w
 
 ## Tool arguments and returns by ID
 
-User messages and assistant replies remain directly available through `search`, `read`, and `transcript`. For tool records, `search`, its surrounding records, and `read` expose metadata such as the tool name and `call_id` when available, source location, and `input_id` or `output_id`. Search matches tool metadata only. Argument values and return bodies require their respective IDs, including when using `read --field` or `read --field-index`.
+For tool records, `search`, its surrounding records, and `read` expose metadata such as the tool name and `call_id` when available, source location, and `input_id` or `output_id`. Search matches tool metadata only. To find a word from arguments or a result, use `read --tool NAME --metadata-only` with a window, time, or turn filter, then open candidate payloads. Use `--role tool` in place of `--tool NAME` if the name is unknown. `read --field` and `read --field-index` also operate on the recorded metadata fields for tools.
+
+When you have a tool ID, use `search TOOL_ID --role tool` and compare `.call_id` or `.item_id` exactly. A `call_id` groups related records, so look for both `input_id` and `output_id` across the matching hits. An `item_id` can locate a single record with one or both IDs. Use `next_cursor` when you need another page and scope `read` by tool name or nearby source location when you lack an ID. See [worked lookup examples](../plugins/thread-memory/skills/thread-memory/references/tools.md).
 
 `search --tool NAME` and `read --tool NAME` prefer the name recorded on the tool record. For an unnamed return, the filter can use a unique compatible earlier call in the same segment and history boundary, including a call outside the selected line range. Ambiguous or incompatible calls leave the tool name unknown. Read the resolved label with `read --tool NAME | jq -r '.items[].tool_name'`. Search patterns and field selectors operate on recorded fields.
 
 Pass `input_id` to `tool-input --id ID` or `output_id` to `tool-output --id ID` with the same rollout source. With those commands, `--lines 10:20` jumps directly to lines of the payload across fields. With `read`, the same range selects physical JSONL records.
 
-The character budget applies to both line counts and explicit ranges. A line that cannot fit on an empty page is split across pages. The cursor restores the ID, line selection, and character budget on the same command and source. A tool cursor checks the raw JSONL record bytes excluding the final line terminator. Appending later records preserves the cursor, while editing or reformatting the selected record can invalidate it. Start a fresh page to replace a stale tool detail cursor. For large payloads, write pages to separate files with `--output NEW_PATH` and search or read those files selectively. Use the image commands for media stored as image blocks.
+The character budget applies to both line counts and explicit ranges. A line that cannot fit on an empty page is split across pages. The cursor restores the ID, line selection, and character budget on the same command and source. A tool cursor checks the raw JSONL record bytes excluding the final line terminator. Appending later records preserves the cursor, while editing or reformatting the selected record can invalidate it. Start a fresh page to replace a stale tool detail cursor. For large payloads, write pages to separate files with `--output NEW_PATH`. A phrase can span pages in a single field. To check for a phrase across a selected range, follow the cursor until it is null and [join chunks by field in offset order](../plugins/thread-memory/skills/thread-memory/references/tools.md#find-a-fragment-across-pages). Use the image commands for media stored as image blocks.
 
 For structured payloads, pass `--pointer JSON_POINTER` with the same `--id` to `tool-input` or `tool-output`. This reads a typed JSON `.value` from the supported fields. The empty pointer `--pointer ''` selects the available root. Use `~0` for `~` and `~1` for `/` in a key. Embedded media, encrypted content, and internal fields are excluded. If the JSON value exceeds `--budget-chars`, select a narrower pointer or increase the budget.
 

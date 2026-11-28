@@ -50,15 +50,18 @@ Start with the [jq quick start](references/records.md#jq-quick-start) to keep us
 | Need | Start here |
 | --- | --- |
 | Recent chat | `transcript --last 6` |
-| A known phrase | `search "phrase" --limit 5`; check `.items[].text` first. |
+| A known phrase in chat or other readable records | `search "phrase" --limit 5`, then check `.items[].text`. Search can show multiple records for one chat message. |
 | More than the excerpt | Pass the hit's `ref` to `read --ref REF`. See [fields and slices](references/records.md#read-more-of-one-record). |
 | Hook activity or reminder counts | `diagnostics` |
 | Available records or recorded instructions | `inventory` or `read --role system --role developer`. See [records](references/records.md). |
-| Tool arguments or results | Locate the tool with `read --tool NAME`, then use its input or output ID. See [tool details](references/tools.md). |
+| Tool arguments or results | Scope `read --tool NAME --metadata-only` by time, window, or turn. If you lack the name, use `--role tool` in its place. |
+| A known tool ID | `search TOOL_ID --role tool`, then match `.items[].call_id` or `.items[].item_id` exactly. |
 | Images or audio | `attachments --ref REF` for a known record. See [attachments](references/attachments.md) for lookup and export. |
 | Missing history, checkpoint instructions, or token usage | `recover`, `instructions`, or `tokens`. See [compaction](references/compaction.md). |
 
-Reuse the same rollout source for refs, IDs, and cursors. In a subagent, `$env:CODEX_SESSION_ID` identifies the main thread.
+For tool records, `search` matches metadata only. Open candidate payloads to find text in them. Pass `input_id` to `tool-input --id ID` and `output_id` to `tool-output --id ID`. See [tool lookup examples](references/tools.md).
+
+`search --limit N` starts with the first matches in rollout order. Add `--since TIME` or `--window current` to narrow the scope. Reuse the same rollout source for refs, IDs, and cursors. In a subagent, `$env:CODEX_SESSION_ID` identifies the main thread.
 
 After a fork, search the current thread first. If there is no match, run `lineage` and search the ancestors in `fork_chain`, nearest first. Use `search "phrase" --origin inherited` to verify inheritance in the current thread. Treat ancestor-only matches as references. If a saved ref or ID no longer resolves, search for the record to get a fresh one.
 

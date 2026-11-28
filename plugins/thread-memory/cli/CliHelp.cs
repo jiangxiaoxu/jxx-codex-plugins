@@ -13,6 +13,12 @@ internal static class CliHelp
               See recent chat      Thread-Memory transcript --last 6
               Find a phrase        Thread-Memory search "phrase" --limit 5
               Expand a search hit  Thread-Memory read --ref REF
+              Find a tool record   Thread-Memory search TOOL_ID --role tool
+              Read tool arguments  Thread-Memory tool-input --id INPUT_ID
+              Read a tool result   Thread-Memory tool-output --id OUTPUT_ID
+
+            Check .items[].call_id or .items[].item_id for an exact match and copy the available
+            input_id or output_id. Reuse the same rollout source to open refs and IDs.
 
             Commands:
 
@@ -68,17 +74,34 @@ internal static class CliHelp
         "inventory" => ("Count rollout records by type and role.", "--window current --limit 10",
             "JSON .items contains grouped counts and example.ref. Use read --ref REF to inspect that record."),
         "search" => ("Find literal text in readable rollout fields and tool metadata.", "\"phrase\" --limit 5",
-            "Check .items[].text. To expand a hit, use its ref with the same rollout source:\n" +
+            "Check .items[].text. Open a text hit with its ref and the same rollout source.\n" +
             "  Thread-Memory read --ref REF\n" +
+            "\n" +
+            "For tools, search matches metadata only. Compare .items[].call_id or .items[].item_id exactly.\n" +
+            "  Thread-Memory search TOOL_ID --role tool\n" +
+            "A call_id groups related records. An item_id can locate an individual record.\n" +
+            "To find argument or result text, narrow by time, window, or turn and list candidate records.\n" +
+            "  Thread-Memory read --tool NAME --window current --metadata-only\n" +
+            "Use --role tool in place of --tool NAME if the name is unknown.\n" +
+            "Open the available .items[].input_id or .items[].output_id using the same rollout source.\n" +
+            "  Thread-Memory tool-input --id INPUT_ID\n" +
+            "  Thread-Memory tool-output --id OUTPUT_ID\n" +
+            "\n" +
+            "Search starts with the first matches in rollout order. For recent hits, narrow the scope with\n" +
+            "--since TIME or --window current. Pass next_cursor to --cursor for the next page.\n" +
             "Text from --before and --after is in .context[].fields[].text.\n" +
             "For a pattern starting with '-', put options first and place -- before the pattern."),
         "read" => ("Read rollout record metadata and selected text.", "--ref REF",
             "JSON text is in .items[].fields[].text. For a search ref without --chars, text_truncated reports omitted text.\n" +
             "For tool payloads, pass input_id to tool-input or output_id to tool-output."),
-        "tool-input" => ("Read a tool call's arguments by input_id.", "--id ID --lines 10:20",
-            "Get input_id from read or search in the same source. JSON .items contains text. Use --pointer for a typed .value."),
-        "tool-output" => ("Read a tool call's result by output_id.", "--id ID --lines 10:20",
-            "Get output_id from read or search in the same source. JSON .items contains text. Use --pointer for a typed .value."),
+        "tool-input" => ("Read a tool call's arguments by input_id.", "--id INPUT_ID",
+            "Copy .items[].input_id from search or read and keep the same rollout source.\n" +
+            "To look up a call_id or item_id, run Thread-Memory search TOOL_ID --role tool.\n" +
+            "JSON text is in .items[].text. Use --pointer for a typed .value."),
+        "tool-output" => ("Read a tool call's result by output_id.", "--id OUTPUT_ID",
+            "Copy .items[].output_id from search or read and keep the same rollout source.\n" +
+            "To look up a call_id or item_id, run Thread-Memory search TOOL_ID --role tool.\n" +
+            "JSON text is in .items[].text. Use --pointer for a typed .value."),
         "instructions" => ("Read system or developer messages in a compaction snapshot.", "--window 2 --role developer --limit 5",
             "Find checkpoint numbers with windows. JSON .items[].checkpoint_item is the index accepted by --item."),
         "transcript" => ("Read recorded user and assistant messages.", "--last 6",
@@ -130,6 +153,7 @@ internal static class CliHelp
         "--limit" => command switch
         {
             "diagnostics" => ("N", "Return up to N recent events (default: 20, maximum: 2048)."),
+            "search" => ("N", "Return up to N hits per page in rollout order (default: 20)."),
             "tokens" => ("N", "Return up to N detail items per page (default: 20)."),
             _ => ("N", "Return up to N items per page (default: 20)."),
         },

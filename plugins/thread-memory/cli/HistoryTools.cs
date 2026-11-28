@@ -196,10 +196,10 @@ internal static partial class HistoryTools
         }
         catch (CliInputException)
         {
-            throw new CliInputException($"expected a tool {direction} ID from rollout search or read");
+            throw InvalidId();
         }
         if (target.Kind != direction || target.Index is not null || target.Start is not null)
-            throw new CliInputException($"expected a tool {direction} ID from rollout search or read");
+            throw InvalidId();
         if (!source.Segments.Any(segment => segment.Id == target.SegmentId))
             throw new CliInputException($"tool {direction} ID is outside the selected rollout lineage");
         HistoryRow? row = source.Find(target);
@@ -233,6 +233,10 @@ internal static partial class HistoryTools
         result["next_cursor"] = next is { } position
             ? new ToolPageCursor(id, selection, budget, position.Index, position.Offset).Encode() : null;
         return result;
+
+        CliInputException InvalidId() => new(
+            $"Use --id with {direction}_id from search or read in the same rollout source. " +
+            "Look up a call_id or item_id with Thread-Memory search TOOL_ID --role tool.");
     }
 
     private readonly record struct ToolLineSelection(long First, long Last)
